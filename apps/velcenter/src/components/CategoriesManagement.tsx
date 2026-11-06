@@ -5,7 +5,6 @@
  * - Hierarchical tree view with expand/collapse
  * - Create / Edit / Delete categories
  * - Activate / Deactivate
- * - Drag-to-reorder (via sort_order)
  * - Product count display
  * - Search filtering
  * - Localized names
@@ -29,6 +28,7 @@ import {
   FolderTree,
   ImagePlus,
   X,
+  MoreHorizontal,
 } from "lucide-react";
 import { Button } from "@velnox/shared/components/ui/button";
 import { Input } from "@velnox/shared/components/ui/input";
@@ -421,13 +421,13 @@ const handleToggleActive = async (cat: CategoryNode) => {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <div className="relative">
+          <div className="relative w-full sm:w-64">
             <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="ค้นหาหมวดหมู่..."
-              className="w-48 pl-9 text-sm"
+              className="pl-9 text-sm"
             />
           </div>
           <Button onClick={() => openCreateDialog()} className="gap-1.5 bg-[#10B981] text-white hover:bg-emerald-600">
@@ -713,94 +713,100 @@ function CategoryRow({
   return (
     <div>
       <div
-        className={`flex items-center gap-2 px-4 py-3 transition-colors hover:bg-slate-50 ${
-          !category.is_active ? "opacity-60" : ""
+        className={`flex items-center gap-2 px-3 py-2.5 transition-colors hover:bg-slate-50 ${
+          !category.is_active ? "opacity-50" : ""
         }`}
-        style={{ paddingLeft: `${16 + depth * 24}px` }}
+        style={{ paddingLeft: `${12 + depth * 20}px` }}
       >
         {/* Expand/collapse toggle */}
         {hasChildren ? (
           <button
             onClick={() => onToggle(category.id)}
             className="shrink-0 rounded p-0.5 hover:bg-slate-200"
+            aria-label={isExpanded ? "ย่อ" : "ขยาย"}
           >
             {isExpanded ? (
-              <ChevronDown className="size-4 text-slate-500" />
+              <ChevronDown className="size-4 text-slate-400" />
             ) : (
-              <ChevronRight className="size-4 text-slate-500" />
+              <ChevronRight className="size-4 text-slate-400" />
             )}
           </button>
         ) : (
           <span className="w-5" />
         )}
 
-        {/* Name + slug */}
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
-            {category.icon && (category.icon.startsWith("http") || category.icon.startsWith("data:")) ? (
-              <img src={category.icon} alt="" className="size-5 rounded object-cover" />
-            ) : Number(category.sort_order) > 0 && (
-              <span className="size-5" />
-            )}
+        {/* Icon + Name */}
+        <div className="min-w-0 flex-1 flex items-center gap-2">
+          {category.icon && (category.icon.startsWith("http") || category.icon.startsWith("data:")) ? (
+            <img src={category.icon} alt="" className="size-5 rounded" />
+          ) : null}
+          <div className="min-w-0 flex-1">
             <span className="truncate text-sm font-medium text-slate-900">{category.display_name ?? category.name}</span>
+            <span className="ml-1 text-xs text-slate-400">/{category.slug}</span>
           </div>
-          <span className="ml-2 text-xs text-slate-400">/{category.slug}</span>
         </div>
 
-        {/* Product count */}
-        {(category.product_count ?? 0) > 0 && (
-          <Badge variant="secondary" className="gap-1 text-xs">
-            <Package className="size-3" />
-            {category.product_count}
+        {/* Meta badges */}
+        <div className="flex items-center gap-1.5">
+          {(category.product_count ?? 0) > 0 && (
+            <Badge variant="secondary" className="gap-1 text-[10px] px-2 py-0.5">
+              <Package className="size-2.5" />
+              {category.product_count}
+            </Badge>
+          )}
+          <Badge
+            variant={category.is_active ? "default" : "outline"}
+            className={`text-[10px] px-2 py-0.5 ${category.is_active ? "bg-emerald-100 text-emerald-700" : "text-slate-400 border-slate-200"}`}
+          >
+            {category.is_active ? "ใช้งาน" : "ปิด"}
           </Badge>
-        )}
+        </div>
 
-        {/* Active badge */}
-        <Badge
-          variant={category.is_active ? "default" : "outline"}
-          className={`text-xs ${category.is_active ? "bg-emerald-100 text-emerald-700" : "text-slate-400"}`}
-        >
-          {category.is_active ? "ใช้งาน" : "ปิด"}
-        </Badge>
-
-        {/* Actions */}
-        <div className="flex items-center gap-1">
+        {/* Actions menu */}
+        <div className="relative">
           <Button
             variant="ghost"
             size="icon"
-            className="size-7 text-slate-400 hover:text-slate-700"
-            onClick={() => onAddChild(category.id)}
-            title="เพิ่มหมวดย่อย"
+            className="size-7 text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+            onClick={(e) => {
+              e.stopPropagation();
+              e.currentTarget.closest('[data-radix-popper-content-wrapper]')?.querySelector('[role="menu"]')?.classList.remove('hidden');
+            }}
+            aria-label="ตัวเลือกเพิ่มเติม"
           >
-            <Plus className="size-3.5" />
+            <MoreHorizontal className="size-4" />
           </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-7 text-slate-400 hover:text-slate-700"
-            onClick={() => onToggleActive(category)}
-            title={category.is_active ? "ปิดการใช้งาน" : "เปิดการใช้งาน"}
-          >
-            {category.is_active ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-7 text-slate-400 hover:text-blue-600"
-            onClick={() => onEdit(category)}
-            title="แก้ไข"
-          >
-            <Pencil className="size-3.5" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-7 text-slate-400 hover:text-red-600"
-            onClick={() => onDelete(category)}
-            title="ลบ"
-          >
-            <Trash2 className="size-3.5" />
-          </Button>
+          {/* Inline dropdown menu */}
+          <div className="absolute right-0 top-full mt-1 z-10 min-w-[140px] rounded-md border border-slate-200 bg-white shadow-lg divide-y divide-slate-100 py-1">
+            <button
+              onClick={(e) => { e.stopPropagation(); onAddChild(category.id); }}
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+            >
+              <Plus className="size-3.5 text-emerald-600" />
+              เพิ่มหมวดย่อย
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); onToggleActive(category); }}
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+            >
+              {category.is_active ? <EyeOff className="size-3.5 text-slate-500" /> : <Eye className="size-3.5 text-emerald-600" />}
+              {category.is_active ? "ปิดการใช้งาน" : "เปิดใช้งาน"}
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); onEdit(category); }}
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+            >
+              <Pencil className="size-3.5 text-blue-600" />
+              แก้ไข
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); onDelete(category); }}
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50"
+            >
+              <Trash2 className="size-3.5" />
+              ลบ
+            </button>
+          </div>
         </div>
       </div>
 
