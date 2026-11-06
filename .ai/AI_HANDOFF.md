@@ -1,6 +1,6 @@
 # Velnox AI Handoff — Current State
 
-**Last verified:** 2026-11-05 · **Branch:** `main` · **HEAD:** `2f79dcdee6807c9de0d7b16b63842a856f4761aa` (pushed to origin)
+**Last verified:** 2026-11-05 · **Branch:** `main` · **HEAD:** `48b8f34813c323be20ce9465baede73930e194c4` (pushed to origin)
 
 ## 1. Current Project State
 
@@ -37,6 +37,19 @@
    `unexpected e_type: 2`; UI review falls back to `VELNOX_DESIGN_THEME.md` + craft-floor.
 
 ### Important Recent Decisions
+- **AI Office Sequential Stabilization (Phases 1-2) — 2026-11-05** — **PASS** ✅
+  - Phase 1: Fixed CI blocker in `backend/routes/seller-intelligence.ts` — added missing imports for `computePurchaseStats`, `estimatedNextPurchase`, `reorderConfidence` from `seller-stats.ts`. All typechecks pass.
+  - Phase 2: Repaired scheduler lifecycle in `.ai/office/scheduler/request-scheduler.ts`:
+    * Store `AbortController` reference (not just `AbortSignal`) for proper cancellation
+    * Added `_slotReleased` flag to prevent double-release of active slot
+    * Added `_retryPending` flag for proper retry handling
+    * Fixed `cancel()` and `cancelActive()` to use `abortController.abort()`
+    * Fixed `releaseSlot()` to check `_slotReleased` before releasing
+    * Fixed `handleError()` to properly re-queue with `_slotReleased=false` for retries
+    * Fixed `fromJSON()` to restore `AbortController` and new flags
+  - All 14 scheduler tests pass (concurrency=1, FIFO, cancellation, retry/backoff, persistence)
+  - Database sync: Added missing `status` and `commission_rate` columns to `shops` table in `db/run-sqleditor.sql` to match `db/schema.sql`
+  - Commit `48b8f34` pushed to origin/main; local HEAD == remote HEAD verified
 - **Stripe live mode is now an explicit opt-in (2026-11-05).** Production runs
   Stripe **test mode** (`/api/stripe/configured` → `mode:"test"`), so real cards /
   real PromptPay cannot complete — that was the reported “cannot pay”. A live key is
