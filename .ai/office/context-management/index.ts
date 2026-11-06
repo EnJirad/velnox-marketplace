@@ -4,12 +4,15 @@
  * Main integration layer that orchestrates context budget management,
  * intelligent compaction, and task-based context selection.
  * This replaces the naive "send everything" approach.
+ * 
+ * Now integrated with Global Single-Request Scheduler for Tenixe concurrency control.
  */
 
 import { ContextBudgetManager, ContextBudget, ModelConfig, getEffectiveLimit } from './context-budget';
 import { ContextCompactor, Message, CompactionOptions, emergencyCompact } from './context-compaction';
 import { TaskContextSelector, TaskContext, ContextSelectionOptions, SelectionResult, CONTEXT_PROFILES } from './task-context-selector';
 import { classifyTask, TaskClassification, getContextSelectionForLevel, TaskLevel } from './task-router';
+import { executeWithScheduler, getSchedulerStatus, type AgentIdentity } from '../scheduler';
 
 export interface AIOfficeConfig {
   modelId: string;
@@ -252,6 +255,44 @@ export class AIOfficeContextManager {
    */
   getTaskClassification(): TaskClassification | null {
     return (this as any).taskClassification || null;
+  }
+
+  /**
+   * Execute a model-generation request through the global scheduler
+   * This integrates the context manager with the concurrency control system.
+   */
+  async executeWithScheduler<T>(
+    phase: 'planning' | 'implementation' | 'qa' | 'recovery',
+    executor: (abortSignal: AbortSignal) => Promise<T>,
+    options?: { priority?: number; maxRetries?: number }
+  ): Promise<T> {
+    const taskId = this.state.taskContext.taskId;
+    const agent = phase === 'planning' || phase === 'qa' ? 'AI02' : 'AI01';
+    
+    const result = await executeWithScheduler(
+      {
+        agent,
+        taskId,
+        phase: phase.toUpperCase(),
+        description: `${phase}: ${this.config.taskRequest?.slice(0, 100) || 'task'}`,
+        priority: options?.priority ?? (phase === 'planning' ? -10 : 0),
+        maxRetries: options?.maxRetries ?? 3,
+      },
+      executor
+    );
+
+    if (!result.success) {
+      throw new Error(result.error || 'Scheduler execution failed');
+    }
+    
+    return result.data as T;
+  }
+
+  /**
+   * Get current scheduler status for UI integration
+   */
+  getSchedulerStatus() {
+    return getSchedulerStatus();
   }
 
   /**
