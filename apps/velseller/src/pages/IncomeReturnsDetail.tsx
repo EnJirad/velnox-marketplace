@@ -17,20 +17,12 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
+import {
+  bucketByPeriod, bucketLabel,
+  type IncomeReportWithGrouped, type Period,
+} from "@/lib/income-detail";
 
-type Period = "daily" | "weekly" | "monthly";
-
-interface TransactionRow {
-  order: StoreOrder; items: StoreOrderItem[]; subtotal: number; pending: boolean;
-}
-
-interface IncomeReport {
-  gross: number; grossCount: number; returns: number; returnCount: number;
-  commission: number; commissionRate: number; returnRate: number;
-  returnCoverage: number; payout: number; transactions: TransactionRow[];
-}
-
-const periodLabels: Record<Period, string> = { daily: "\u0E23\u0E32\u0E22\u0E27\u0E31\u0E19", weekly: "\u0E23\u0E32\u0E22\u0E2A\u0E31\u0E1B\u0E14\u0E32\u0E2B\u0E4C", monthly: "\u0E23\u0E32\u0E22\u0E40\u0E14\u0E37\u0E2D\u0E19" };
+const periodLabels: Record<Period, string> = { daily: "รายวัน", weekly: "รายสัปดาห์", monthly: "รายเดือน" };
 
 export default function IncomeReturnsDetail() {
   const { t } = useLanguage();
@@ -39,7 +31,7 @@ export default function IncomeReturnsDetail() {
 
   const period = (searchParams.get("period") ?? "daily") as Period;
 
-  const [report, setReport] = useState<IncomeReport | null>(null);
+  const [report, setReport] = useState<IncomeReportWithGrouped | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
@@ -47,7 +39,7 @@ export default function IncomeReturnsDetail() {
     try {
       setLoading(true);
       const r = await sellerIncome({ period });
-      setReport(r as IncomeReport);
+      setReport(r as IncomeReportWithGrouped);
       setError(false);
     } catch {
       setError(true);
@@ -59,21 +51,14 @@ export default function IncomeReturnsDetail() {
   useEffect(() => { load(); }, [load]);
 
   const periodData = useMemo(() => {
-    if (!report) return [];
-    const days = period === "daily" ? 7 : period === "weekly" ? 8 : 6;
-    return Array.from({ length: days }, (_, i) => {
-      const date = new Date();
-      if (period === "daily") date.setDate(date.getDate() - i);
-      else if (period === "weekly") date.setDate(date.getDate() - i * 7);
-      else date.setMonth(date.getMonth() - i);
-      const dayGross = report.gross / days;
-      const dayReturns = report.returns / days;
-      return {
-        label: formatIsoDate(date.toISOString()),
-        value: Math.max(0, dayGross),
-        returns: Math.max(0, dayReturns),
-      };
-    }).reverse();
+    const g = report?.grouped ?? [];
+    if (g.length === 0) return [];
+    const buckets = bucketByPeriod(g, period);
+    return buckets.slice(-15).map((b) => ({
+      label: bucketLabel(b.date, period),
+      value: Math.round(b.gross),
+      returns: Math.round(b.returns),
+    }));
   }, [report, period]);
 
   const maxVal = useMemo(() => Math.max(...periodData.map(d => d.value), 1), [periodData]);
@@ -129,10 +114,10 @@ export default function IncomeReturnsDetail() {
             {/* ── Summary KPIs ────────────────────────────────────── */}
             <section className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
               {[
-                { icon: TrendingDown, label: t("sellerDash.income.returnsDetail.rateTitle"), value: `${(report.returnRate * 100).toLocaleString("th-TH", { maximumFractionDigits: 1 })}%`, sub: t("sellerDash.income.kpiReturnsSub", { rate: `${(report.returnRate * 100).toLocaleString("th-TH", { maximumFractionDigits: 1 })}%`, count: report.returnCount }), color: "text-amber-600", bg: "bg-amber-50" },
-                { icon: AlertTriangle, label: t("sellerDash.income.returnsDetail.overThreshold"), value: report.returnRate > report.returnCoverage ? "Yes" : "No", sub: `\u0E40\u0E01\u0E13\u0E11\u0E4C ${(report.returnCoverage * 100).toLocaleString("th-TH", { maximumFractionDigits: 0 })}%`, color: report.returnRate > report.returnCoverage ? "text-red-600" : "text-emerald-600", bg: report.returnRate > report.returnCoverage ? "bg-red-50" : "bg-emerald-50" },
-                { icon: PackageCheck, label: t("sellerDash.income.kpiReturns"), value: formatBaht(report.returns), sub: t("sellerDash.income.kpiReturnsSub", { rate: `${(report.returnRate * 100).toLocaleString("th-TH", { maximumFractionDigits: 1 })}%`, count: report.returnCount }), color: "text-amber-700", bg: "bg-amber-50" },
-                { icon: PackageSearch, label: "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E15\u0E35\u0E01\u0E25\u0E31\u0E1A", value: report.returnCount.toLocaleString("th-TH"), sub: `\u0E08\u0E32\u0E01 ${report.grossCount.toLocaleString("th-TH")} \u0E0A\u0E34\u0E49\u0E19`, color: "text-slate-600", bg: "bg-slate-50" },
+                { icon: TrendingDown, label: t("sellerDash.income.returnsDetail.kpiRate"), value: `${(report.returnRate * 100).toLocaleString("th-TH", { maximumFractionDigits: 1 })}%`, sub: t("sellerDash.income.returnsDetail.kpiReturnsSub", { count: report.returnCount }), color: "text-amber-600", bg: "bg-amber-50" },
+                { icon: AlertTriangle, label: t("sellerDash.income.returnsDetail.overThreshold"), value: report.returnRate > report.returnCoverage ? t("sellerDash.income.returnsDetail.overThresholdYes") : t("sellerDash.income.returnsDetail.overThresholdNo"), sub: t("sellerDash.income.returnsDetail.kpiCoverageValue", { rate: `${(report.returnCoverage * 100).toLocaleString("th-TH", { maximumFractionDigits: 0 })}%` }), color: report.returnRate > report.returnCoverage ? "text-red-600" : "text-emerald-600", bg: report.returnRate > report.returnCoverage ? "bg-red-50" : "bg-emerald-50" },
+                { icon: PackageCheck, label: t("sellerDash.income.returnsDetail.kpiReturns"), value: formatBaht(report.returns), sub: t("sellerDash.income.returnsDetail.kpiReturnsSub", { count: report.returnCount }), color: "text-amber-700", bg: "bg-amber-50" },
+                { icon: PackageSearch, label: t("sellerDash.income.returnsDetail.colOrder"), value: report.returnCount.toLocaleString("th-TH"), sub: `\u0E08\u0E32\u0E01 ${report.grossCount.toLocaleString("th-TH")} \u0E0A\u0E34\u0E49\u0E19`, color: "text-slate-600", bg: "bg-slate-50" },
               ].map(({ icon: Icon, label, value, sub, color, bg }) => (
                 <div key={label} className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
                   <span className={`flex size-9 items-center justify-center rounded-[10px] ${bg} ${color} mb-3`}>
@@ -161,6 +146,13 @@ export default function IncomeReturnsDetail() {
                 </div>
               </div>
               <div className="mt-6">
+                {periodData.length === 0 ? (
+                  <div className="flex flex-col items-center rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-10 text-center">
+                    <PackageSearch className="size-6 text-slate-300" />
+                    <p className="mt-2 text-sm text-slate-500">{t("sellerDash.income.returnsDetail.noData")}</p>
+                    <p className="mt-1 text-xs text-slate-400">{t("sellerDash.income.returnsDetail.noDataDesc")}</p>
+                  </div>
+                ) : (
                 <div className="flex items-end gap-1.5 h-32 sm:h-40" role="img" aria-label={`${periodLabels[period]} return rate chart`}>
                   {periodData.map((d, i) => {
                     const retRate = d.value > 0 ? d.returns / d.value : 0;
@@ -176,6 +168,7 @@ export default function IncomeReturnsDetail() {
                     );
                   })}
                 </div>
+                )}
               </div>
             </section>
 

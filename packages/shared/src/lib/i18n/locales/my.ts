@@ -320,6 +320,7 @@ export const my = {
     confirm: "အတည်ပြုမည်",
     remove: "ဖယ်ရှားမည်",
     edit: "ပြင်မည်",
+    refresh: "ပြန်လည်စတင်ရန်",
     justNow: "ခုနက",
     minutesAgo: "{count} မိနစ်က",
     today: "ယနေ့",

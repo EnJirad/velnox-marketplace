@@ -24,6 +24,8 @@ import {
   computePurchaseStats,
   estimatedNextPurchase,
   reorderConfidence,
+  round2,
+  SELLER_COMMISSION_RATE,
   validateGoalInput,
 } from "../lib/seller-stats.js";
 import { fetchSellerItemsForOrders } from "./seller-orders.js";
@@ -231,6 +233,36 @@ export function setupSellerIntelligenceRoutes(app: Express): void {
 
       const report = computeIncomeReport(gross, grossCount, returns, returnCount);
 
+      // Real date-grouped breakdown, computed from the seller's own order rows.
+      // Each bucket is the sum of actual completed/returned rows whose
+      // created_at falls in that calendar day — never a synthetic split.
+      const dayBuckets = new Map<string, { date: string; gross: number; grossCount: number; returns: number; returnCount: number }>();
+      for (const r of agg.rows) {
+        if (!r.created_at) continue;
+        const day = new Date(r.created_at).toISOString().slice(0, 10);
+        const b = dayBuckets.get(day) ?? { date: day, gross: 0, grossCount: 0, returns: 0, returnCount: 0 };
+        const subtotal = parseFloat(r.seller_subtotal) || 0;
+        const itemCount = r.seller_item_count || 0;
+        if (["completed", "delivered"].includes(r.status)) {
+          b.gross += subtotal;
+          b.grossCount += itemCount;
+        } else if (["cancelled", "failed", "refunded"].includes(r.status)) {
+          b.returns += subtotal;
+          b.returnCount += itemCount;
+        }
+        dayBuckets.set(day, b);
+      }
+      const grouped = [...dayBuckets.values()]
+        .map((b) => ({
+          date: b.date,
+          gross: round2(b.gross),
+          grossCount: b.grossCount,
+          returns: round2(b.returns),
+          returnCount: b.returnCount,
+          commission: round2(b.gross * SELLER_COMMISSION_RATE),
+        }))
+        .sort((a, b) => a.date.localeCompare(b.date));
+
       // Recent transactions (seller's portion only), newest first.
       const recentIds = agg.rows
         .sort((a: any, b: any) => (b.created_at?.getTime?.() ?? 0) - (a.created_at?.getTime?.() ?? 0))
@@ -271,6 +303,7 @@ export function setupSellerIntelligenceRoutes(app: Express): void {
         success: true,
         data: {
           ...report,
+          grouped,
           transactions,
         },
       });

@@ -25,6 +25,10 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "react-router";
+import {
+  bucketByPeriod, bucketLabel,
+  type GroupedDay, type Period,
+} from "@/lib/income-detail";
 
 const pct = (value: number) => `${(value * 100).toLocaleString("th-TH", { maximumFractionDigits: 1 })}%`;
 
@@ -36,9 +40,8 @@ interface IncomeReport {
   gross: number; grossCount: number; returns: number; returnCount: number;
   commission: number; commissionRate: number; returnRate: number;
   returnCoverage: number; payout: number; transactions: TransactionRow[];
+  grouped?: GroupedDay[];
 }
-
-type Period = "daily" | "weekly" | "monthly";
 
 export default function Income() {
   const sellerIncome = useAction(api.commerce.sellerIncomeReport);
@@ -65,29 +68,25 @@ export default function Income() {
     return () => { alive = false; };
   }, [load]);
 
-  const { gross, grossCount, returns, returnCount, commission, commissionRate, returnRate, returnCoverage, payout, transactions } = report ?? { gross: 0, grossCount: 0, returns: 0, returnCount: 0, commission: 0, commissionRate: 3, returnRate: 0, returnCoverage: 0, payout: 0, transactions: [] as TransactionRow[] };
+  const { gross, grossCount, returns, returnCount, commission, commissionRate, returnRate, returnCoverage, payout, transactions, grouped } = report ?? { gross: 0, grossCount: 0, returns: 0, returnCount: 0, commission: 0, commissionRate: 3, returnRate: 0, returnCoverage: 0, payout: 0, transactions: [] as TransactionRow[], grouped: undefined as GroupedDay[] | undefined };
 
-  // Evenly-distributed period breakdown (no random values)
+  // Real per-day buckets from the backend, aggregated to the selected period.
+  // Empty until actual orders exist — never a synthetic spread.
   const periodData = useMemo(() => {
-    const points = period === "daily" ? 7 : period === "weekly" ? 4 : 6;
-    const dayGross = gross / points;
-    const dayRet = returns / points;
-    return Array.from({ length: points }, (_, i) => {
-      const now = Date.now();
-      const DAY = 86400000;
-      const date = new Date(now - (points - 1 - i) * (period === "monthly" ? 30 : period === "weekly" ? 7 : 1) * DAY);
-      const label = period === "daily" ? date.toLocaleDateString("th-TH", { weekday: "short", day: "numeric" })
-        : period === "weekly" ? `สัปดาห์ ${i + 1}` : date.toLocaleDateString("th-TH", { month: "short" });
-      return { label, value: Math.round(dayGross), returns: Math.round(dayRet) };
-    });
-  }, [period, gross, returns]);
+    const g = grouped ?? [];
+    if (g.length === 0) return [];
+    const buckets = bucketByPeriod(g, period);
+    return buckets.slice(-15).map((b) => ({
+      label: bucketLabel(b.date, period),
+      value: Math.round(b.gross),
+      returns: Math.round(b.returns),
+    }));
+  }, [grouped, period]);
 
   const maxVal = Math.max(...periodData.map(d => d.value), 1);
-  const maxRet = Math.max(...periodData.map(d => d.returns), 1);
 
   // Return overage per policy: 10% coverage
   const overageAmount = Math.max(0, returns - gross * returnCoverage);
-  const overageDays = period === "daily" ? 7 : period === "weekly" ? 4 : 1;
 
   const periodLabels: Record<Period, string> = { daily: "รายวัน", weekly: "รายสัปดาห์", monthly: "รายเดือน" };
 
@@ -167,7 +166,13 @@ export default function Income() {
               </div>
 
               <div className="mt-6">
-                {/* Bar chart — revenue */}
+                {periodData.length === 0 ? (
+                  <div className="flex flex-col items-center rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-10 text-center">
+                    <BarChart3 className="size-6 text-slate-300" />
+                    <p className="mt-2 text-sm text-slate-500">ยังไม่มีข้อมูลรายได้ราย{periodLabels[period]}</p>
+                    <p className="mt-1 text-xs text-slate-400">ข้อมูลจะปรากฏเมื่อมีคำสั่งซื้อที่เสร็จสิ้นจริง</p>
+                  </div>
+                ) : (
                 <div className="flex items-end gap-1.5 h-32 sm:h-40" role="img" aria-label={`${periodLabels[period]} revenue chart`}>
                   {periodData.map((d, i) => (
                     <div key={i} className="flex-1 flex flex-col items-center gap-1 h-full justify-end">
@@ -181,6 +186,7 @@ export default function Income() {
                     </div>
                   ))}
                 </div>
+                )}
               </div>
             </section>
 

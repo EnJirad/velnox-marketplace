@@ -17,18 +17,10 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
-
-type Period = "daily" | "weekly" | "monthly";
-
-interface TransactionRow {
-  order: StoreOrder; items: StoreOrderItem[]; subtotal: number; pending: boolean;
-}
-
-interface IncomeReport {
-  gross: number; grossCount: number; returns: number; returnCount: number;
-  commission: number; commissionRate: number; returnRate: number;
-  returnCoverage: number; payout: number; transactions: TransactionRow[];
-}
+import {
+  bucketByPeriod, bucketLabel,
+  type IncomeReportWithGrouped, type Period,
+} from "@/lib/income-detail";
 
 const periodLabels: Record<Period, string> = { daily: "รายวัน", weekly: "รายสัปดาห์", monthly: "รายเดือน" };
 
@@ -39,7 +31,7 @@ export default function IncomeCommissionDetail() {
 
   const period = (searchParams.get("period") ?? "daily") as Period;
 
-  const [report, setReport] = useState<IncomeReport | null>(null);
+  const [report, setReport] = useState<IncomeReportWithGrouped | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
@@ -47,7 +39,7 @@ export default function IncomeCommissionDetail() {
     try {
       setLoading(true);
       const r = await sellerIncome({ period });
-      setReport(r as IncomeReport);
+      setReport(r as IncomeReportWithGrouped);
       setError(false);
     } catch {
       setError(true);
@@ -59,21 +51,14 @@ export default function IncomeCommissionDetail() {
   useEffect(() => { load(); }, [load]);
 
   const periodData = useMemo(() => {
-    if (!report) return [];
-    const days = period === "daily" ? 7 : period === "weekly" ? 8 : 6;
-    return Array.from({ length: days }, (_, i) => {
-      const date = new Date();
-      if (period === "daily") date.setDate(date.getDate() - i);
-      else if (period === "weekly") date.setDate(date.getDate() - i * 7);
-      else date.setMonth(date.getMonth() - i);
-      const dayGross = report.gross / days;
-      const dayCommission = report.commission / days;
-      return {
-        label: formatIsoDate(date.toISOString()),
-        value: Math.max(0, dayGross),
-        commission: Math.max(0, dayCommission),
-      };
-    }).reverse();
+    const g = report?.grouped ?? [];
+    if (g.length === 0) return [];
+    const buckets = bucketByPeriod(g, period);
+    return buckets.slice(-15).map((b) => ({
+      label: bucketLabel(b.date, period),
+      value: Math.round(b.gross),
+      commission: Math.round(b.commission),
+    }));
   }, [report, period]);
 
   const maxVal = useMemo(() => Math.max(...periodData.map(d => d.value), 1), [periodData]);
@@ -165,7 +150,13 @@ export default function IncomeCommissionDetail() {
               </div>
 
               <div className="mt-6">
-                {/* Stacked bar chart */}
+                {periodData.length === 0 ? (
+                  <div className="flex flex-col items-center rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-10 text-center">
+                    <BadgePercent className="size-6 text-slate-300" />
+                    <p className="mt-2 text-sm text-slate-500">{t("sellerDash.income.commissionDetail.noData")}</p>
+                    <p className="mt-1 text-xs text-slate-400">{t("sellerDash.income.commissionDetail.noDataDesc")}</p>
+                  </div>
+                ) : (
                 <div className="flex items-end gap-1.5 h-32 sm:h-40" role="img" aria-label={`${periodLabels[period]} commission chart`}>
                   {periodData.map((d, i) => (
                     <div key={i} className="flex-1 flex flex-col items-center gap-1 h-full justify-end">
@@ -180,6 +171,7 @@ export default function IncomeCommissionDetail() {
                     </div>
                   ))}
                 </div>
+                )}
               </div>
             </section>
 

@@ -8,7 +8,7 @@ import { Button } from "@velnox/shared/components/ui/button";
 import { api, useAction } from "@velnox/shared/lib/api-routes";
 import {
   formatBaht, formatIsoDate, getOrderStatusMeta,
-  shortOrderNumber, type StoreOrder, type StoreOrderItem,
+  shortOrderNumber, type StoreOrderItem,
 } from "@velnox/shared/lib/commerce";
 import { useLanguage } from "@velnox/shared/lib/i18n";
 import {
@@ -17,18 +17,10 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
-
-type Period = "daily" | "weekly" | "monthly";
-
-interface TransactionRow {
-  order: StoreOrder; items: StoreOrderItem[]; subtotal: number; pending: boolean;
-}
-
-interface IncomeReport {
-  gross: number; grossCount: number; returns: number; returnCount: number;
-  commission: number; commissionRate: number; returnRate: number;
-  returnCoverage: number; payout: number; transactions: TransactionRow[];
-}
+import {
+  bucketByPeriod, bucketLabel,
+  type IncomeReportWithGrouped, type TransactionRow, type GroupedDay, type Period,
+} from "@/lib/income-detail";
 
 const periodLabels: Record<Period, string> = { daily: "รายวัน", weekly: "รายสัปดาห์", monthly: "รายเดือน" };
 
@@ -39,14 +31,14 @@ export default function IncomeGrossDetail() {
 
   const period = (searchParams.get("period") ?? "daily") as Period;
 
-  const [report, setReport] = useState<IncomeReport | null>(null);
+  const [report, setReport] = useState<IncomeReportWithGrouped | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
   const load = useCallback(async () => {
     try {
       const r = await sellerIncome();
-      setReport(r as IncomeReport);
+      setReport(r as IncomeReportWithGrouped);
       setError(false);
     } catch { setError(true); }
   }, [sellerIncome]);
@@ -57,19 +49,20 @@ export default function IncomeGrossDetail() {
     return () => { alive = false; };
   }, [load]);
 
-  const { gross, grossCount, transactions } = report ?? { gross: 0, grossCount: 0, transactions: [] as TransactionRow[] };
+  const { gross, grossCount, transactions, grouped } = report ?? { gross: 0, grossCount: 0, transactions: [] as TransactionRow[], grouped: undefined as GroupedDay[] | undefined };
 
+  // Real date-grouped buckets from the backend, aggregated into the selected
+  // period. Empty when the seller has no orders. Never a synthetic split.
   const periodData = useMemo(() => {
-    const now = Date.now();
-    const points = period === "daily" ? 7 : period === "weekly" ? 4 : 6;
-    return Array.from({ length: points }, (_, i) => {
-      const date = new Date(now - (points - 1 - i) * (period === "monthly" ? 30 : period === "weekly" ? 7 : 1) * 86400000);
-      const label = period === "daily" ? date.toLocaleDateString("th-TH", { weekday: "short", day: "numeric" })
-        : period === "weekly" ? `สัปดาห์ ${i + 1}` : date.toLocaleDateString("th-TH", { month: "short" });
-      const val = Math.round((gross / Math.max(points, 1)) * (0.7 + ((i * 37) % 10) / 10));
-      return { label, value: val };
-    });
-  }, [period, gross]);
+    const g = grouped ?? [];
+    if (g.length === 0) return [];
+    const buckets = bucketByPeriod(g, period);
+    // Keep the most recent 15 buckets so the chart stays readable.
+    return buckets.slice(-15).map((b) => ({
+      label: bucketLabel(b.date, period),
+      value: Math.round(b.gross),
+    }));
+  }, [grouped, period]);
 
   const maxVal = Math.max(...periodData.map(d => d.value), 1);
 
@@ -127,6 +120,13 @@ export default function IncomeGrossDetail() {
             {/* ── Chart ─────────────────────────────────────────── */}
             <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5">
               <h2 className="text-base font-bold text-slate-900">กราฟแนวโน้ม {periodLabels[period]}</h2>
+              {periodData.length === 0 ? (
+                <div className="mt-6 flex flex-col items-center rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-10 text-center">
+                  <PackageSearch className="size-6 text-slate-300" />
+                  <p className="mt-2 text-sm text-slate-500">ยังไม่มีข้อมูลยอดขายราย{periodLabels[period]}</p>
+                  <p className="mt-1 text-xs text-slate-400">ข้อมูลจะปรากฏเมื่อมีคำสั่งซื้อที่เสร็จสิ้นจริง</p>
+                </div>
+              ) : (
               <div className="mt-6 flex items-end gap-1.5 h-32 sm:h-40" role="img" aria-label={`${periodLabels[period]} revenue chart`}>
                 {periodData.map((d, i) => (
                   <div key={i} className="flex-1 flex flex-col items-center gap-1 h-full justify-end">
@@ -137,6 +137,7 @@ export default function IncomeGrossDetail() {
                   </div>
                 ))}
               </div>
+              )}
             </section>
 
             {/* ── Transactions ──────────────────────────────────── */}
@@ -160,7 +161,7 @@ export default function IncomeGrossDetail() {
                       </Badge>
                     </div>
 
-                    {tx.items.map((item) => (
+                    {tx.items.map((item: StoreOrderItem) => (
                       <div key={`${item.id}-${item.productName}`} className="mt-3 flex items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2">
                         <div className="min-w-0 flex-1">
                           <p className="text-sm font-medium text-slate-700 truncate">{item.productName}</p>
@@ -168,7 +169,7 @@ export default function IncomeGrossDetail() {
                         </div>
                         <div className="text-right shrink-0">
                           <p className="text-sm font-semibold tabular-nums text-slate-900">{formatBaht(item.quantity * item.unitPrice)}</p>
-                          <p className="text-[10px] text-slate-400">ค่าธรรมเนียม -{formatBaht(Math.round(item.quantity * item.unitPrice * 3 / 100))}</p>
+                          <p className="text-[10px] text-slate-400">ค่าธรรมเนียม -{formatBaht(Math.round(item.quantity * item.unitPrice * (report?.commissionRate ?? 3) / 100))}</p>
                         </div>
                       </div>
                     ))}
