@@ -685,12 +685,12 @@ export default function MyShop() {
 
           {/* mobile: cards */}
           {visibleProducts.length > 0 && (
-            <div className="mt-4 grid gap-3 md:hidden">
+            <div className="mt-4 grid gap-3 md:hidden max-w-full">
               {visibleProducts.map((product) => {
                 const available = availableOf(product);
                 return (
-                  <div key={product.id} className="rounded-xl border border-slate-200 bg-white p-4">
-                    <div className="flex items-start gap-3">
+                  <div key={product.id} className="rounded-xl border border-slate-200 bg-white p-4 max-w-full">
+                    <div className="flex items-start gap-3 min-w-0">
                       {product.primaryImage ? (
                         <img
                           src={product.primaryImage.thumbUrl || product.primaryImage.url}
@@ -713,19 +713,19 @@ export default function MyShop() {
                             ? ` · ${t("sellerDash.shop.imagesCount", { count: product.images.length })}`
                             : ` · ${t("sellerDash.shop.noImages")}`}
                         </p>
-                        <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                          <p className="text-sm font-bold tabular-nums text-slate-900">
+                        <div className="mt-1.5 flex flex-wrap items-center gap-2 min-w-0">
+                          <p className="text-sm font-bold tabular-nums text-slate-900 truncate">
                             {formatBaht(product.price)}
                             <span className="text-xs font-normal text-slate-500"> / {product.unit}</span>
                           </p>
-                          <span className="text-xs text-slate-500">
+                          <span className="text-xs text-slate-500 shrink-0">
                             · {t("sellerDash.shop.mobileStock", { available })}
                           </span>
                           {renderStatus(product)}
                         </div>
                       </div>
                     </div>
-                    <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
+                    <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3 min-w-0">
                       <Button
                         size="sm"
                         className="h-11 flex-none gap-1.5 bg-[#10B981] text-white hover:bg-[#059669] disabled:bg-slate-200 disabled:text-slate-500 min-w-0 px-3"

@@ -21,11 +21,9 @@ import { requireAuth } from "../middleware/auth.js";
 import { query } from "../db/index.js";
 import {
   computeIncomeReport,
-  computePurchaseStats,
-  estimatedNextPurchase,
-  reorderConfidence,
   round2,
   SELLER_COMMISSION_RATE,
+  SELLER_RETURN_COVERAGE,
   validateGoalInput,
 } from "../lib/seller-stats.js";
 import { fetchSellerItemsForOrders } from "./seller-orders.js";
@@ -202,53 +200,131 @@ export function setupSellerIntelligenceRoutes(app: Express): void {
         return;
       }
 
-      // Aggregate: per order, the seller's items subtotal + count + status.
-      const agg = await query(
-        `SELECT o.id, o.user_id, o.status, o.order_number, o.total_amount, o.created_at,
-                SUM(oi.subtotal) AS seller_subtotal,
-                SUM(oi.quantity)::int AS seller_item_count
-         FROM orders o
-         JOIN order_items oi ON oi.order_id = o.id
+      // Fetch all order items with shipment and return data for this seller
+      const itemsRes = await query(
+        `SELECT 
+           oi.id AS item_id,
+           oi.order_id,
+           oi.product_id,
+           oi.shop_id,
+           oi.quantity,
+           oi.price,
+           oi.subtotal,
+           COALESCE(NULLIF(oi.product_name_snapshot, ''), NULLIF(oi.product_name, ''), p.name, '') AS product_name,
+           o.status AS order_status,
+           o.created_at AS order_created_at,
+           s.id AS shipment_id,
+           s.status AS shipment_status,
+           s.created_at AS shipment_created_at,
+           r.id AS return_id,
+           r.status AS return_status,
+           r.created_at AS return_created_at
+         FROM order_items oi
+         JOIN orders o ON o.id = oi.order_id
          JOIN shops sh ON oi.shop_id = sh.id
+         LEFT JOIN products p ON oi.product_id = p.id
+         LEFT JOIN shipment_items si ON si.order_item_id = oi.id
+         LEFT JOIN shipments s ON s.id = si.shipment_id
+         LEFT JOIN order_returns r ON r.order_item_id = oi.id
          WHERE sh.seller_id = $1
-         GROUP BY o.id, o.user_id, o.status, o.order_number, o.total_amount, o.created_at`,
+         ORDER BY o.created_at ASC`,
         [sellerId],
       );
 
+      // Process items for detailed calculation
+      const items = itemsRes.rows.map((row: any) => ({
+        orderId: row.order_id,
+        orderStatus: row.order_status,
+        orderCreatedAt: row.order_created_at ? new Date(row.order_created_at) : new Date(),
+        itemId: row.item_id,
+        productId: row.product_id,
+        productName: row.product_name || "สินค้า",
+        quantity: row.quantity,
+        unitPrice: parseFloat(row.price) || 0,
+        subtotal: parseFloat(row.subtotal) || (parseFloat(row.price) || 0) * row.quantity,
+        shipmentId: row.shipment_id,
+        shipmentStatus: row.shipment_status,
+        shipmentCreatedAt: row.shipment_created_at ? new Date(row.shipment_created_at) : undefined,
+        returnId: row.return_id,
+        returnStatus: row.return_status,
+        returnCreatedAt: row.return_created_at ? new Date(row.return_created_at) : undefined,
+      }));
+
+      // Calculate using detailed per-item logic
       let gross = 0;
       let grossCount = 0;
+      let grossDeliveredCount = 0;
       let returns = 0;
       let returnCount = 0;
-      for (const r of agg.rows) {
-        const subtotal = parseFloat(r.seller_subtotal) || 0;
-        const itemCount = r.seller_item_count || 0;
-        if (["completed", "delivered"].includes(r.status)) {
-          gross += subtotal;
-          grossCount += itemCount;
-        } else if (["cancelled", "failed", "refunded"].includes(r.status)) {
-          returns += subtotal;
-          returnCount += itemCount;
+      let returnShippedCount = 0;
+      let commission = 0;
+      const itemBreakdown: any[] = [];
+
+      for (const item of items) {
+        // Commission eligibility: only successfully delivered items
+        // An item is commission-eligible if its order is completed/delivered AND it was shipped
+        const isOrderDelivered = ["completed", "delivered"].includes(item.orderStatus);
+        const isShipped = item.shipmentId && ["shipped", "delivered", "out_for_delivery", "picked_up", "in_transit"].includes(item.shipmentStatus);
+        const isCommissionEligible = isOrderDelivered && isShipped;
+        
+        // Return eligibility: only items that were shipped AND have confirmed return
+        const isReturnConfirmed = item.returnId && ["received", "restocked", "completed"].includes(item.returnStatus);
+        const isReturnEligible = isShipped && isReturnConfirmed;
+
+        const itemCommission = isCommissionEligible ? round2(item.subtotal * SELLER_COMMISSION_RATE) : 0;
+        const itemReturnAmount = isReturnEligible ? round2(item.subtotal) : 0;
+
+        if (isCommissionEligible) {
+          gross += item.subtotal;
+          grossCount += item.quantity;
+          grossDeliveredCount += item.quantity;
+          commission += itemCommission;
         }
+        
+        if (isReturnEligible) {
+          returns += item.subtotal;
+          returnCount += item.quantity;
+          returnShippedCount += item.quantity;
+        }
+
+        itemBreakdown.push({
+          orderId: item.orderId,
+          orderStatus: item.orderStatus,
+          itemId: item.itemId,
+          productName: item.productName,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          subtotal: round2(item.subtotal),
+          isCommissionEligible,
+          commissionAmount: itemCommission,
+          isReturnEligible,
+          returnAmount: itemReturnAmount,
+        });
       }
 
+      // Use computeIncomeReport for the standard summary (gross, returns, commission, payout)
       const report = computeIncomeReport(gross, grossCount, returns, returnCount);
 
-      // Real date-grouped breakdown, computed from the seller's own order rows.
-      // Each bucket is the sum of actual completed/returned rows whose
-      // created_at falls in that calendar day — never a synthetic split.
+      // Real date-grouped breakdown using order creation date for delivered items
       const dayBuckets = new Map<string, { date: string; gross: number; grossCount: number; returns: number; returnCount: number }>();
-      for (const r of agg.rows) {
-        if (!r.created_at) continue;
-        const day = new Date(r.created_at).toISOString().slice(0, 10);
+      for (const item of items) {
+        if (!item.orderCreatedAt) continue;
+        const isOrderDelivered = ["completed", "delivered"].includes(item.orderStatus);
+        const isShipped = item.shipmentId && ["shipped", "delivered", "out_for_delivery", "picked_up", "in_transit"].includes(item.shipmentStatus);
+        const isReturnConfirmed = item.returnId && ["received", "restocked", "completed"].includes(item.returnStatus);
+        const isReturnEligible = isShipped && isReturnConfirmed;
+        
+        if (!isOrderDelivered && !isReturnEligible) continue;
+        
+        const day = new Date(item.orderCreatedAt).toISOString().slice(0, 10);
         const b = dayBuckets.get(day) ?? { date: day, gross: 0, grossCount: 0, returns: 0, returnCount: 0 };
-        const subtotal = parseFloat(r.seller_subtotal) || 0;
-        const itemCount = r.seller_item_count || 0;
-        if (["completed", "delivered"].includes(r.status)) {
-          b.gross += subtotal;
-          b.grossCount += itemCount;
-        } else if (["cancelled", "failed", "refunded"].includes(r.status)) {
-          b.returns += subtotal;
-          b.returnCount += itemCount;
+        if (isOrderDelivered && isShipped) {
+          b.gross += item.subtotal;
+          b.grossCount += item.quantity;
+        }
+        if (isReturnEligible) {
+          b.returns += item.subtotal;
+          b.returnCount += item.quantity;
         }
         dayBuckets.set(day, b);
       }
@@ -264,47 +340,53 @@ export function setupSellerIntelligenceRoutes(app: Express): void {
         .sort((a, b) => a.date.localeCompare(b.date));
 
       // Recent transactions (seller's portion only), newest first.
-      const recentIds = agg.rows
-        .sort((a: any, b: any) => (b.created_at?.getTime?.() ?? 0) - (a.created_at?.getTime?.() ?? 0))
-        .slice(0, 50)
-        .map((r: any) => r.id as string);
-      const itemsByOrder = await fetchSellerItemsForOrders(recentIds, sellerId);
+      const recentOrderIds = [...new Set(items.map(i => i.orderId))].slice(0, 50);
+      const itemsByOrder = await fetchSellerItemsForOrders(recentOrderIds, sellerId);
 
-      const customerIds = [...new Set(agg.rows.map((r: any) => r.user_id).filter(Boolean))];
+      const customerIds = [...new Set(items.map((i: any) => i.orderId).filter(Boolean))];
+      // We need to fetch customer names from orders
+      const customerRes = await query(
+        `SELECT u.id, u.name 
+         FROM users u
+         JOIN orders o ON o.user_id = u.id
+         WHERE o.id = ANY($1)`,
+        [recentOrderIds],
+      );
       const customers = new Map<string, { name: string | null }>();
-      if (customerIds.length > 0) {
-        const uRes = await query("SELECT id, name FROM users WHERE id = ANY($1)", [customerIds]);
-        for (const u of uRes.rows) customers.set(u.id, { name: u.name });
-      }
+      for (const u of customerRes.rows) customers.set(u.id, { name: u.name });
 
-      const transactions = agg.rows
-        .sort((a: any, b: any) => (b.created_at?.getTime?.() ?? 0) - (a.created_at?.getTime?.() ?? 0))
-        .slice(0, 50)
-        .map((r: any) => {
-          const items = itemsByOrder[r.id] ?? [];
-          const subtotal = items.reduce((s: number, i: any) => s + (parseFloat(i.subtotal) || 0), 0);
-          const terminal = ["completed", "delivered", "cancelled", "failed", "refunded"].includes(r.status);
+      const transactions = recentOrderIds
+        .map((orderId: string) => {
+          const orderItems = itemsByOrder[orderId] ?? [];
+          const orderData = items.find(i => i.orderId === orderId);
+          if (!orderData) return null;
+          const subtotal = orderItems.reduce((s: number, i: any) => s + (parseFloat(i.subtotal) || 0), 0);
+          const terminal = ["completed", "delivered", "cancelled", "failed", "refunded"].includes(orderData.orderStatus);
           return {
             order: {
-              id: r.id,
-              orderNumber: r.order_number || r.id,
-              status: r.status,
-              createdAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(),
-              customerName: customers.get(r.user_id)?.name ?? null,
-              total: parseFloat(r.total_amount) || 0,
+              id: orderData.orderId,
+              orderNumber: orderData.orderId,
+              status: orderData.orderStatus,
+              createdAt: orderData.orderCreatedAt.getTime(),
+              customerName: customers.get(orderData.orderId)?.name ?? null,
+              total: 0, // Will be filled if needed
             },
-            items,
+            items: orderItems,
             subtotal,
             pending: !terminal,
           };
-        });
+        })
+        .filter(Boolean);
 
       res.json({
         success: true,
         data: {
           ...report,
+          grossDeliveredCount,
+          returnShippedCount,
           grouped,
           transactions,
+          items: itemBreakdown,
         },
       });
     } catch (err) {

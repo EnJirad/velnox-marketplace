@@ -47,6 +47,66 @@ export function computeIncomeReport(
   };
 }
 
+/** Input structure for detailed per-item commission/returns calculation */
+export interface ItemDetail {
+  orderId: string;
+  orderStatus: string;
+  orderCreatedAt: Date;
+  itemId: string;
+  productId: string;
+  productName: string;
+  quantity: number;
+  unitPrice: number; // selling price at time of order
+  subtotal: number; // quantity * unitPrice
+  // Shipment info
+  shipmentId?: string;
+  shipmentStatus?: string;
+  shipmentCreatedAt?: Date;
+  // Return info
+  returnId?: string;
+  returnStatus?: string;
+  returnCreatedAt?: Date;
+}
+
+/** Detailed computation result with per-item breakdown */
+export interface DetailedIncomeReport {
+  // Summary
+  gross: number;
+  grossCount: number;
+  grossDeliveredCount: number;
+  returns: number;
+  returnCount: number;
+  returnShippedCount: number;
+  commission: number;
+  commissionRate: number;
+  returnRate: number;
+  returnCoverage: number;
+  payout: number;
+  // Per-item breakdown for transparency
+  items: Array<{
+    orderId: string;
+    orderStatus: string;
+    itemId: string;
+    productName: string;
+    quantity: number;
+    unitPrice: number;
+    subtotal: number;
+    isCommissionEligible: boolean;
+    commissionAmount: number;
+    isReturnEligible: boolean;
+    returnAmount: number;
+  }>;
+  // Grouped by date for charts
+  grouped?: Array<{
+    date: string;
+    gross: number;
+    grossCount: number;
+    returns: number;
+    returnCount: number;
+    commission: number;
+  }>;
+}
+
 export function round2(value: number): number {
   return Math.round(value * 100) / 100;
 }

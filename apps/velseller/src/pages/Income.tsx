@@ -37,10 +37,23 @@ interface TransactionRow {
 }
 
 interface IncomeReport {
-  gross: number; grossCount: number; returns: number; returnCount: number;
+  gross: number; grossCount: number; grossDeliveredCount: number; returns: number; returnCount: number; returnShippedCount: number;
   commission: number; commissionRate: number; returnRate: number;
   returnCoverage: number; payout: number; transactions: TransactionRow[];
   grouped?: GroupedDay[];
+  items?: Array<{
+    orderId: string;
+    orderStatus: string;
+    itemId: string;
+    productName: string;
+    quantity: number;
+    unitPrice: number;
+    subtotal: number;
+    isCommissionEligible: boolean;
+    commissionAmount: number;
+    isReturnEligible: boolean;
+    returnAmount: number;
+  }>;
 }
 
 export default function Income() {
@@ -68,7 +81,7 @@ export default function Income() {
     return () => { alive = false; };
   }, [load]);
 
-  const { gross, grossCount, returns, returnCount, commission, commissionRate, returnRate, returnCoverage, payout, transactions, grouped } = report ?? { gross: 0, grossCount: 0, returns: 0, returnCount: 0, commission: 0, commissionRate: 3, returnRate: 0, returnCoverage: 0, payout: 0, transactions: [] as TransactionRow[], grouped: undefined as GroupedDay[] | undefined };
+  const { gross, grossCount, grossDeliveredCount, returns, returnCount, returnShippedCount, commission, commissionRate, returnRate, returnCoverage, payout, transactions, grouped, items } = report ?? { gross: 0, grossCount: 0, grossDeliveredCount: 0, returns: 0, returnCount: 0, returnShippedCount: 0, commission: 0, commissionRate: 3, returnRate: 0, returnCoverage: 0, payout: 0, transactions: [] as TransactionRow[], grouped: undefined as GroupedDay[] | undefined, items: [] };
 
   // Real per-day buckets from the backend, aggregated to the selected period.
   // Empty until actual orders exist — never a synthetic spread.
@@ -200,7 +213,10 @@ export default function Income() {
                   </span>
                   <div>
                     <h2 className="text-base font-bold text-slate-900">วิเคราะห์ยอดตีกลับ</h2>
-                    <p className="text-xs text-slate-500">อัตราตีกลับ {pct(returnRate)} · คุ้มครอง {pct(returnCoverage)}</p>
+                    <p className="text-xs text-slate-500">
+                      อัตราตีกลับ {pct(returnRate)} · คุ้มครอง {pct(returnCoverage)} ·
+                      {returnShippedCount ? ` · {returnShippedCount} รายการที่ส่งจริงและตีกลับยืนยัน` : ' · ไม่มีการตีกลับที่ส่งจริง'}
+                    </p>
                   </div>
                 </div>
                 <ChevronDown className={`size-4 text-slate-400 transition-transform ${showReturnDetail ? "rotate-180" : ""}`} />
@@ -227,32 +243,27 @@ export default function Income() {
                     </div>
                   </div>
 
-                  {/* Period breakdown */}
-                  <div className="space-y-2">
-                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{periodLabels[period]}</p>
-                    {periodData.slice(-3).reverse().map((d, i) => {
-                      const retRate = d.returns / (d.value || 1);
-                      const over = retRate > returnCoverage;
-                      return (
+                  {/* Return breakdown: only shipped + confirmed returns */}
+                  {returnShippedCount > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">รายการตีกลับที่ยืนยันแล้ว (ส่งจริง)</p>
+                      {items?.filter(i => i.isReturnEligible).slice(0, 10).map((item, i) => (
                         <div key={i} className="flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50/50 p-3">
                           <div className="min-w-0 flex-1">
-                            <p className="text-xs font-medium text-slate-700">{d.label}</p>
+                            <p className="text-xs font-medium text-slate-700 truncate">{item.productName}</p>
                             <p className="text-[11px] text-slate-400">
-                              ส่ง {formatBaht(d.value).replace("฿", "")} ตีกลับ {d.returns} ชิ้น
+                              จำนวน {item.quantity} × {formatBaht(item.unitPrice)} = {formatBaht(item.returnAmount)}
                             </p>
                           </div>
                           <div className="text-right">
-                            <p className={`text-xs font-bold tabular-nums ${over ? "text-red-600" : "text-emerald-700"}`}>
-                              {pct(retRate)}
+                            <p className="text-xs font-bold tabular-nums text-amber-700">
+                              {formatBaht(item.returnAmount)}
                             </p>
-                            {over && (
-                              <p className="text-[10px] text-red-500">เกินเกณฑ์</p>
-                            )}
                           </div>
                         </div>
-                      );
-                    })}
-                  </div>
+                      ))}
+                    </div>
+                  )}
 
                   {/* Overage summary */}
                   {returnRate > returnCoverage && (
