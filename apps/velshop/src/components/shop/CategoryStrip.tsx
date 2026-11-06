@@ -37,7 +37,7 @@ function CategoryChip({ id, label, icon: Icon, imageUrl, count, isActive, onClic
       aria-pressed={isActive}
     >
       {imageUrl ? (
-        <img src={imageUrl} alt="" className="size-4 rounded object-cover" />
+        <img src={imageUrl} alt="" className="size-4" />
       ) : Icon ? (
         <Icon className="size-3.5" />
       ) : null}
@@ -169,7 +169,7 @@ export function CategoryStrip({
                 )}
               >
                 {cat.imageUrl ? (
-                  <img src={cat.imageUrl} alt="" className="size-4 rounded object-cover" />
+                  <img src={cat.imageUrl} alt="" className="size-4" />
                 ) : cat.icon ? (
                   <cat.icon className="size-3.5" />
                 ) : null}

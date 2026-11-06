@@ -247,6 +247,9 @@ export default function CategoriesManagement() {
   };
 
   const handleIconUpload = async (file: File) => {
+    const isSvg = file.type === "image/svg+xml" || file.name.toLowerCase().endsWith(".svg");
+    const isImage = file.type.startsWith("image/");
+
     // Determine the category id: when creating a NEW category, the icon is
     // uploaded after the category row exists, so gate upload on edit-mode only
     // OR use a temp local preview for new categories.
@@ -260,14 +263,28 @@ export default function CategoriesManagement() {
 
     setIconUploading(true);
     try {
+      let contentType = isSvg ? "image/svg+xml" : "image/webp";
+      let filename = isSvg ? "icon.svg" : "icon.webp";
+      let uploadBlob: Blob;
+
+      if (isSvg) {
+        // SVG - use as-is
+        uploadBlob = file;
+      } else if (isImage) {
+        // PNG/JPG - convert to WebP
+        uploadBlob = await compressToWebP(file);
+      } else {
+        throw new Error("รองรับเฉพาะไฟล์รูปภาพ (SVG/PNG/JPG)");
+      }
+
       // Presign for category-icon purpose with categoryId
       const res = await fetch(`${apiBaseUrl}/upload/presign`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({
-          filename: "icon.webp",
-          contentType: "image/webp",
+          filename,
+          contentType,
           purpose: "category-icon",
           categoryId: editingCategory.id,
         }),
@@ -279,11 +296,10 @@ export default function CategoriesManagement() {
       const { uploadUrl, objectKey, publicUrl } = json.data;
 
       // PUT the file bytes to R2
-      const webpBlob = await compressToWebP(file);
       const putRes = await fetch(uploadUrl, {
         method: "PUT",
-        headers: { "Content-Type": "image/webp" },
-        body: webpBlob,
+        headers: { "Content-Type": contentType },
+        body: uploadBlob,
       });
       if (!putRes.ok) throw new Error("Failed to upload to R2");
 
@@ -482,60 +498,69 @@ const handleToggleActive = async (cat: CategoryNode) => {
                 />
               </div>
               <div className="grid gap-2">
-                <Label>ไอคอน (รูปภาพ)</Label>
-                <div className="flex items-center gap-2">
-                  {form.icon && (
-                    <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-[10px] bg-emerald-50 ring-1 ring-emerald-100">
-                      {form.icon.startsWith("data:") || form.icon.startsWith("http") ? (
-                        <img src={form.icon} alt="" className="size-full object-cover" />
-                      ) : (
-                        <span className="text-xs font-bold text-emerald-700">
-                          {form.icon}
-                        </span>
-                      )}
-                    </span>
-                  )}
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) void handleIconUpload(file);
-                      e.target.value = "";
-                    }}
+                <Label>ไอคอน (รูปภาพหรือลิงก์ SVG)</Label>
+                <div className="space-y-2">
+                  {/* URL Input for SVG or image link */}
+                  <Input
+                    value={form.icon}
+                    onChange={(e) => setForm((p) => ({ ...p, icon: e.target.value }))}
+                    placeholder="https://example.com/icon.svg หรือวางลิงก์รูปภาพ"
+                    className="w-full"
                   />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="gap-1.5 border-slate-200 text-slate-600"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={iconUploading}
-                  >
-                    {iconUploading ? (
-                      <Loader2 className="size-3.5 animate-spin" />
-                    ) : (
-                      <ImagePlus className="size-3.5" />
-                    )}
-                    {iconUploading ? "อัปโหลด..." : "เลือกไฟล์"}
-                  </Button>
+                  <p className="text-[11px] text-slate-400">
+                    รองรับ: ไฟล์ SVG/PNG/JPG (อัปโหลดด้านล่าง) หรือลิงก์ SVG/PNG (กรอกข้างบน) · แนะนำ 24x24px
+                  </p>
+                  {/* Preview */}
                   {form.icon && (
+                    <div className="flex items-center gap-2">
+                      <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-[10px] bg-emerald-50 ring-1 ring-emerald-100">
+                        {(form.icon.startsWith("data:") || form.icon.startsWith("http")) ? (
+                          <img src={form.icon} alt="Icon preview" className="size-full object-contain p-1" />
+                        ) : (
+                          <span className="text-xs font-bold text-emerald-700">{form.icon}</span>
+                        )}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="text-slate-400 hover:text-red-500"
+                        onClick={() => setForm((p) => ({ ...p, icon: "" }))}
+                      >
+                        ลบ
+                      </Button>
+                    </div>
+                  )}
+                  {/* File upload */}
+                  <div className="flex items-center gap-2">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*,.svg"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) void handleIconUpload(file);
+                        e.target.value = "";
+                      }}
+                    />
                     <Button
                       type="button"
-                      variant="ghost"
+                      variant="outline"
                       size="sm"
-                      className="text-slate-400 hover:text-red-500"
-                      onClick={() => setForm((p) => ({ ...p, icon: "" }))}
+                      className="gap-1.5 border-slate-200 text-slate-600"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={iconUploading}
                     >
-                      ลบ
+                      {iconUploading ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : (
+                        <ImagePlus className="size-3.5" />
+                      )}
+                      {iconUploading ? "อัปโหลด..." : "อัปโหลดไฟล์"}
                     </Button>
-                  )}
+                  </div>
                 </div>
-                <p className="text-[11px] text-slate-400">
-                  รูปสี่เหลี่ยมจัตุรัส ขนาดไม่เกิน 256px · WebP/PNG/JPG · จะแสดงในหน้าร้านค้า
-                </p>
               </div>
             </div>
             <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
