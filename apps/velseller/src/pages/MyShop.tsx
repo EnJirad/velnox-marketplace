@@ -594,7 +594,7 @@ export default function MyShop() {
                     const available = availableOf(product);
                     return (
                       <TableRow key={product.id} className="border-slate-100">
-                        <TableCell className="max-w-[22rem]">
+                        <TableCell className="max-w-[22rem] min-w-0">
                           <div className="flex items-center gap-3">
                             {product.primaryImage ? (
                               <img
@@ -609,10 +609,10 @@ export default function MyShop() {
                               </span>
                             )}
                             <div className="min-w-0">
-                              <p className="truncate text-sm font-semibold text-slate-900">
+                              <p className="truncate text-sm font-semibold text-slate-900 min-w-0">
                                 {product.name}
                               </p>
-                              <p className="truncate text-xs text-slate-500">
+                              <p className="truncate text-xs text-slate-500 min-w-0">
                                 {PRODUCT_CATEGORY_META[
                                   (product.categorySlug ?? product.category) as StoreProduct["category"]
                                 ]?.label ?? product.categorySlug ?? product.category}
@@ -620,11 +620,11 @@ export default function MyShop() {
                             </div>
                           </div>
                         </TableCell>
-                        <TableCell className="whitespace-nowrap text-sm font-semibold tabular-nums text-slate-900">
+                        <TableCell className="whitespace-nowrap text-sm font-semibold tabular-nums text-slate-900 min-w-0">
                           {formatBaht(product.price)}
                           <span className="text-xs font-normal text-slate-500"> / {product.unit}</span>
                         </TableCell>
-                        <TableCell className="whitespace-nowrap text-sm tabular-nums text-slate-600">
+                        <TableCell className="whitespace-nowrap text-sm tabular-nums text-slate-600 min-w-0">
                           {available}
                         </TableCell>
                         <TableCell>{renderStatus(product)}</TableCell>
@@ -685,11 +685,11 @@ export default function MyShop() {
 
           {/* mobile: cards */}
           {visibleProducts.length > 0 && (
-            <div className="mt-4 grid gap-3 md:hidden max-w-full">
+            <div className="mt-4 grid gap-3 md:hidden max-w-full w-full">
               {visibleProducts.map((product) => {
                 const available = availableOf(product);
                 return (
-                  <div key={product.id} className="rounded-xl border border-slate-200 bg-white p-4 max-w-full">
+                  <div key={product.id} className="rounded-xl border border-slate-200 bg-white p-4 max-w-full w-full min-w-0">
                     <div className="flex items-start gap-3 min-w-0">
                       {product.primaryImage ? (
                         <img
@@ -714,7 +714,7 @@ export default function MyShop() {
                             : ` · ${t("sellerDash.shop.noImages")}`}
                         </p>
                         <div className="mt-1.5 flex flex-wrap items-center gap-2 min-w-0">
-                          <p className="text-sm font-bold tabular-nums text-slate-900 truncate">
+                          <p className="text-sm font-bold tabular-nums text-slate-900 truncate min-w-0">
                             {formatBaht(product.price)}
                             <span className="text-xs font-normal text-slate-500"> / {product.unit}</span>
                           </p>
