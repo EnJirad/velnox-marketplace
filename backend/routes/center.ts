@@ -1291,7 +1291,14 @@ export function setupCenterRoutes(app: Express): void {
         res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "A valid name and email are required" } });
         return;
       }
-      if (!rawPassword || rawPassword.length < 8) {
+
+      // Generate password if not provided: "vel" + 8 random digits
+      const generatedPassword = rawPassword && rawPassword.length >= 8
+        ? rawPassword
+        : "vel" + Array.from({ length: 8 }, () => Math.floor(Math.random() * 10)).join("");
+
+      const finalPassword = generatedPassword;
+      if (finalPassword.length < 8) {
         res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Password must be at least 8 characters" } });
         return;
       }
@@ -1326,7 +1333,7 @@ export function setupCenterRoutes(app: Express): void {
         data: {
           email,
           name,
-          tempPassword: rawPassword, // shown once to admin, never stored in logs
+          tempPassword: generatedPassword, // shown once to admin, never stored in logs
           mustChangePassword: true,
           userId,
         },

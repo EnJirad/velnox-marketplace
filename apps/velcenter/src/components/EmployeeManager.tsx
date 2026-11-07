@@ -178,6 +178,10 @@ export default function EmployeeManager({ readOnly = false }: { readOnly?: boole
     event.preventDefault();
     setCreating(true);
     try {
+      // Generate password if not provided: "vel" + 8 random digits
+      const generatedPassword = newEmployee.password && newEmployee.password.length >= 8
+        ? newEmployee.password
+        : "vel" + Array.from({ length: 8 }, () => Math.floor(Math.random() * 10)).join("");
       const result = await createEmployeeAction({
         name: newEmployee.name.trim(),
         email: newEmployee.email.trim(),

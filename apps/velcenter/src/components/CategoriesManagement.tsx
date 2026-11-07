@@ -51,8 +51,24 @@ import {
 } from "@velnox/shared/components/ui/dialog";
 import { toast } from "sonner";
 
+// Register Lucide icons globally for icon picker preview
+if (typeof window !== "undefined") {
+  (window as any).__lucideIcons = (window as any).__lucideIcons ?? {};
+  // Register all imported icons and their PascalCase variants
+  const iconMap = {
+    Plus, Pencil, Trash2, ChevronRight, ChevronDown, Search, Package,
+    Loader2, AlertCircle, Eye, EyeOff, FolderTree, ImagePlus, X,
+  };
+  Object.entries(iconMap).forEach(([key, comp]) => {
+    (window as any).__lucideIcons[key] = comp;
+    // Also register camelCase version
+    const camel = key.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+    if (camel !== key) (window as any).__lucideIcons[camel] = comp;
+  });
+}
+
 /**
- * Lucide Icon Picker - searchable dropdown for Lucide icon names
+ * Lucide Icon Picker - searchable dropdown with icon preview.
  */
 function LucideIconPicker({
   value,
@@ -152,7 +168,24 @@ function LucideIconPicker({
               }}
               className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
             >
-              <span className="text-emerald-600">{name}</span>
+              {/* Icon preview */}
+              <span className="flex-shrink-0 w-8 flex items-center justify-center">
+                {(() => {
+                  // Try to get the icon from window.__lucideIcons (set globally)
+                  const pascal = name.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+                  const IconComp = (window as any).__lucideIcons?.[pascal];
+                  if (IconComp) {
+                    return <IconComp className="size-4 text-emerald-600" strokeWidth={2} />;
+                  }
+                  // Fallback: show abbreviated name in a colored badge
+                  return (
+                    <span className="inline-flex items-center justify-center w-8 h-8 rounded bg-emerald-100 text-[8px] font-bold text-emerald-700">
+                      {name.slice(0, 2).toUpperCase()}
+                    </span>
+                  );
+                })()}
+              </span>
+              <span className="font-medium">{name}</span>
             </button>
           ))}
           {filteredIcons.length === 0 && (
