@@ -585,6 +585,14 @@ export const th = {
     ariaInterest: "สนใจ {name}",
     ariaViewDetail: "ดูรายละเอียด {name}",
     shopVisit: "เยี่ยมชมร้าน {name}",
+    like: "ถูกใจ",
+    save: "บันทึก",
+    share: "แชร์",
+    comment: "ความคิดเห็น",
+    likeCount: "ถูกใจ {count}",
+    saveCount: "บันทึก {count}",
+    shareCount: "แชร์ {count}",
+    commentCount: "ความคิดเห็น {count}",
   },
 
   announce: {

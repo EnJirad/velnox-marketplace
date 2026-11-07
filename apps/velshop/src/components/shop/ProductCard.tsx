@@ -1,7 +1,7 @@
 import { useLanguage } from "@/lib/i18n";
 import { formatBaht, type StoreProduct } from "@velnox/shared/lib/commerce";
 
-import { Heart, ImageOff, Loader2, Star } from "lucide-react";
+import { Heart, ImageOff, Loader2, Star, Share2, Bookmark, MessageCircle } from "lucide-react";
 import { Link } from "react-router";
 
 interface ProductCardProps {
@@ -35,6 +35,11 @@ export function ProductCard({ product, onOpen: _onOpen, onAdd: _onAdd, badgeLabe
   const outOfStock = available <= 0;
   const hasReviews = (product.reviewCount ?? 0) > 0 && product.rating != null;
   const sold = product.soldCount ?? 0;
+
+  // Social counts (from product data)
+  const likeCount = (product as any).likeCount ?? 0;
+  const saveCount = (product as any).saveCount ?? 0;
+  const shareCount = (product as any).shareCount ?? 0;
 
   // Use featured variant pricing if available
   const fv = (product as any).featuredVariant;
@@ -124,6 +129,36 @@ export function ProductCard({ product, onOpen: _onOpen, onAdd: _onAdd, badgeLabe
               <span className="text-slate-400">{t("product.soldShort", { count: sold })}</span>
             )}
           </p>
+        )}
+
+        {/* Social Actions */}
+        {!compact && (
+          <div className="mt-2 flex items-center gap-1.5 pt-2 border-t border-slate-100">
+            <button
+              type="button"
+              className="flex items-center gap-1 rounded-full px-2 py-1 text-slate-400 hover:bg-slate-100 hover:text-rose-600 transition-colors text-[11px]"
+              aria-label={t("product.like")}
+            >
+              <Heart className="size-3.5" />
+              <span className="font-medium tabular-nums">{likeCount > 999 ? "999+" : likeCount}</span>
+            </button>
+            <button
+              type="button"
+              className="flex items-center gap-1 rounded-full px-2 py-1 text-slate-400 hover:bg-slate-100 hover:text-emerald-600 transition-colors text-[11px]"
+              aria-label={t("product.save")}
+            >
+              <Bookmark className="size-3.5" />
+              <span className="font-medium tabular-nums">{saveCount > 999 ? "999+" : saveCount}</span>
+            </button>
+            <button
+              type="button"
+              className="flex items-center gap-1 rounded-full px-2 py-1 text-slate-400 hover:bg-slate-100 hover:text-[#10B981] transition-colors text-[11px]"
+              aria-label={t("product.share")}
+            >
+              <Share2 className="size-3.5" />
+              <span className="font-medium tabular-nums">{shareCount > 999 ? "999+" : shareCount}</span>
+            </button>
+          </div>
         )}
 
         {/* Stock warning (non-compact only, when no reviews/sold) */}

@@ -233,7 +233,7 @@ export function useAuth() {
 
 // ─── API Fetch Helpers ──────────────────────────────────────────────────────
 
-async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
+export async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   // Strip /api prefix if present — API_BASE already includes it
   const p = path.startsWith("/api") ? path.slice(4) : path;
   const res = await fetch(`${API_BASE}${p}`, {

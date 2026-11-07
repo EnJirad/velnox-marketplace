@@ -547,6 +547,14 @@ export const en: Dict = {
     ariaInterest: "Interested in {name}",
     ariaViewDetail: "View details of {name}",
     shopVisit: "Visit {name}",
+    like: "Like",
+    save: "Save",
+    share: "Share",
+    comment: "Comment",
+    likeCount: "{count} likes",
+    saveCount: "{count} saves",
+    shareCount: "{count} shares",
+    commentCount: "{count} comments",
   },
 
   announce: {

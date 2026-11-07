@@ -410,6 +410,14 @@ export const my = {
     ariaInterest: "{name} ကို စိတ်ဝင်စားသည်",
     ariaViewDetail: "{name} ၏ အသေးစိတ်ကြည့်ရန်",
     shopVisit: "{name} ဆိုင်သို့ သွားရန်",
+    like: "ကြိုတင်",
+    save: "သိမ်းထားမည်",
+    share: "ဖန်တင်မည်",
+    comment: "နှစ်ချိန်စာပိုဒ်",
+    likeCount: "ကြိုတင်သည့်သူ {count} ဦး",
+    saveCount: "သိမ်းထားသူ {count} ဦး",
+    shareCount: "ဖန်တင်သူ {count} ဦး",
+    commentCount: "နှစ်ချိန်စာပိုဒ် {count} ခု",
   },
 
   announce: {
