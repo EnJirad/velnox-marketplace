@@ -1203,7 +1203,7 @@ export default function Center() {
             {navOpen && (
               <div className="mb-2 flex items-center justify-between px-1 md:hidden">
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-                  {t("center.nav.sections")}
+                  {t("velcenter.nav.sections")}
                 </p>
                 <button
                   type="button"
@@ -1217,7 +1217,7 @@ export default function Center() {
             )}
 <TabsList
             id="center-nav"
-            aria-label={t("center.nav.sections")}
+            aria-label={t("velcenter.nav.sections")}
             className={`flex h-auto w-full flex-col items-stretch gap-0.5 [&_[role=tab]]:w-full [&_[role=tab]]:justify-start [&_[role=tab]]:px-3 [&_[role=tab]]:min-h-11 ${
               navCollapsed
                 ? "[&_[role=tab]]:justify-center [&_[role=tab]_.nav-label]:sr-only"
@@ -1229,13 +1229,13 @@ export default function Center() {
                 them for screen readers only (R4) — each tab still has an
                 accessible name because the icon alone is not a name. */}
             <TabsTrigger value="overview" onClick={() => selectTab("overview")} className="gap-1.5 rounded-[10px]">
-              <TrendingUp className="size-4" /> <span className="nav-label">{t("center.nav.overview")}</span>
+              <TrendingUp className="size-4" /> <span className="nav-label">{t("velcenter.nav.overview")}</span>
             </TabsTrigger>
             <TabsTrigger value="chat" onClick={() => selectTab("chat")} className="gap-1.5 rounded-[10px]">
-              <MessageCircle className="size-4" /> <span className="nav-label">{t("center.nav.chat")}</span>
+              <MessageCircle className="size-4" /> <span className="nav-label">{t("velcenter.nav.chat")}</span>
             </TabsTrigger>
             <TabsTrigger value="orders" onClick={() => selectTab("orders")} className="gap-1.5 rounded-[10px]">
-              <ShoppingBag className="size-4" /> <span className="nav-label">{t("center.nav.orders")}</span>
+              <ShoppingBag className="size-4" /> <span className="nav-label">{t("velcenter.nav.orders")}</span>
               {/*
                 The badge must not depend on how many rows happen to be loaded:
                 with pagination the first page can hold zero pending orders while
@@ -1249,7 +1249,7 @@ export default function Center() {
               )}
             </TabsTrigger>
             <TabsTrigger value="intel" onClick={() => selectTab("intel")} className="gap-1.5 rounded-[10px]">
-              <BrainCircuit className="size-4" /> <span className="nav-label">{t("center.nav.intel")}</span>
+              <BrainCircuit className="size-4" /> <span className="nav-label">{t("velcenter.nav.intel")}</span>
               {dueCount > 0 && (
                 <span className="rounded-full bg-rose-500 px-1.5 text-[10px] font-bold text-white">
                   {dueCount}
@@ -1257,7 +1257,7 @@ export default function Center() {
               )}
             </TabsTrigger>
             <TabsTrigger value="products" onClick={() => selectTab("products")} className="gap-1.5 rounded-[10px]">
-              <Package className="size-4" /> <span className="nav-label">{t("center.nav.products")}</span>
+              <Package className="size-4" /> <span className="nav-label">{t("velcenter.nav.products")}</span>
               {pendingProducts > 0 && (
                 <span className="rounded-full bg-amber-500 px-1.5 text-[10px] font-bold text-white">
                   {pendingProducts}
@@ -1265,7 +1265,7 @@ export default function Center() {
               )}
             </TabsTrigger>
             <TabsTrigger value="sellers" onClick={() => selectTab("sellers")} className="gap-1.5 rounded-[10px]">
-              <Store className="size-4" /> <span className="nav-label">{t("center.nav.sellers")}</span>
+              <Store className="size-4" /> <span className="nav-label">{t("velcenter.nav.sellers")}</span>
               {pendingSellers > 0 && (
                 <span className="rounded-full bg-amber-500 px-1.5 text-[10px] font-bold text-white">
                   {pendingSellers}
@@ -1274,28 +1274,28 @@ export default function Center() {
             </TabsTrigger>
             {canSee("categories") && (
               <TabsTrigger value="categories" onClick={() => selectTab("categories")} className="gap-1.5 rounded-[10px]">
-                <Tag className="size-4" /> <span className="nav-label">{t("center.nav.categories")}</span>
+                <Tag className="size-4" /> <span className="nav-label">{t("velcenter.nav.categories")}</span>
               </TabsTrigger>
             )}
 
             {canSee("staff") && (
               <TabsTrigger value="staff" onClick={() => selectTab("staff")} className="gap-1.5 rounded-[10px]">
-                <Users className="size-4" /> <span className="nav-label">ผู้ใช้ & ลูกค้า</span>
+                <Users className="size-4" /> <span className="nav-label">{t("velcenter.nav.staff")}</span>
               </TabsTrigger>
             )}
             {canSee("audit") && (
               <TabsTrigger value="audit" onClick={() => selectTab("audit")} className="gap-1.5 rounded-[10px]">
-                <History className="size-4" /> <span className="nav-label">Audit Logs</span>
+                <History className="size-4" /> <span className="nav-label">{t("velcenter.nav.auditLog")}</span>
               </TabsTrigger>
             )}
             {canSee("incidents") && (
               <TabsTrigger value="incidents" onClick={() => selectTab("incidents")} className="gap-1.5 rounded-[10px]">
-                <AlertTriangle className="size-4" /> <span className="nav-label">ตรวจสอบยอดเงิน</span>
+                <AlertTriangle className="size-4" /> <span className="nav-label">{t("velcenter.nav.paymentIncidents")}</span>
               </TabsTrigger>
             )}
             {canSee("marketing") && (
               <TabsTrigger value="marketing" onClick={() => selectTab("marketing")} className="gap-1.5 rounded-[10px]">
-                <Megaphone className="size-4" /> <span className="nav-label">{t("marketing.navLabel")}</span>
+                <Megaphone className="size-4" /> <span className="nav-label">{t("velcenter.nav.marketing")}</span>
               </TabsTrigger>
             )}
             {canSee("settings") && (
