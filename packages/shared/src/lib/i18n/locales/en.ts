@@ -557,6 +557,27 @@ export const en: Dict = {
     commentCount: "{count} comments",
   },
 
+  carousel: {
+    prev: "Previous slide",
+    next: "Next slide",
+    goToSlide: "Go to slide {slide}",
+  },
+
+  galleryLightbox: {
+    title: "Product gallery {title}",
+    prev: "Previous image",
+    next: "Next image",
+    close: "Close gallery",
+    download: "Download image",
+    share: "Share image",
+    enterFullscreen: "Fullscreen",
+    exitFullscreen: "Exit fullscreen",
+    thumbnails: "Thumbnails",
+    showThumbnails: "Show thumbnails",
+    imageOf: "Image {current} of {total}",
+    thumbnail: "Thumbnail",
+  },
+
   announce: {
     region: "Velnox announcements",
     position: "Announcement {current} of {total}",
@@ -687,6 +708,8 @@ export const en: Dict = {
     trustSupportDesc: "Reach our team from any page",
     seoTitle: "{shop} — VelShop · Velnox marketplace",
     seoDesc: "{tagline} Browse and order real products from real sellers",
+    allProductsTitle: "All products",
+    allProductsDesc: "Browse all available products",
   },
 
   products: {

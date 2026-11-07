@@ -6,6 +6,9 @@ import {
   CardHeader,
   CardTitle,
 } from "@velnox/shared/components/ui/card";
+import { Input } from "@velnox/shared/components/ui/input";
+import { Label } from "@velnox/shared/components/ui/label";
+import { Separator } from "@velnox/shared/components/ui/separator";
 
 import { Logo } from "@velnox/shared/components/Logo";
 import { SITE_URLS, apiUrl } from "@velnox/shared/lib/sites";
@@ -17,9 +20,10 @@ import {
   recentGoogleAuthStart,
   type GoogleAuthErrorKind,
 } from "@velnox/shared/lib/auth-flow";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2, Mail, Lock, Eye, EyeOff, User, AlertCircle } from "lucide-react";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
+import { useTurnstile } from "@velnox/shared/hooks/use-turnstile";
 
 /** Which of the 3 SEPARATE apps this auth page is running inside. */
 function currentSite(): "velshop" | "velseller" | "velcenter" {
@@ -108,8 +112,14 @@ function Auth() {
     }
   };
 
-  const [signingIn, setSigningIn] = useState(false); // Google flow in progress
+  const [mode, setMode] = useState<"login" | "register">("login");
   const [error, setError] = useState<string | null>(null);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [signingIn, setSigningIn] = useState(false); // Google flow in progress
   const signingInRef = useRef(false); // double-click / double-start guard
   // Member login (VelCenter only)
   const [memberMode, setMemberMode] = useState(false);
@@ -117,6 +127,9 @@ function Auth() {
   const [memberPassword, setMemberPassword] = useState("");
   const [memberLoading, setMemberLoading] = useState(false);
   const [memberError, setMemberError] = useState<string | null>(null);
+
+  // Turnstile
+  const { token: turnstileToken, containerRef: turnstileRef, reset: resetTurnstile } = useTurnstile();
 
   // ---- Redirect after auth session is created -------------
   useEffect(() => {
@@ -192,6 +205,68 @@ function Auth() {
     }
   };
 
+  const handleEmailPasswordLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (submitting || !turnstileToken) {
+      if (!turnstileToken) setError(t("auth.turnstile.error"));
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      const res = await fetch(`${apiUrl}/auth/password-login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ email: email.trim().toLowerCase(), password, turnstileToken }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data?.error?.message || t("auth.invalidCredentials"));
+      }
+      // Session cookie is set — reload to pick up auth state
+      window.location.reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("auth.loginError"));
+      resetTurnstile();
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleEmailPasswordRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (submitting || !turnstileToken) {
+      if (!turnstileToken) setError(t("auth.turnstile.error"));
+      return;
+    }
+    if (password.length < 8) {
+      setError(t("auth.passwordTooShort"));
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      const res = await fetch(`${apiUrl}/auth/password-register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ name: name.trim(), email: email.trim().toLowerCase(), password, turnstileToken }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data?.error?.message || t("auth.registerError"));
+      }
+      // Session cookie is set — reload to pick up auth state
+      window.location.reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("auth.registerError"));
+      resetTurnstile();
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleMemberLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (memberLoading) return;
@@ -206,18 +281,18 @@ function Auth() {
       });
       const data = await res.json();
       if (!res.ok || !data.success) {
-        throw new Error(data?.error?.message || "เข้าสู่ระบบไม่สำเร็จ");
+        throw new Error(data?.error?.message || t("auth.memberLoginError"));
       }
       // Session cookie is set — reload to pick up auth state
       window.location.reload();
     } catch (err) {
-      setMemberError(err instanceof Error ? err.message : "เกิดข้อผิดพลาด");
+      setMemberError(err instanceof Error ? err.message : t("auth.memberLoginError"));
     } finally {
       setMemberLoading(false);
     }
   };
 
-  const busy = signingIn || memberLoading;
+  const busy = signingIn || memberLoading || submitting;
 
   // No login-form flash (spec §92–§97, §99–§100): while the session is still
   // loading — or right after authentication resolved but before the redirect
@@ -238,16 +313,16 @@ function Auth() {
     <div className="min-h-screen flex flex-col bg-background">
       {/* Auth Content — centered card on desktop, app-like on mobile */}
       <div className="flex-1 flex items-center justify-center px-4 py-8 pb-[max(env(safe-area-inset-bottom),2rem)]">
-        <Card className="relative w-full max-w-[400px] border shadow-md pb-0">
-          <CardHeader className="text-center">
+        <Card className="relative w-full max-w-[400px] border shadow-md">
+          <CardHeader className="text-center pb-2">
             <button
               type="button"
               onClick={handleBack}
               className="absolute left-4 top-4 flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"
-              aria-label="ย้อนกลับ"
+              aria-label={t("auth.backAria")}
             >
               <ArrowLeft className="size-4" />
-              ย้อนกลับ
+              {t("auth.back")}
             </button>
             <button
               type="button"
@@ -257,11 +332,39 @@ function Auth() {
             >
               <Logo />
             </button>
-            <CardTitle className="text-xl">{t("auth.welcome")}</CardTitle>
-            <CardDescription>{t("auth.googleDesc")}</CardDescription>
+            <CardTitle className="text-xl font-bold">{t(`auth.${mode}.title`)}</CardTitle>
+            <CardDescription className="text-slate-500">{t(`auth.${mode}.desc`)}</CardDescription>
           </CardHeader>
 
-          <CardContent className="grid gap-3">
+          <CardContent className="grid gap-4">
+            {/* Mode Switcher — Login / Register */}
+            <div className="flex gap-1 bg-slate-100 rounded-xl p-1" role="tablist" aria-label={t("auth.modeSwitcherLabel")}>
+              <button
+                role="tab"
+                aria-selected={mode === "login"}
+                onClick={() => { setMode("login"); setError(null); }}
+                className={`flex-1 py-2 px-3 text-sm font-medium rounded-lg transition-colors ${
+                  mode === "login"
+                    ? "bg-white text-slate-900 shadow-sm"
+                    : "text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                {t("auth.login.title")}
+              </button>
+              <button
+                role="tab"
+                aria-selected={mode === "register"}
+                onClick={() => { setMode("register"); setError(null); }}
+                className={`flex-1 py-2 px-3 text-sm font-medium rounded-lg transition-colors ${
+                  mode === "register"
+                    ? "bg-white text-slate-900 shadow-sm"
+                    : "text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                {t("auth.register.title")}
+              </button>
+            </div>
+
             {/* Google Sign-In — official branding, real OAuth flow */}
             <Button
               type="button"
@@ -278,38 +381,161 @@ function Auth() {
               ) : (
                 <>
                   <GoogleIcon className="h-5 w-5 shrink-0" />
-                  {t("auth.googleContinue")}
+                  {t("auth.login.google")}
                 </>
               )}
             </Button>
 
+            {/* Divider */}
+            <div className="relative my-1">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t border-slate-200" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase tracking-wider text-slate-400">
+                <span className="bg-white px-2">{t("auth.or")}</span>
+              </div>
+            </div>
+
+            {/* Email + Password Form */}
+            <form onSubmit={mode === "login" ? handleEmailPasswordLogin : handleEmailPasswordRegister} className="grid gap-4">
+              {mode === "register" && (
+                <div className="grid gap-2">
+                  <Label htmlFor="name" className="text-sm font-medium text-slate-700">
+                    {t("auth.register.name")}
+                  </Label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 size-5 text-slate-400" />
+                    <Input
+                      id="name"
+                      type="text"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder={t("auth.register.name")}
+                      className="h-12 w-full rounded-[10px] border border-slate-200 bg-white pl-10 pr-3 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#10B981]/40"
+                      autoComplete="name"
+                      required
+                      disabled={busy}
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="grid gap-2">
+                <Label htmlFor="email" className="text-sm font-medium text-slate-700">
+                  {t(`auth.${mode}.email`)}
+                </Label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 size-5 text-slate-400" />
+                  <Input
+                    id="email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder={t(`auth.${mode}.email`)}
+                    className="h-12 w-full rounded-[10px] border border-slate-200 bg-white pl-10 pr-3 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#10B981]/40"
+                    autoComplete="email"
+                    required
+                    disabled={busy}
+                  />
+                </div>
+              </div>
+
+              <div className="grid gap-2">
+                <div className="flex justify-between">
+                  <Label htmlFor="password" className="text-sm font-medium text-slate-700">
+                    {t(`auth.${mode}.password`)}
+                  </Label>
+                  {mode === "login" && (
+                    <a
+                      href="/forgot-password"
+                      className="text-sm font-medium text-[#10B981] hover:underline"
+                    >
+                      {t("auth.login.forgotPassword")}
+                    </a>
+                  )}
+                </div>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 size-5 text-slate-400" />
+                  <Input
+                    id="password"
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder={t(`auth.${mode}.password`)}
+                    className="h-12 w-full rounded-[10px] border border-slate-200 bg-white pl-10 pr-12 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#10B981]/40"
+                    autoComplete={mode === "login" ? "current-password" : "new-password"}
+                    required
+                    disabled={busy}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    aria-label={showPassword ? t("auth.hidePassword") : t("auth.showPassword")}
+                  >
+                    {showPassword ? <EyeOff className="size-5" /> : <Eye className="size-5" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Turnstile Widget */}
+              <div
+                ref={turnstileRef}
+                className="w-full"
+                data-testid="turnstile-widget"
+              />
+
+              {error && (
+                <div className="flex items-center gap-2 rounded-lg bg-red-50 p-3 text-red-600 text-sm" role="alert">
+                  <AlertCircle className="size-4 shrink-0" />
+                  <span>{error}</span>
+                </div>
+              )}
+
+              {/* Submit Button */}
+              <Button
+                type="submit"
+                className="h-12 w-full rounded-[10px] bg-[#10B981] text-white text-[15px] font-medium hover:bg-[#059669] disabled:opacity-50"
+                disabled={busy || !turnstileToken}
+              >
+                {submitting ? (
+                  <>
+                    <Loader2 className="mr-2 size-4 animate-spin" />
+                    {mode === "login" ? t("auth.login.signingIn") : t("auth.register.signingUp")}
+                  </>
+                ) : (
+                  t(`auth.${mode}.submit`)
+                )}
+              </Button>
+            </form>
+
             {/* Member login — VelCenter staff only */}
-            {currentSite() === "velcenter" && (
-              <div className="mt-3 border-t border-slate-100 pt-3">
+            {currentSite() === "velcenter" && mode === "login" && (
+              <div className="mt-2 border-t border-slate-100 pt-4">
                 {!memberMode ? (
                   <button
                     type="button"
                     onClick={() => setMemberMode(true)}
                     className="w-full text-center text-sm font-medium text-slate-500 hover:text-slate-700"
                   >
-                    เข้าสู่ระบบด้วย Member ID
+                    {t("auth.memberLoginLabel")}
                   </button>
                 ) : (
                   <form onSubmit={handleMemberLogin} className="grid gap-2.5">
-                    <input
+                    <Input
                       type="text"
                       value={memberIdentifier}
                       onChange={(e) => setMemberIdentifier(e.target.value)}
-                      placeholder="Email หรือ Member ID"
+                      placeholder={t("auth.memberIdentifierPlaceholder")}
                       className="h-10 rounded-[10px] border border-slate-200 bg-white px-3 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#10B981]/40"
                       autoComplete="username"
                       required
                     />
-                    <input
+                    <Input
                       type="password"
                       value={memberPassword}
                       onChange={(e) => setMemberPassword(e.target.value)}
-                      placeholder="รหัสผ่าน"
+                      placeholder={t("auth.memberPasswordPlaceholder")}
                       className="h-10 rounded-[10px] border border-slate-200 bg-white px-3 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#10B981]/40"
                       autoComplete="current-password"
                       required
@@ -320,14 +546,14 @@ function Auth() {
                       disabled={memberLoading || !memberIdentifier.trim() || !memberPassword}
                     >
                       {memberLoading ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
-                      เข้าสู่ระบบ
+                      {t("auth.memberSubmit")}
                     </Button>
                     <button
                       type="button"
                       onClick={() => { setMemberMode(false); setMemberError(null); }}
                       className="text-center text-xs text-slate-400 hover:text-slate-600"
                     >
-                      ยกเลิก
+                      {t("auth.cancel")}
                     </button>
                   </form>
                 )}
@@ -337,45 +563,52 @@ function Auth() {
               </div>
             )}
 
+            {/* Error */}
             {error && (
-              <p role="alert" className="text-center text-sm text-red-500">
-                {error}
-              </p>
+              <div className="flex items-center gap-2 rounded-lg bg-red-50 p-3 text-red-600 text-sm" role="alert">
+                <AlertCircle className="size-4 shrink-0" />
+                <span>{error}</span>
+              </div>
             )}
 
-            <p className="mt-1 text-center text-xs leading-5 text-muted-foreground">
-              {t("auth.terms")}
+            {/* Terms & Privacy */}
+            <p className="text-center text-xs leading-5 text-slate-400">
+              {t("auth.terms")}{" "}
+              <a href={`${SITE_URLS.corporate}/terms`} target="_blank" rel="noopener noreferrer" className="underline hover:text-[#10B981]">
+                {t("auth.termsLink")}
+              </a>
+              {" · "}
+              <a href={`${SITE_URLS.corporate}/privacy`} target="_blank" rel="noopener noreferrer" className="underline hover:text-[#10B981]">
+                {t("auth.privacyLink")}
+              </a>
+            </p>
+
+            {/* Guest / Later button */}
+            <button
+              type="button"
+              onClick={() => navigate("/")}
+              className="w-full text-center text-sm font-medium text-slate-500 hover:text-slate-700 mt-2"
+            >
+              {mode === "login" ? t("auth.login.continueAsGuest") : t("auth.register.later")}
+            </button>
+
+            {/* Switch mode link */}
+            <p className="text-center text-sm text-slate-500">
+              {mode === "login" ? t("auth.login.noAccount") : t("auth.register.already")}
+              <button
+                type="button"
+                onClick={() => { setMode(mode === "login" ? "register" : "login"); setError(null); }}
+                className="ml-1 font-medium text-[#10B981] hover:underline"
+              >
+                {mode === "login" ? t("auth.register.title") : t("auth.login.title")}
+              </button>
             </p>
           </CardContent>
 
-          <div className="rounded-b-lg border-t bg-muted px-6 py-4 text-center text-xs text-muted-foreground">
-            <div className="mb-1.5 flex items-center justify-center gap-2">
-              <a
-                href={`${SITE_URLS.corporate}/terms`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline transition-colors hover:text-primary"
-              >
-                {t("auth.termsLink")}
-              </a>
-              <span aria-hidden="true">·</span>
-              <a
-                href={`${SITE_URLS.corporate}/privacy`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline transition-colors hover:text-primary"
-              >
-                {t("auth.privacyLink")}
-              </a>
-            </div>
-            <p>
-              Secured by{" "}
-              <a
-                href="https://freebuff.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline transition-colors hover:text-primary"
-              >
+          <div className="rounded-b-lg border-t bg-muted px-6 py-3 text-center text-xs text-slate-400">
+            <p className="flex items-center justify-center gap-1">
+              {t("auth.securedBy")}{" "}
+              <a href="https://freebuff.com" target="_blank" rel="noopener noreferrer" className="underline hover:text-[#10B981]">
                 freebuff.com
               </a>
             </p>

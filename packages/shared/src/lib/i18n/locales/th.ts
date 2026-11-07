@@ -594,6 +594,26 @@ export const th = {
     shareCount: "แชร์ {count}",
     commentCount: "ความคิดเห็น {count}",
   },
+  carousel: {
+    prev: "สไลด์ก่อนหน้า",
+    next: "สไลด์ถัดไป",
+    goToSlide: "ไปที่สไลด์ {slide}",
+  },
+
+  galleryLightbox: {
+    title: "แกลเลอรีรูปสินค้า {title}",
+    prev: "รูปก่อนหน้า",
+    next: "รูปถัดไป",
+    close: "ปิดแกลเลอรี",
+    download: "ดาวน์โหลดรูป",
+    share: "แชร์รูป",
+    enterFullscreen: "เต็มจอ",
+    exitFullscreen: "ออกจากเต็มจอ",
+    thumbnails: "ภาพขนาดเล็ก",
+    showThumbnails: "แสดงภาพขนาดเล็ก",
+    imageOf: "รูปที่ {current} จาก {total}",
+    thumbnail: "ภาพขนาดเล็ก",
+  },
 
   announce: {
     region: "ประกาศจาก Velnox",
@@ -730,6 +750,8 @@ export const th = {
     trustSupportDesc: "ติดต่อทีมงานได้จากทุกหน้า",
     seoTitle: "{shop} — VelShop · ตลาดออนไลน์ Velnox",
     seoDesc: "{tagline} ค้นหาและสั่งซื้อสินค้าจากร้านค้าจริงทั่วประเทศ",
+    allProductsTitle: "สินค้าทั้งหมด",
+    allProductsDesc: "เรียกดูสินค้าที่มีจำหน่ายทั้งหมด",
   },
 
   products: {

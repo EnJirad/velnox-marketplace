@@ -420,6 +420,27 @@ export const my = {
     commentCount: "နှစ်ချိန်စာပိုဒ် {count} ခု",
   },
 
+  carousel: {
+    prev: "ယခင်စလ 보기",
+    next: "နောက်စလ 보기",
+    goToSlide: "စလ {slide} သို့သွားရန်",
+  },
+
+  galleryLightbox: {
+    title: "ကုန်ပစ္စည်းပုံဖော်များ {title}",
+    prev: "ယခင်ပုံ",
+    next: "နောက်ပုံ",
+    close: "ဖော်ပြချက်ကို ပိတ်ပါ",
+    download: "ပုံတင်ရန်",
+    share: "ပုံရေးသားရန်",
+    enterFullscreen: "ထိပ်စာမျက်နှာ",
+    exitFullscreen: "ထိပ်စာမျက်�နှာမှ ထွက်ရန်",
+    thumbnails: "ဗလာဏ်ပုံမျိုး",
+    showThumbnails: "ဗလာဏ်ပုံမျိုး ပြသမည်",
+    imageOf: "ပုံ {current} / {total}",
+    thumbnail: "ဗလာဏ်ပုံ",
+  },
+
   announce: {
     region: "Velnox အသိပေးချက်များ",
     position: "အသိပေးချက် {current} / {total}",
@@ -527,6 +548,8 @@ export const my = {
     defaultShopName: "Velnox ဆိုင်",
     seoTitle: "{shop} — VelShop · Velnox အွန်လိုင်းဈေးကွက်",
     seoDesc: "{tagline} အစစ်အမှန်ဆိုင်များမှ ကုန်ပစ္စည်းများကို ရှာဖွေဝယ်ယူပါ",
+    allProductsTitle: "ကုန်ပစ္စည်းအားလုံး",
+    allProductsDesc: "ဝယ်ယူနိုင်သော ကုန်ပစ္စည်းအားလုံးကို ကြည့်ပါ",
   },
 
   products: {

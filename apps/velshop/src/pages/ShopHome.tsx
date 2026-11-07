@@ -61,6 +61,7 @@ import { useAction } from "@velnox/shared/lib/api-routes";
 import { ProductGridSkeleton } from "@velnox/shared/components/ui/loading-skeleton";
 import { EmptyState } from "@velnox/shared/components/ui/empty-state";
 import { HorizontalRail, RailCard } from "@/components/shop/HorizontalRail";
+import { ProductGrid } from "@velnox/shared/components/shop/ProductGrid";
 
 const CATEGORY_ICONS: Partial<Record<StoreProductCategory, LucideIcon>> = {
   general: Package,
@@ -353,45 +354,29 @@ export default function ShopHome() {
         </HorizontalRail>
       )}
 
-      {/* Product Grid — 8 items + View All link */}
+      {/* Product Grid — Server-paginated via ProductGrid component */}
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6">
-        {productsData.loading ? (
-          <ProductGridSkeleton count={8} />
-        ) : products.length === 0 ? (
-          <EmptyState
-            icon={ShoppingBag}
-            title={t("home.emptyTitle")}
-            description={t("home.emptyDesc")}
-            size="lg"
-          />
-        ) : (
-          <>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-              {products.slice(0, 8).map((product) => (
-                <ProductCard
-                  key={product.id}
-                  product={product}
-                  onOpen={(p) => openProduct(p, "home-all")}
-                  onAdd={handleAdd}
-                  wishlisted={wishlistIds.has(product.id)}
-                  onWishlist={handleWishlist}
-                  wishToggling={wishTogglingId === product.id}
-                />
-              ))}
-            </div>
-            {products.length > 8 && (
-              <div className="mt-6 text-center">
-                <Link
-                  to="/products"
-                  className="inline-flex items-center gap-2 text-sm font-medium text-[#10B981] hover:text-emerald-700"
-                >
-                  {t("common.viewAll")}
-                  <TrendingUp className="size-4" />
-                </Link>
-              </div>
-            )}
-          </>
-        )}
+        <ProductGrid
+          initialProducts={products.slice(0, 8)}
+          initialMeta={{ total: products.length, hasMore: products.length > 8 }}
+          title={t("home.allProductsTitle") ?? "All products"}
+          description={t("home.allProductsDesc") ?? "Browse all available products"}
+          icon={ShoppingBag}
+          viewAllHref="/products"
+          viewAllLabel={t("common.viewAll")}
+          onProductClick={(product) => {
+            track("PRODUCT_CLICK", {
+              entityId: product.id,
+              value: product.name,
+              context: { category: product.category, source: "home-grid" },
+            });
+            openProduct(product, "home-all");
+          }}
+          onAddToCart={handleAdd}
+          wishlistIds={wishlistIds}
+          onWishlistToggle={handleWishlist}
+          wishTogglingId={wishTogglingId}
+        />
       </main>
 
     </div>

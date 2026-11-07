@@ -20,6 +20,7 @@ import {
 import { setSeo } from "@/lib/seo";
 import { ACTION_BUTTON_CLASSES } from "@/lib/productActions";
 import { useAction } from "@velnox/shared/lib/api-routes";
+import { GalleryLightbox } from "@velnox/shared/components/shop/GalleryLightbox";
 import {
   ArrowLeft,
   BadgeCheck,
@@ -261,6 +262,9 @@ export default function ShopProductDetail() {
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const [compactSheet, setCompactSheet] = useState(false);
   const addBtnRef = useRef<HTMLButtonElement>(null);
+
+  /* ── Gallery Lightbox state ─────────────────────────────────────── */
+  const [galleryOpen, setGalleryOpen] = useState(false);
 
   /* ── Recommendation state ───────────────────────────────────────── */
   const [recommended, setRecommended] = useState<StoreProduct[]>([]);
@@ -1115,12 +1119,13 @@ export default function ShopProductDetail() {
                     key={activeImage.url}
                     src={activeImage.displayUrl || activeImage.url}
                     alt={activeImage.alt || product.name}
-                    className="size-full object-contain p-1.5 sm:p-2"
+                    className="size-full object-contain p-1.5 sm:p-2 cursor-zoom-in"
                     loading="eager"
                     decoding="async"
                     draggable={false}
                     onLoad={() => setMainImageLoaded(true)}
                     onError={handleMainImageError}
+                    onClick={() => setGalleryOpen(true)}
                   />
                   {validGallery.length > 1 && (
                     <>
@@ -1824,6 +1829,20 @@ export default function ShopProductDetail() {
           </div>
         </SheetContent>
       </Sheet>
+
+      {/* Gallery Lightbox */}
+      <GalleryLightbox
+        images={validGallery.map((entry) => ({
+          src: entry.img.displayUrl || entry.img.url,
+          alt: entry.img.alt || product.name,
+          thumb: entry.img.thumbUrl || entry.img.displayUrl || entry.img.url,
+        }))}
+        initialIndex={activeValidIndex}
+        open={galleryOpen}
+        onOpenChange={setGalleryOpen}
+        productTitle={product.name}
+        productId={product.id}
+      />
 
       <ShopFooter />
     </div>
