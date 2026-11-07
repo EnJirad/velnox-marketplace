@@ -3,7 +3,7 @@ import jwt from "jsonwebtoken";
 import { query } from "../db/index.js";
 import { revokeToken } from "../middleware/auth.js";
 import { closeUserConnections } from "../realtime/index.js";
-import { verifyPassword, isPasswordHashFormat } from "../lib/password.js";
+import { verifyPassword, isPasswordHashFormat, hashPassword } from "../lib/password.js";
 import { resolvePermissions } from "../lib/permissions.js";
 import { auditClientIp, writeAuditLog } from "../lib/audit-log.js";
 import {
@@ -14,9 +14,7 @@ import {
   sanitizeReturnTo,
   validateOAuthState,
 } from "../lib/oauth-state.js";
-
-/**
- * Google OAuth authentication routes.
+import crypto from "crypto";
  *
  * Flow:
  * 1. Frontend redirects to /auth/google?returnTo=...
@@ -361,6 +359,179 @@ export function setupGoogleAuth(app: Express): void {
     } catch (err: any) {
       console.error("[auth] member-login error:", err?.message || err);
       res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Login failed" } });
+    }
+  });
+
+  });
+
+  /**
+   * POST /api/auth/password-login — Email + password login with Turnstile verification.
+   * For customer (velshop) and seller (velseller) accounts.
+   */
+  app.post("/api/auth/password-login", async (req: Request, res: Response) => {
+    try {
+      const email = typeof req.body?.email === "string" ? normalizeEmail(req.body.email) : "";
+      const password = typeof req.body?.password === "string" ? req.body.password : "";
+      const turnstileToken = typeof req.body?.turnstileToken === "string" ? req.body.turnstileToken : "";
+
+      if (!email || !password) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Email and password are required" } });
+        return;
+      }
+
+      // Verify Turnstile token (skip in bypass mode when no secret configured)
+      const turnstileSecret = process.env.TURNSTILE_SECRET_KEY;
+      if (turnstileSecret && turnstileToken) {
+        const verifyRes = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            secret: turnstileSecret,
+            response: turnstileToken,
+            remoteip: req.ip || "",
+          }),
+        });
+        const verifyData = await verifyRes.json();
+        if (!verifyData.success) {
+          console.warn("[auth] Turnstile verification failed:", verifyData["error-codes"]);
+          res.status(400).json({ success: false, error: { code: "TURNSTILE_FAILED", message: "Bot verification failed. Please try again." } });
+          return;
+        }
+      } else if (turnstileSecret && !turnstileToken) {
+        // Secret configured but no token provided
+        res.status(400).json({ success: false, error: { code: "TURNSTILE_REQUIRED", message: "Bot verification required" } });
+        return;
+      }
+      // If no secret, skip verification (dev mode)
+
+      // Find user by email
+      const userResult = await query(
+        "SELECT id, email, name, role, status, password_hash FROM users WHERE email = $1",
+        [email]
+      );
+      const userRow = userResult.rows[0] ?? null;
+
+      if (!userRow) {
+        res.status(401).json({ success: false, error: { code: "INVALID_CREDENTIALS", message: "Invalid credentials" } });
+        return;
+      }
+
+      // Must have password hash
+      if (!isPasswordHashFormat(userRow.password_hash)) {
+        res.status(401).json({ success: false, error: { code: "PASSWORD_AUTH_UNAVAILABLE", message: "This account does not have password login enabled" } });
+        return;
+      }
+
+      // Verify password
+      const valid = await verifyPassword(password, userRow.password_hash);
+      if (!valid) {
+        res.status(401).json({ success: false, error: { code: "INVALID_CREDENTIALS", message: "Invalid credentials" } });
+        return;
+      }
+
+      // Check account status
+      if (userRow.status === "suspended" || userRow.status === "banned") {
+        res.status(403).json({ success: false, error: { code: "ACCOUNT_SUSPENDED", message: "Account is suspended" } });
+        return;
+      }
+
+      // Create session
+      const sessionToken = createSessionToken(userRow.id, userRow.email);
+      setSessionCookie(res, sessionToken);
+
+      console.log(`[auth] password-login success: ${userRow.email} (${userRow.role})`);
+      res.json({
+        success: true,
+        data: {
+          userId: userRow.id,
+          email: userRow.email,
+          name: userRow.name,
+          role: userRow.role,
+        },
+      });
+    } catch (err: any) {
+      console.error("[auth] password-login error:", err?.message || err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Login failed" } });
+    }
+  });
+
+  /**
+   * POST /api/auth/password-register — Email + password registration with Turnstile verification.
+   * Creates a new customer account.
+   */
+  app.post("/api/auth/password-register", async (req: Request, res: Response) => {
+    try {
+      const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+      const email = typeof req.body?.email === "string" ? normalizeEmail(req.body.email) : "";
+      const password = typeof req.body?.password === "string" ? req.body.password : "";
+      const turnstileToken = typeof req.body?.turnstileToken === "string" ? req.body.turnstileToken : "";
+
+      if (!name || !email || !password) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Name, email and password are required" } });
+        return;
+      }
+      if (password.length < 8) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Password must be at least 8 characters" } });
+        return;
+      }
+
+      // Verify Turnstile token
+      const turnstileSecret = process.env.TURNSTILE_SECRET_KEY;
+      if (turnstileSecret && turnstileToken) {
+        const verifyRes = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            secret: turnstileSecret,
+            response: turnstileToken,
+            remoteip: req.ip || "",
+          }),
+        });
+        const verifyData = await verifyRes.json();
+        if (!verifyData.success) {
+          console.warn("[auth] Turnstile verification failed:", verifyData["error-codes"]);
+          res.status(400).json({ success: false, error: { code: "TURNSTILE_FAILED", message: "Bot verification failed. Please try again." } });
+          return;
+        }
+      } else if (turnstileSecret && !turnstileToken) {
+        res.status(400).json({ success: false, error: { code: "TURNSTILE_REQUIRED", message: "Bot verification required" } });
+        return;
+      }
+
+      // Check if email already exists
+      const existing = await query("SELECT id FROM users WHERE email = $1", [email]);
+      if (existing.rows.length > 0) {
+        res.status(409).json({ success: false, error: { code: "EMAIL_EXISTS", message: "An account with this email already exists" } });
+        return;
+      }
+
+      // Hash password and create user
+      const passwordHash = await hashPassword(password);
+      const result = await query(
+        `INSERT INTO users (email, name, password_hash, role, status, created_at, updated_at)
+         VALUES ($1, $2, $3, 'customer', 'active', NOW(), NOW())
+         RETURNING id, email, name, role`,
+        [email, name, passwordHash]
+      );
+      const user = result.rows[0];
+
+      // Create session
+      const sessionToken = createSessionToken(user.id, user.email);
+      setSessionCookie(res, sessionToken);
+
+      console.log(`[auth] password-register success: ${user.email}`);
+      res.status(201).json({
+        success: true,
+        data: {
+          userId: user.id,
+          email: user.email,
+          name: user.name,
+          role: user.role,
+        },
+      });
+    } catch (err: any) {
+      console.error("[auth] password-register error:", err?.message || err);
+      res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Registration failed" } });
     }
   });
 
