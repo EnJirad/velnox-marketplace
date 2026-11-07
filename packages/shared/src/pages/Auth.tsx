@@ -214,11 +214,15 @@ function Auth() {
     setSubmitting(true);
     setError(null);
     try {
+      const body: Record<string, string> = { email: email.trim().toLowerCase(), password };
+      if (turnstileToken !== "bypass") {
+        body.turnstileToken = turnstileToken;
+      }
       const res = await fetch(`${apiUrl}/auth/password-login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ email: email.trim().toLowerCase(), password, turnstileToken }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (!res.ok || !data.success) {
@@ -247,11 +251,15 @@ function Auth() {
     setSubmitting(true);
     setError(null);
     try {
+      const body: Record<string, string> = { name: name.trim(), email: email.trim().toLowerCase(), password };
+      if (turnstileToken !== "bypass") {
+        body.turnstileToken = turnstileToken;
+      }
       const res = await fetch(`${apiUrl}/auth/password-register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ name: name.trim(), email: email.trim().toLowerCase(), password, turnstileToken }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (!res.ok || !data.success) {
@@ -381,7 +389,7 @@ function Auth() {
               ) : (
                 <>
                   <GoogleIcon className="h-5 w-5 shrink-0" />
-                  {t("auth.login.google")}
+                  {t("auth.googleContinue")}
                 </>
               )}
             </Button>
