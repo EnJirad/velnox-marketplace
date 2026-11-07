@@ -14,6 +14,8 @@ import { api } from "@velnox/shared/lib/api-routes";
 import { apiBaseUrl } from "@velnox/shared/lib/sites";
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { onCenterEvent } from "../lib/center-events";
+import { useLanguage } from "@velnox/shared/lib/i18n";
+import React from "react";
 import {
   Plus,
   Pencil,
@@ -27,7 +29,6 @@ import {
   Eye,
   EyeOff,
   FolderTree,
-  ImagePlus,
   X,
 } from "lucide-react";
 import { Button } from "@velnox/shared/components/ui/button";
@@ -57,7 +58,7 @@ if (typeof window !== "undefined") {
   // Register all imported icons and their PascalCase variants
   const iconMap = {
     Plus, Pencil, Trash2, ChevronRight, ChevronDown, Search, Package,
-    Loader2, AlertCircle, Eye, EyeOff, FolderTree, ImagePlus, X,
+    Loader2, AlertCircle, Eye, EyeOff, FolderTree, X,
   };
   Object.entries(iconMap).forEach(([key, comp]) => {
     (window as any).__lucideIcons[key] = comp;
@@ -73,7 +74,7 @@ if (typeof window !== "undefined") {
 function LucideIconPicker({
   value,
   onChange,
-  placeholder = "พิมพ์ชื่อไอคอน...",
+  placeholder = "pim-chue-icon...",
 }: {
   value: string;
   onChange: (name: string) => void;
@@ -220,7 +221,6 @@ type CategoryForm = {
   name: string;
   slug: string;
   icon: string;
-  iconRaw: string;
   parent_id: string;
   sort_order: number;
   description: string;
@@ -231,7 +231,6 @@ const defaultForm: CategoryForm = {
   name: "",
   slug: "",
   icon: "",
-  iconRaw: "",
   parent_id: "",
   sort_order: 0,
   description: "",
@@ -239,6 +238,7 @@ const defaultForm: CategoryForm = {
 };
 
 export default function CategoriesManagement() {
+  const { t } = useLanguage();
   const [categories, setCategories] = useState<CategoryNode[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -252,8 +252,6 @@ export default function CategoriesManagement() {
   const [saving, setSaving] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<CategoryNode | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [iconUploading, setIconUploading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadCategories = useCallback(async () => {
     setLoading(true);
@@ -331,7 +329,6 @@ export default function CategoriesManagement() {
       ...defaultForm,
       parent_id: parentId ?? "",
       sort_order: 0,
-      iconRaw: "",
     });
     setDialogOpen(true);
   };
@@ -342,7 +339,6 @@ export default function CategoriesManagement() {
       name: cat.name,
       slug: cat.slug,
       icon: cat.icon ?? "",
-      iconRaw: "",
       parent_id: cat.parent_id ?? "",
       sort_order: cat.sort_order,
       description: cat.description ?? "",
@@ -353,7 +349,7 @@ export default function CategoriesManagement() {
 
   const handleSave = async () => {
     if (!form.name.trim()) {
-      toast.error("กรุณาใส่ชื่อหมวดหมู่");
+      toast.error(t("velcenter.categories.nameRequired"));
       return;
     }
     setSaving(true);
@@ -370,15 +366,15 @@ export default function CategoriesManagement() {
 
       if (editingCategory) {
         await api.centerAdmin.updateCategory({ categoryId: editingCategory.id, ...payload });
-        toast.success("อัปเดตหมวดหมู่สำเร็จ");
+        toast.success(t("velcenter.categories.updateSuccess"));
       } else {
         await api.centerAdmin.createCategory(payload);
-        toast.success("สร้างหมวดหมู่สำเร็จ");
+        toast.success(t("velcenter.categories.addSuccess"));
       }
       setDialogOpen(false);
       void loadCategories();
     } catch (err: any) {
-      toast.error(err?.message || "เกิดข้อผิดพลาด");
+      toast.error(err?.message || t("velcenter.common.error"));
     } finally {
       setSaving(false);
     }
@@ -389,126 +385,26 @@ export default function CategoriesManagement() {
     setDeleting(true);
     try {
       await api.centerAdmin.deleteCategory({ categoryId: deleteConfirm.id });
-      toast.success("ลบหมวดหมู่สำเร็จ");
+      toast.success(t("velcenter.categories.deleteSuccess"));
       setDeleteConfirm(null);
       void loadCategories();
     } catch (err: any) {
-      toast.error(err?.message || "ไม่สามารถลบหมวดหมู่ได้");
+      toast.error(err?.message || t("velcenter.categories.deleteFailed"));
     } finally {
       setDeleting(false);
     }
   };
 
-  const handleIconUpload = async (file: File) => {
-    const isSvg = file.type === "image/svg+xml" || file.name.toLowerCase().endsWith(".svg");
-    const isImage = file.type.startsWith("image/");
-
-    // Determine the category id: when creating a NEW category, the icon is
-    // uploaded after the category row exists, so gate upload on edit-mode only
-    // OR use a temp local preview for new categories.
-    if (!editingCategory) {
-      // New category — just show local preview; upload happens on save
-      const reader = new FileReader();
-      reader.onload = () => setForm((p) => ({ ...p, icon: String(reader.result) }));
-      reader.readAsDataURL(file);
-      return;
-    }
-
-    setIconUploading(true);
-    try {
-      let contentType = isSvg ? "image/svg+xml" : "image/webp";
-      let filename = isSvg ? "icon.svg" : "icon.webp";
-      let uploadBlob: Blob;
-
-      if (isSvg) {
-        // SVG - use as-is
-        uploadBlob = file;
-      } else if (isImage) {
-        // PNG/JPG - convert to WebP
-        uploadBlob = await compressToWebP(file);
-      } else {
-        throw new Error("รองรับเฉพาะไฟล์รูปภาพ (SVG/PNG/JPG)");
-      }
-
-      // Presign for category-icon purpose with categoryId
-      const res = await fetch(`${apiBaseUrl}/upload/presign`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          filename,
-          contentType,
-          purpose: "category-icon",
-          categoryId: editingCategory.id,
-        }),
-      });
-      const json = await res.json();
-      if (!res.ok || !json.success) {
-        throw new Error(json.error?.message ?? "Failed to get upload URL");
-      }
-      const { uploadUrl, objectKey, publicUrl } = json.data;
-
-      // PUT the file bytes to R2
-      const putRes = await fetch(uploadUrl, {
-        method: "PUT",
-        headers: { "Content-Type": contentType },
-        body: uploadBlob,
-      });
-      if (!putRes.ok) throw new Error("Failed to upload to R2");
-
-      // Confirm → backend writes categories.icon = publicUrl
-      const confirmRes = await fetch(`${apiBaseUrl}/upload/confirm`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ objectKey }),
-      });
-      const confirmJson = await confirmRes.json();
-      if (!confirmRes.ok || !confirmJson.success) throw new Error("Confirm failed");
-
-      setForm((p) => ({ ...p, icon: publicUrl }));
-      toast.success("อัปโหลดไอคอนสำเร็จ");
-      void loadCategories();
-    } catch (err: any) {
-      toast.error(err?.message ?? "อัปโหลดไอคอนไม่สำเร็จ");
-    } finally {
-      setIconUploading(false);
-    }
-  };
-
-  const compressToWebP = async (file: File): Promise<Blob> => {
-    try {
-      const bitmap = await createImageBitmap(file);
-      const canvas = document.createElement("canvas");
-      const MAX = 128;
-      const scale = Math.min(1, MAX / Math.max(bitmap.width, bitmap.height));
-      canvas.width = Math.round(bitmap.width * scale);
-      canvas.height = Math.round(bitmap.height * scale);
-      const ctx = canvas.getContext("2d");
-      if (!ctx) throw new Error("No canvas context");
-      ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-      const blob = await new Promise<Blob | null>((resolve) =>
-        canvas.toBlob(resolve, "image/webp", 0.9)
-      );
-      bitmap.close();
-      if (!blob) throw new Error("WebP conversion failed");
-      return blob;
-    } catch {
-      // Fallback: send original file
-      return file;
-    }
-  };
-
-const handleToggleActive = async (cat: CategoryNode) => {
+  const handleToggleActive = async (cat: CategoryNode) => {
     try {
       await api.centerAdmin.updateCategory({
         categoryId: cat.id,
         is_active: !cat.is_active,
       });
-      toast.success(cat.is_active ? "ปิดการใช้งานหมวดหมู่" : "เปิดการใช้งานหมวดหมู่");
+      toast.success(cat.is_active ? t("velcenter.categories.deactivateSuccess") : t("velcenter.categories.activateSuccess"));
       void loadCategories();
     } catch (err: any) {
-      toast.error(err?.message || "เกิดข้อผิดพลาด");
+      toast.error(err?.message || t("velcenter.common.error"));
     }
   };
 
@@ -542,7 +438,7 @@ const handleToggleActive = async (cat: CategoryNode) => {
     return (
       <div className="flex items-center justify-center py-16">
         <Loader2 className="size-6 animate-spin text-slate-400" />
-        <span className="ml-2 text-sm text-slate-500">กำลังโหลดหมวดหมู่...</span>
+        <span className="ml-2 text-sm text-slate-500">{t("velcenter.categories.loading")}</span>
       </div>
     );
   }
@@ -551,9 +447,9 @@ const handleToggleActive = async (cat: CategoryNode) => {
     return (
       <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
         <AlertCircle className="size-8 text-red-400" />
-        <p className="text-sm text-slate-600">โหลดหมวดหมู่ไม่สำเร็จ</p>
+        <p className="text-sm text-slate-600">{t("velcenter.categories.loadFailed")}</p>
         <Button variant="outline" size="sm" onClick={() => void loadCategories()}>
-          ลองใหม่
+          {t("velcenter.common.retry")}
         </Button>
       </div>
     );
@@ -566,10 +462,10 @@ const handleToggleActive = async (cat: CategoryNode) => {
         <div>
           <h2 className="flex items-center gap-2 text-lg font-bold text-slate-900">
             <FolderTree className="size-5 text-[#10B981]" />
-            จัดการหมวดหมู่สินค้า
+            {t("velcenter.categories.title")}
           </h2>
           <p className="mt-1 text-sm text-slate-500">
-            ทั้งหมด {totalCount} หมวด ({activeCount} ใช้งาน)
+            {t("velcenter.categories.totalCount", { total: totalCount, active: activeCount })}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -578,13 +474,13 @@ const handleToggleActive = async (cat: CategoryNode) => {
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="ค้นหาหมวดหมู่..."
+              placeholder={t("velcenter.categories.searchPlaceholder")}
               className="w-48 pl-9 text-sm"
             />
           </div>
           <Button onClick={() => openCreateDialog()} className="gap-1.5 bg-[#10B981] text-white hover:bg-emerald-600">
             <Plus className="size-4" />
-            เพิ่มหมวดหมู่
+            {t("velcenter.categories.addButton")}
           </Button>
         </div>
       </div>
@@ -595,12 +491,12 @@ const handleToggleActive = async (cat: CategoryNode) => {
           <div className="flex flex-col items-center justify-center gap-3 py-12 text-center">
             <Package className="size-8 text-slate-300" />
             <p className="text-sm text-slate-500">
-              {search ? "ไม่พบหมวดหมู่ที่ค้นหา" : "ยังไม่มีหมวดหมู่"}
+              {search ? t("velcenter.categories.searchEmpty") : t("velcenter.categories.empty")}
             </p>
             {!search && (
               <Button variant="outline" size="sm" onClick={() => openCreateDialog()}>
                 <Plus className="mr-1 size-3" />
-                สร้างหมวดหมู่แรก
+                {t("velcenter.categories.createFirst")}
               </Button>
             )}
           </div>
@@ -627,14 +523,14 @@ const handleToggleActive = async (cat: CategoryNode) => {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>{editingCategory ? "แก้ไขหมวดหมู่" : "สร้างหมวดหมู่ใหม่"}</DialogTitle>
+            <DialogTitle>{editingCategory ? t("velcenter.categories.editTitle") : t("velcenter.categories.createTitle")}</DialogTitle>
             <DialogDescription>
-              {editingCategory ? `แก้ไข "${editingCategory.name}"` : "เพิ่มหมวดหมู่ย่อยหรือหมวดหมู่หลัก"}
+              {editingCategory ? t("velcenter.categories.editDesc", { name: editingCategory.name }) : t("velcenter.categories.createDesc")}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="grid gap-2">
-              <Label>ชื่อหมวดหมู่ *</Label>
+              <Label>{t("velcenter.categories.formNameRequired")}</Label>
               <Input
                 value={form.name}
                 onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
@@ -664,105 +560,28 @@ const handleToggleActive = async (cat: CategoryNode) => {
                     ใช้ชื่อไอคอน Lucide (เช่น camera, store, package, shopping-bag, truck, heart, star)
                     · ดูชื่อทั้งหมดที่ <a href="https://lucide.dev/icons/" target="_blank" rel="noopener" className="text-emerald-600 hover:underline">lucide.dev/icons</a>
                   </p>
-                </div>
 
-                {/* Fallback: Raw SVG / Image URL / Upload */}
-                <div className="border-t pt-3 space-y-2">
-                  <p className="text-[11px] text-slate-400">หรือใช้วิธีอื่น:</p>
-                  
-                  <div className="relative">
-                    <Input
-                      value={form.iconRaw}
-                      onChange={(e) => setForm((p) => ({ ...p, iconRaw: e.target.value, icon: e.target.value }))}
-                      placeholder="วางโค้ด SVG (<svg...>) หรือลิงก์รูปภาพ (https://...)"
-                      className="w-full"
-                    />
-                    {(form.iconRaw || form.icon) && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500"
-                        onClick={() => setForm((p) => ({ ...p, iconRaw: "", icon: "" }))}
-                      >
-                        <X className="size-4" />
-                      </Button>
-                    )}
-                  </div>
-                  <p className="text-[11px] text-slate-400">
-                    รองรับ: โค้ด SVG ตรงๆ · ลิงก์รูปภาพ (SVG/PNG/JPG) · ไฟล์อัปโหลดด้านล่าง · แนะนำ 24x24px
-                  </p>
-
-                  {/* Preview */}
-                  {(form.iconRaw || form.icon) && (
-                    <div className="flex items-center gap-2">
-                      <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-[10px] bg-emerald-50 ring-1 ring-emerald-100">
-                        {(() => {
-                          const icon = form.iconRaw || form.icon;
-                          // Raw SVG code
-                          if (icon.trim().startsWith("<svg")) {
+                  {/* Icon preview when selected */}
+                  {form.icon && (
+                    <div className="mt-2 p-2 rounded-[10px] border border-emerald-200 bg-emerald-50">
+                      <p className="text-[11px] text-emerald-700 font-medium">ไอคอนที่เลือก:</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-[8px] border border-emerald-200 bg-white">
+                          {(() => {
+                            const pascal = form.icon.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+                            const IconComp = (window as any).__lucideIcons?.[pascal];
+                            if (IconComp) return <IconComp className="size-6 text-emerald-600" strokeWidth={2} />;
                             return (
-                              <div
-                                className="size-full"
-                                dangerouslySetInnerHTML={{
-                                  __html: icon
-                                    .replace(/width="\d+"/, 'width="20"')
-                                    .replace(/height="\d+"/, 'height="20"')
-                                    .replace(/class="[^"]*"/g, '')
-                                    .replace(/stroke="currentColor"/g, 'stroke="#10B981"'),
-                                }}
-                              />
+                              <span className="inline-flex items-center justify-center w-10 h-10 rounded-[8px] bg-emerald-100 text-[10px] font-bold text-emerald-700">
+                                {form.icon.slice(0, 2).toUpperCase()}
+                              </span>
                             );
-                          }
-                          // Data URL or HTTP URL
-                          if (icon.startsWith("data:") || icon.startsWith("http")) {
-                            return <img src={icon} alt="Icon preview" className="size-full object-contain p-1" />;
-                          }
-                          // Lucide icon name - render via lucide-react
-                          return <span className="text-xs font-bold text-emerald-700">{icon}</span>;
-                        })()}
-                      </span>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="text-slate-400 hover:text-red-500"
-                        onClick={() => setForm((p) => ({ ...p, iconRaw: "", icon: "" }))}
-                      >
-                        ลบ
-                      </Button>
+                          })()}
+                        </span>
+                        <span className="text-sm font-medium text-emerald-800">{form.icon}</span>
+                      </div>
                     </div>
                   )}
-
-                  {/* File upload */}
-                  <div className="flex items-center gap-2">
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/*,.svg"
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) void handleIconUpload(file);
-                        e.target.value = "";
-                      }}
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="gap-1.5 border-slate-200 text-slate-600"
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={iconUploading}
-                    >
-                      {iconUploading ? (
-                        <Loader2 className="size-3.5 animate-spin" />
-                      ) : (
-                        <ImagePlus className="size-3.5" />
-                      )}
-                      {iconUploading ? "อัปโหลด..." : "อัปโหลดไฟล์"}
-                    </Button>
-                  </div>
                 </div>
               </div>
             </div>
@@ -911,8 +730,26 @@ function CategoryRow({
         {/* Name + slug */}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
-            {category.icon && (category.icon.startsWith("http") || category.icon.startsWith("data:")) ? (
-              <img src={category.icon} alt="" className="size-5 rounded object-cover" />
+            {category.icon ? (
+              category.icon.startsWith("http") || category.icon.startsWith("data:") ? (
+                <img src={category.icon} alt="" className="size-5 rounded object-cover" />
+              ) : (
+                <span className="size-5 flex items-center justify-center text-emerald-600">
+                  {(() => {
+                    const pascal = category.icon!.replace(
+                      /-([a-z])/g,
+                      (_, c) => c.toUpperCase()
+                    );
+                    const IconComp = (window as any).__lucideIcons?.[pascal];
+                    if (IconComp) return <IconComp className="size-4" strokeWidth={2} />;
+                    return (
+                      <span className="inline-flex items-center justify-center w-5 h-5 rounded bg-emerald-100 text-[8px] font-bold text-emerald-700">
+                        {category.icon!.slice(0, 2).toUpperCase()}
+                      </span>
+                    );
+                  })()}
+                </span>
+              )
             ) : Number(category.sort_order) > 0 && (
               <span className="size-5" />
             )}

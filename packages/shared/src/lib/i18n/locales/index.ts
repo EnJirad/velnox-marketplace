@@ -1236,6 +1236,67 @@ const myCenterUi = {
 };
 
 /**
+ * Burmese patch for VelCenter category management (and other new keys).
+ * Added here rather than editing my.ts (fragile file, parity rule).
+ */
+const myVelcenterPatch = {
+  // Category management keys
+  categoriesTitle: "အမျိုးအစားများ စီမံ",
+  categoriesSubtitle: "ကုန်ပစ္စည်း အမျိုးအစား ထည့်ရန် ပြင်ဆင်ရန် လျှောက်ရန် နှင့် bốမှန် ရန်",
+  categoriesAddButton: "အမျိုးအစား ထည့်ရန်",
+  categoriesSearchPlaceholder: "အမျိုးအစား ရှာဖွေရန်...",
+  categoriesTableName: "အမျိုး�အစား အမည်",
+  categoriesTableSlug: "Slug",
+  categoriesTableParent: "အမျိုး�အစား အမေ",
+  categoriesTableIcon: "ไอကွန်း",
+  categoriesTableSort: "ဖော်ပြမှု ဘဏ္ဍန်း",
+  categoriesTableActions: "လုပ်ဆောင်မှု",
+  categoriesActionEdit: "ပြင်ဆင်ရန်",
+  categoriesActionDelete: "ဖျက်ရန်",
+  categoriesActionReorder: "ဖော်ပြမှု ပြောင်းရန်",
+  categoriesFormName: "အမျိုးအစား အမည်",
+  categoriesFormSlug: "Slug (URL)",
+  categoriesFormParent: "အမျိုး�ာအစား အမေ",
+  categoriesFormIcon: "ไอကွန်း",
+  categoriesFormSortOrder: "ဖော်ပြမှု ဘဏ္ဍန်း",
+  categoriesFormActive: "ဖွင့်သော့သား",
+  categoriesFormNameRequired: "အမျိုးအစား အမည် *",
+  categoriesFormNamePlaceholder: "ဥပမာ အိလက်ထရောနစ်များ",
+  categoriesFormDescription: "အကြောင်းရင်းမြတ်ချက်",
+  categoriesFormDescriptionPlaceholder: "အမျိုးအစား အကြောင်းရင်းမြတ်ချက် (အနည်းငယ် ထည့်နည်းပါ)",
+  categoriesIconPlaceholder: "ไอကွန်း အမည်အကωγ်ထည့်ပါ (ဥပမာ camera, store, package...)",
+  iconHint: "Lucide နှင့် သတ်မှတ်ထားသော ဂဏန်းများ အမည်များဖြင့် ရွေးချယ်ပါ (ဥပမာ camera, store, package, shopping-bag, truck, heart, star) · အားလုံးကို <a href=\"https://lucide.dev/icons/\" target=\"_blank\" rel=\"noopener\" className=\"text-emerald-600 hover:underline\">lucide.dev/icons</a> တွင် ကြည့်နိုင်ပါသည်",
+  iconSelected: "ရွေးချယ်ထားသော ဂဏန်းး:",
+  formParent: "အမျိုးအစား အမေ",
+  formParentRoot: "မရှိပါ (အမျိုးအစား အခြေခံ)",
+  formSortOrder: "ဖော်ပြမှု ဘဏ္ဍန်း",
+  iconNotFound: "\"{search}\" ဂဏန်းး မတွေ့ပါ",
+  searchEmpty: "ရှာဖွေမှုနှင့်အမှန်တင်မဟုတ်သော အမျိုးအစား မတွေ့ပါ",
+  empty: "အမျိုးအစား မရှိပါ",
+  createFirst: "အမျိုး�ာအစား ပထမဆုံးဆိုပြီး ထည့်ပါ",
+  editTitle: "အမျိုးအစား ပြင်ဆင်ရန်",
+  createTitle: "အမျိုးအစား အသစ်ဖန်တီးရန်",
+  editDesc: "\"{name}\" ကို ပြင်ဆင်နေသည်",
+  createDesc: "အမျိုးအစား ခွဲ သို့မဟုတ် အမျိုးအစား အခြေခံ ထည့်ရန်",
+  nameRequired: "ကျေးဇူးပြု၍ အမျိုးအစား အမည် ထည့်ပါ",
+  addSuccess: "အမျိုးအစား ထည့်ပြီးပါပြီ",
+  updateSuccess: "အမျိုးအစား အောင်မြင်စွာ ပြင်ဆင်ပြီးပါပြီ",
+  deleteSuccess: "အမျိုးအစား အောင်မြင်စွာ ဖျက်ပြီးပါပြီ",
+  deleteFailed: "အမျိုး�ာအစား ဖျက်ရန် မရပါ",
+  deleteConfirmTitle: "ဖျက်ခြင်းအတည်ပြုခြင်း",
+  deleteConfirm: "\"{name}\" အမျိုး�ာအစားကို ဖျက်မည်ဟု သေချာပါသလား? ဤလုပ်ဆောင်မှု ဖျက်ပြီး ပြန်လည်လုပ်ရန်မရပါ",
+  imageOnly: "ပုံဖိုင်များ (SVG/PNG/JPG) တосред်ပဲ လက်ခံပါသည်",
+  uploadSuccess: "ပုံဖိုင်အောင်မြင်စွာ လှမ်းထားပြီး",
+  uploadFailed: "ပုံဖိုင်လှမ်းထားရန် မအောင်မြင်ပါ",
+  activateSuccess: "အမျိုးအစား ဖွင့်သော့သားထားပြီး",
+  deactivateSuccess: "အမျိုး�ာအစား ပိတ်ထားပြီး",
+  totalCount: "စုစုပေါင်း {total} အမျိုးအစား ({active} ဖွင့်သော့သား)",
+  addChild: "အမျိုး�ာအစား ခွဲ ထည့်ရန်",
+  activate: "ဖွင့်သော့သား",
+  deactivate: "ပိတ်ထားသည်",
+} satisfies Partial<Dict["velcenter"]>;
+
+/**
  * Seller performance (Phase 1) — page-level copy for the seller dashboard.
  * Authored as a patch namespace so the large dictionaries are not edited; the
  * three languages carry the identical key set (guard: bun run i18n:check).
@@ -1814,6 +1875,7 @@ export const translations: Record<Language, Dict> = {
     shopDetail: { ...myBase.shopDetail, ...myShopPatch.shopDetail },
     productDetail: { ...myBase.productDetail, ...myShopPatch.productDetail, ...myChatPatch.productDetail },
     center: myCenterUi,
+    velcenter: { ...myBase.velcenter, ...myVelcenterPatch },
     checkout: { ...myBase.checkout, ...myPaymentUx, ...myShippingUx },
     cart: { ...myBase.cart, ...myCartWholesaleUx },
     chat: { ...myChatPatch.chat, ...myChatUi },
