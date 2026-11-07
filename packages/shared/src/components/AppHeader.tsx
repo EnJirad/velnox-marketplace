@@ -38,7 +38,7 @@ export function AppHeader() {
           <button type="button" onClick={() => navigate("/")} aria-label="Velnox">
             <Logo />
           </button>
-          <nav className="hidden items-center gap-1 lg:flex">
+          <nav className="hidden items-center gap-1 md:flex">
             {NAV_ITEMS.map((item) => {
               const active = location.pathname.startsWith(item.to);
               return (
@@ -71,7 +71,7 @@ export function AppHeader() {
             to="/seller/chat"
             aria-label={unread != null ? `แชท (${unread})` : "แชท"}
             aria-current={location.pathname.startsWith("/seller/chat") ? "page" : undefined}
-            className={`relative flex size-10 items-center justify-center rounded-[10px] transition-colors lg:hidden ${
+            className={`relative flex size-10 items-center justify-center rounded-[10px] transition-colors md:hidden ${
               location.pathname.startsWith("/seller/chat")
                 ? "bg-slate-100 text-slate-900"
                 : "text-slate-600 hover:bg-slate-100"

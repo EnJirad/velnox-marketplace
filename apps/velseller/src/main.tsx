@@ -51,7 +51,7 @@ function SellerTabBar() {
   // The seller header nav only appears at lg, so the tab bar must stay through
   // tablet widths (768–1023 px) — hiding it at md left a band with no
   // navigation at all. It therefore hides at lg, not md.
-  return <MobileTabBar items={SELLER_TABS} until="lg" />;
+  return <MobileTabBar items={SELLER_TABS} until="md" />;
 }
 
 initMonitoring();
