@@ -15,6 +15,9 @@ import {
   validateOAuthState,
 } from "../lib/oauth-state.js";
 import crypto from "crypto";
+
+/**
+ * Google OAuth authentication routes.
  *
  * Flow:
  * 1. Frontend redirects to /auth/google?returnTo=...
@@ -362,7 +365,6 @@ export function setupGoogleAuth(app: Express): void {
     }
   });
 
-  });
 
   /**
    * POST /api/auth/password-login — Email + password login with Turnstile verification.
