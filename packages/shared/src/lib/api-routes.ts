@@ -195,6 +195,12 @@ const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
   "api.customer.shippingQuoteAction": (a) => apiPost("/api/customer/shipping/quote", a),
   "api.customer.myOrders": (a) => apiGet(`/api/customer/orders?limit=${a?.limit ?? 50}`),
   "api.customer.orderDetail": (a) => apiGet(`/api/customer/orders/${a.orderId}`),
+  // Multi-carrier tracking (customer)
+  "api.customer.orderTracking": (a) => apiGet(`/api/customer/orders/${a.orderId}/tracking`),
+  "api.customer.orderTrackingRefresh": (a) => apiPost(`/api/customer/orders/${a.orderId}/tracking/refresh`),
+  // Multi-carrier tracking (seller)
+  "api.seller.orderTracking": (a) => apiGet(`/api/seller/orders/${a.id}/tracking`),
+  "api.seller.orderTrackingRefresh": (a) => apiPost(`/api/seller/orders/${a.id}/tracking/refresh`),
   "api.customer.myWishlist": () => apiGet("/api/customer/wishlist"),
   "api.customer.toggleWishlistAction": (a) => apiPost("/api/customer/wishlist/toggle", a),
   "api.customer.reviewProduct": (a) => apiPost(`/api/products/${a.productId}/reviews`, a),
@@ -463,6 +469,20 @@ const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
   "api.admin.sellerVerificationEvidence": (a) => apiGetFresh(`/api/admin/verifications/seller/${a.verificationId}/evidence`),
   "api.admin.sellerVerificationHistory": (a) => apiGetFresh(`/api/admin/verifications/seller/${a.verificationId}/history`),
   "api.admin.sellerApplication": (a) => apiGetFresh(`/api/admin/sellers/${a.sellerId}/application`),
+  // Multi-carrier tracking (admin)
+  "api.tracking.adminSearch": (a) => {
+    const p = new URLSearchParams();
+    if (a?.q) p.set("q", a.q);
+    if (a?.carrier) p.set("carrier", a.carrier);
+    if (a?.status) p.set("status", a.status);
+    if (a?.limit) p.set("limit", String(a.limit));
+    if (a?.offset) p.set("offset", String(a.offset));
+    const qs = p.toString();
+    return apiGet(`/api/admin/tracking/search${qs ? `?${qs}` : ""}`);
+  },
+  "api.tracking.adminHealth": () => apiGetFresh("/api/admin/tracking/health"),
+  "api.tracking.adminDetail": (a) => apiGet(`/api/admin/tracking/shipments/${a.shipmentId}`),
+  "api.tracking.adminRefresh": (a) => apiPost(`/api/admin/orders/${a.orderId}/tracking/refresh`),
   "api.public.shopVerification": (a) => apiGet(`/api/shops/${a.shopId}/verification`),
   // Categories (localized)
   "api.customer.categoriesLocalized": (a) => apiGet(`/api/categories?lang=${a?.lang ?? "th"}`),

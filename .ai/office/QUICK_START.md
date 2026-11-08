@@ -95,6 +95,7 @@ DB:       run db/run-sqleditor.sql once in Neon SQL Editor
 | Database / schema | `.ai/context/database.md` |
 | API / backend / authz | `.ai/context/backend.md` |
 | Realtime / WebSocket | `.ai/context/realtime.md` |
+| Tracking / multi-carrier shipment | `.ai/context/tracking.md` + `.ai/context/checkout.md` |
 | Styling / theme / mobile | `.ai/context/frontend.md` |
 
 ## Completion Checklist

@@ -327,15 +327,20 @@ export interface StoreOrder {
   shipments?: Array<{
     id: string;
     carrier: string;
+    carrierCode?: string | null;
     trackingNumber: string | null;
     status: string;
     estimatedDeliveryDate: string | null;
+    lastCheckedAt?: string | null;
+    lastError?: string | null;
+    trackingConfirmed?: boolean;
     events?: Array<{
       id: string;
       status: string;
       description: string | null;
       location: string | null;
       occurredAt: string;
+      originalStatus?: string | null;
     }>;
   }>;
   payments?: Array<{ id: string; method: string; status: string; amount: number }>;

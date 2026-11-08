@@ -2733,6 +2733,22 @@ ALTER TABLE shipments ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ;
 
 ALTER TABLE shipments ADD COLUMN IF NOT EXISTS correlation_id TEXT;
 
+-- Multi-carrier tracking integration (Phase "tracking"): columns the carrier
+-- sync writes. All additive — see db/schema.sql for the rationale.
+ALTER TABLE public.shipments ADD COLUMN IF NOT EXISTS carrier_code TEXT;
+
+ALTER TABLE public.shipments ADD COLUMN IF NOT EXISTS original_status TEXT;
+
+ALTER TABLE public.shipments ADD COLUMN IF NOT EXISTS last_checked_at TIMESTAMPTZ;
+
+ALTER TABLE public.shipments ADD COLUMN IF NOT EXISTS last_error TEXT;
+
+ALTER TABLE public.shipments ADD COLUMN IF NOT EXISTS last_error_at TIMESTAMPTZ;
+
+ALTER TABLE public.shipments ADD COLUMN IF NOT EXISTS tracking_confirmed BOOLEAN NOT NULL DEFAULT FALSE;
+
+ALTER TABLE public.tracking_events ADD COLUMN IF NOT EXISTS carrier_status TEXT;
+
 
 ALTER TABLE orders ALTER COLUMN order_state SET DEFAULT 'pending';
 
@@ -3085,6 +3101,9 @@ BEGIN
   END IF;
 END $$;
 CREATE INDEX IF NOT EXISTS idx_tracking_events_shipment ON public.tracking_events (shipment_id, occurred_at);
+CREATE INDEX IF NOT EXISTS idx_shipments_carrier_code ON public.shipments (carrier_code);
+CREATE INDEX IF NOT EXISTS idx_shipments_tracking_number ON public.shipments (tracking_number);
+CREATE INDEX IF NOT EXISTS idx_shipments_last_checked_at ON public.shipments (last_checked_at);
 CREATE INDEX IF NOT EXISTS idx_payments_order ON public.payments (order_id);
 CREATE INDEX IF NOT EXISTS idx_payments_provider_session ON public.payments (provider_checkout_session_id);
 CREATE INDEX IF NOT EXISTS idx_payments_provider_payment ON public.payments (provider_payment_id);

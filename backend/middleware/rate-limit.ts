@@ -194,6 +194,14 @@ const RULES: Array<{ match: (req: Request) => boolean; limiter: RequestHandler }
   { match: (req) => (req.method === "POST" || req.method === "PUT" || req.method === "DELETE") && /^\/api\/customer\/(cart|addresses|wishlist)/.test(req.path), limiter: createRateLimiter({ name: "customer-mutations", windowMs: 60_000, max: 60 }) },
   { match: (req) => req.method === "PUT" && req.path === "/api/customer/profile", limiter: createRateLimiter({ name: "profile-update", windowMs: 60_000, max: 30 }) },
 
+  // ── Tracking (user-keyed): refresh hits a carrier API — keep it tight, and
+  //    BEFORE the seller/admin mutation rules below so the refresh paths are
+  //    not shadowed by their looser 60/min buckets. The service ALSO enforces a
+  //    per-shipment cooldown window, so this rule only stops account-level
+  //    abuse across many parcels.
+  { match: (req) => req.method === "POST" && /\/tracking\/refresh$/.test(req.path), limiter: createRateLimiter({ name: "tracking-refresh", windowMs: 60_000, max: 20 }) },
+  { match: (req) => req.method === "GET" && /^\/api\/admin\/tracking\//.test(req.path), limiter: createRateLimiter({ name: "tracking-admin-read", windowMs: 60_000, max: 120 }) },
+
   // ── Seller (user-keyed) ──────────────────────────────────────────────────
   { match: (req) => (req.method === "POST" || req.method === "PATCH" || req.method === "DELETE") && /^\/api\/seller\/(products|orders|shipments|returns|goals)/.test(req.path), limiter: createRateLimiter({ name: "seller-mutations", windowMs: 60_000, max: 60 }) },
 

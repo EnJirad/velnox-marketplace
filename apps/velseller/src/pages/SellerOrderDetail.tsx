@@ -21,6 +21,13 @@ import {
 } from "@velnox/shared/components/ui/dialog";
 import { Input } from "@velnox/shared/components/ui/input";
 import { Label } from "@velnox/shared/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@velnox/shared/components/ui/select";
 import { Skeleton } from "@velnox/shared/components/ui/skeleton";
 import { ApiError, api, useAction } from "@velnox/shared/lib/api-routes";
 import {
@@ -123,8 +130,15 @@ export default function SellerOrderDetail() {
    * collected BEFORE the request — the server refuses the move without them.
    */
   const [shipDialogOpen, setShipDialogOpen] = useState(false);
-  const [shipCarrier, setShipCarrier] = useState("");
+  const [shipCarrier, setShipCarrier] = useState("J&T Express");
   const [shipTracking, setShipTracking] = useState("");
+
+  /** The carriers a seller may send with — resolved to a code server-side. */
+  const SHIP_CARRIER_OPTIONS = ["J&T Express", "Flash Express", "SPX Express", "TNT Express"];
+
+  /** Refresh the parcel from its carrier (seller's own order only). */
+  const trackingRefresh = useAction(api.seller.orderTrackingRefresh);
+  const [refreshingTracking, setRefreshingTracking] = useState(false);
 
   /**
    * The refusal codes the fulfilment state machine answers with, said in the
@@ -197,6 +211,20 @@ export default function SellerOrderDetail() {
       setLoading(false);
     }
   }, [orderId, orderDetail, t]);
+
+  const onTrackingRefresh = useCallback(async () => {
+    if (!order || refreshingTracking) return;
+    setRefreshingTracking(true);
+    try {
+      await trackingRefresh({ id: order.id });
+      await load();
+    } catch (err) {
+      console.error("Tracking refresh error:", err);
+      toast.error(t("tracking.refreshError"));
+    } finally {
+      setRefreshingTracking(false);
+    }
+  }, [order, refreshingTracking, trackingRefresh, load, t]);
 
   useEffect(() => {
     void load();
@@ -541,17 +569,46 @@ export default function SellerOrderDetail() {
               shipments.map((shipment) => (
                 <div key={shipment.id} className="mt-3 rounded-xl border border-slate-100 bg-slate-50 p-4">
                   <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-                    <p className="font-semibold text-slate-900">{shipment.carrier}</p>
-                    <p className="font-mono text-xs break-all text-slate-500">
-                      {shipment.trackingNumber ?? t("orderDetail.noTrackingNo")}
+                    <p className="font-semibold text-slate-900">
+                      {shipment.carrier}
+                      {shipment.carrierCode && (
+                        <span className="ml-1.5 rounded-full bg-slate-200 px-1.5 py-0.5 font-mono text-[10px] font-medium text-slate-500">
+                          {shipment.carrierCode}
+                        </span>
+                      )}
                     </p>
+                    <div className="flex items-center gap-2">
+                      <p className="font-mono text-xs break-all text-slate-500">
+                        {shipment.trackingNumber ?? t("orderDetail.noTrackingNo")}
+                      </p>
+                      {shipment.trackingNumber && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 gap-1 border-slate-200 px-2 text-xs text-slate-600"
+                          disabled={refreshingTracking}
+                          onClick={() => void onTrackingRefresh()}
+                        >
+                          <RefreshCw className={`size-3 ${refreshingTracking ? "animate-spin" : ""}`} />
+                          {t("tracking.refresh")}
+                        </Button>
+                      )}
+                    </div>
                   </div>
                   <p className="mt-1 text-xs text-slate-400">
                     {t("orderDetail.status", { status: trackingLabel(shipment.status) })}
                     {shipment.estimatedDeliveryDate
                       ? ` · ${t("orderDetail.eta", { date: shipment.estimatedDeliveryDate })}`
                       : ""}
+                    {shipment.lastCheckedAt
+                      ? ` · ${t("tracking.lastChecked", { time: formatIsoDateTime(shipment.lastCheckedAt) })}`
+                      : ""}
                   </p>
+                  {shipment.lastError && (
+                    <p className="mt-1 text-[11px] text-amber-600">
+                      {t("tracking.carrierError", { code: shipment.lastError })}
+                    </p>
+                  )}
                   {shipment.events && shipment.events.length > 0 && (
                     /* Newest first: the latest movement is what the seller needs. */
                     <div className="mt-4">
@@ -703,13 +760,18 @@ export default function SellerOrderDetail() {
           <div className="grid gap-4">
             <div className="grid gap-2">
               <Label htmlFor="ship-carrier">{t("orderFulfillment.carrier")}</Label>
-              <Input
-                id="ship-carrier"
-                value={shipCarrier}
-                onChange={(e) => setShipCarrier(e.target.value)}
-                placeholder={t("orderFulfillment.carrierPlaceholder")}
-                disabled={busyStatus !== null}
-              />
+              <Select value={shipCarrier} onValueChange={setShipCarrier} disabled={busyStatus !== null}>
+                <SelectTrigger id="ship-carrier" className="h-10 w-full rounded-[10px] border-slate-200 bg-white text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-white">
+                  {SHIP_CARRIER_OPTIONS.map((name) => (
+                    <SelectItem key={name} value={name}>
+                      {name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="grid gap-2">
               <Label htmlFor="ship-tracking">{t("orderFulfillment.trackingField")}</Label>

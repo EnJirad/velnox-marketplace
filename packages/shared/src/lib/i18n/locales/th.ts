@@ -1295,6 +1295,9 @@ export const th = {
     delivered: "ส่งถึงแล้ว",
     failed: "จัดส่งไม่สำเร็จ",
     returned: "ส่งคืนผู้ขาย",
+    returning: "กำลังส่งคืนผู้ขาย",
+    lost: "พัสดุสูญหาย",
+    unknown: "ไม่ทราบสถานะ",
     cancelled: "ยกเลิกการจัดส่ง",
   },
 
@@ -1354,6 +1357,12 @@ export const th = {
     noTrackingNo: "ยังไม่มีเลขพัสดุ",
     eta: "คาดว่าจะถึง: {date}",
     loadFailed: "ไม่สามารถโหลดข้อมูลการติดตามได้",
+    refresh: "อัปเดตสถานะ",
+    refreshing: "กำลังอัปเดต…",
+    recentlyChecked: "เพิ่งตรวจสอบล่าสุด — ลองอีกครั้งในอีกสักครู่",
+    refreshError: "ไม่สามารถติดต่อผู้ให้บริการขนส่งได้ในขณะนี้ โปรดลองใหม่ภายหลัง",
+    lastChecked: "ตรวจสอบล่าสุด: {time}",
+    carrierError: "ข้อผิดพลาดของขนส่ง: {code}",
   },
 
   wishlist: {

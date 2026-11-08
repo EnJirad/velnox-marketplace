@@ -1427,6 +1427,25 @@ ALTER TABLE shipments ADD COLUMN IF NOT EXISTS fulfillment_order_id UUID REFEREN
 ALTER TABLE shipments ADD COLUMN IF NOT EXISTS shipped_at TIMESTAMPTZ;
 ALTER TABLE shipments ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ;
 ALTER TABLE shipments ADD COLUMN IF NOT EXISTS correlation_id TEXT;
+-- Multi-carrier tracking integration (Phase "tracking"): columns the carrier
+-- sync writes. `carrier_code` is the normalized code (JT / FLASH / SPX / TNT);
+-- `carrier` stays the human label. `original_status` preserves the carrier's raw
+-- status text so no carrier-specific information is lost. `last_error` holds a
+-- SAFE normalized error code (never free-form carrier text / phone numbers).
+ALTER TABLE shipments ADD COLUMN IF NOT EXISTS carrier_code TEXT;
+ALTER TABLE shipments ADD COLUMN IF NOT EXISTS original_status TEXT;
+ALTER TABLE shipments ADD COLUMN IF NOT EXISTS last_checked_at TIMESTAMPTZ;
+ALTER TABLE shipments ADD COLUMN IF NOT EXISTS last_error TEXT;
+ALTER TABLE shipments ADD COLUMN IF NOT EXISTS last_error_at TIMESTAMPTZ;
+ALTER TABLE shipments ADD COLUMN IF NOT EXISTS tracking_confirmed BOOLEAN NOT NULL DEFAULT FALSE;
+-- Each tracking event keeps the carrier's ORIGINAL status string so a later
+-- normalization change never rewrites history.
+ALTER TABLE tracking_events ADD COLUMN IF NOT EXISTS carrier_status TEXT;
+-- The tracking indexes must live AFTER the column pass so a fresh one-pass
+-- bootstrap (and the additive reconciler) never builds them on a missing column.
+CREATE INDEX IF NOT EXISTS idx_shipments_carrier_code ON shipments (carrier_code);
+CREATE INDEX IF NOT EXISTS idx_shipments_tracking_number ON shipments (tracking_number);
+CREATE INDEX IF NOT EXISTS idx_shipments_last_checked_at ON shipments (last_checked_at);
 
 ALTER TABLE orders ALTER COLUMN order_state SET DEFAULT 'pending';
 ALTER TABLE orders ALTER COLUMN fulfillment_status SET DEFAULT 'unfulfilled';

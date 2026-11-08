@@ -12,6 +12,7 @@ import ChatManagement from "../components/ChatManagement";
 import ProductModerationQueue from "../components/ProductModerationQueue";
 import { MarketingBanners } from "../components/MarketingBanners";
 import SellerVerificationQueue from "../components/SellerVerificationQueue";
+import TrackingTab from "../components/TrackingTab";
 import { VBadge, VerificationStatusLabel } from "@velnox/shared/components/VBadge";
 import ChangePasswordScreen from "../components/ChangePasswordScreen";
 import EmployeeManager from "../components/EmployeeManager";
@@ -103,6 +104,7 @@ import {
   Tag,
   Target,
   TrendingUp,
+  Truck,
   Users,
   Menu,
   PanelLeft,
@@ -112,7 +114,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { toast } from "sonner";
 
-type Tab = "overview" | "marketing" | "orders" | "incidents" | "intel" | "products" | "sellers" | "categories" | "staff" | "audit" | "settings" | "chat";
+type Tab = "overview" | "marketing" | "orders" | "incidents" | "intel" | "products" | "sellers" | "categories" | "staff" | "audit" | "settings" | "chat" | "tracking";
 
 const DEPARTMENTS: { id: string; label: string }[] = [
   { id: "general", label: "ทั่วไป" },
@@ -210,6 +212,10 @@ function canSeeTab(
     // HIGH #5). The same `orders.view` code the orders tab already uses, and
     // the endpoints re-check it — a hidden tab is UX, never the authorization.
     case "incidents":
+      return holds("orders.view");
+    // Multi-carrier tracking management — same `orders.view` gate the orders
+    // tab uses; every /api/admin/tracking endpoint re-checks it server-side.
+    case "tracking":
       return holds("orders.view");
     case "products":
       return holds("products.moderate");
@@ -1293,6 +1299,11 @@ export default function Center() {
                 <AlertTriangle className="size-4" /> <span className="nav-label">{t("velcenter.nav.paymentIncidents")}</span>
               </TabsTrigger>
             )}
+            {canSee("tracking") && (
+              <TabsTrigger value="tracking" onClick={() => selectTab("tracking")} className="gap-1.5 rounded-[10px]">
+                <Truck className="size-4" /> <span className="nav-label">การติดตามพัสดุ</span>
+              </TabsTrigger>
+            )}
             {canSee("marketing") && (
               <TabsTrigger value="marketing" onClick={() => selectTab("marketing")} className="gap-1.5 rounded-[10px]">
                 <Megaphone className="size-4" /> <span className="nav-label">{t("velcenter.nav.marketing")}</span>
@@ -2356,6 +2367,13 @@ export default function Center() {
               business decisions this platform has not documented, and money
               still moves only through the existing operator refund route. */}
           <PaymentIncidentTab />
+
+          {/* ============ Multi-carrier tracking management ============ */}
+          {canSee("tracking") && (
+            <TabsContent value="tracking" className="mt-6">
+              <TrackingTab />
+            </TabsContent>
+          )}
 
           {/* ============ Marketing (banner contract v2) ==================
               Homepage content management lives here — deliberately NOT inside

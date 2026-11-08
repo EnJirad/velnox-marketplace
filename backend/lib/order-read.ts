@@ -100,7 +100,9 @@ export async function fetchOrderItemsForOrders(orderIds: string[]): Promise<Reco
  */
 export async function fetchShipmentsForOrder(orderId: string): Promise<any[]> {
   const sRes = await query(
-    `SELECT s.id, s.carrier, s.tracking_number, s.status, s.estimated_delivery_date
+    `SELECT s.id, s.carrier, s.carrier_code, s.tracking_number, s.status,
+            s.estimated_delivery_date, s.original_status, s.last_checked_at,
+            s.last_error, s.tracking_confirmed
      FROM shipments s
      WHERE s.order_id = $1
      ORDER BY s.created_at DESC`,
@@ -109,15 +111,20 @@ export async function fetchShipmentsForOrder(orderId: string): Promise<any[]> {
   const shipments = sRes.rows.map((r: any) => ({
     id: r.id,
     carrier: r.carrier,
+    carrierCode: r.carrier_code ?? null,
     trackingNumber: r.tracking_number,
     status: r.status,
     estimatedDeliveryDate: r.estimated_delivery_date,
+    originalStatus: r.original_status ?? null,
+    lastCheckedAt: r.last_checked_at ? new Date(r.last_checked_at).toISOString() : null,
+    lastError: r.last_error ?? null,
+    trackingConfirmed: r.tracking_confirmed ?? false,
     events: [] as any[],
   }));
   if (shipments.length === 0) return shipments;
   try {
     const eventsRes = await query(
-      `SELECT te.id, te.shipment_id, te.status, te.description, te.location, te.occurred_at
+      `SELECT te.id, te.shipment_id, te.status, te.description, te.location, te.occurred_at, te.carrier_status
        FROM tracking_events te
        WHERE te.shipment_id = ANY($1)
        ORDER BY te.occurred_at ASC`,
@@ -132,6 +139,7 @@ export async function fetchShipmentsForOrder(orderId: string): Promise<any[]> {
         description: e.description,
         location: e.location,
         occurredAt: e.occurred_at,
+        originalStatus: e.carrier_status ?? null,
       });
       byShipment.set(e.shipment_id, list);
     }

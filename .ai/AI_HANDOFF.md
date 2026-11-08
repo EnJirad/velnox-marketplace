@@ -1,12 +1,13 @@
 # Velnox AI Handoff — Current State
 
-**Last verified:** 2026-11-08 · **Branch:** `main` · **HEAD:** `f93c9ae` (pushed to origin, == local)
+**Last verified:** 2026-11-08 · **Branch:** `main` · **HEAD:** `6bcf283` (pushed to origin, == local)
 
 ## 1. Current Project State
 
-**WORKING** — 4/4 apps typecheck, i18n parity (2206 × 3), 4/4 builds pass, all commits pushed to origin/main.
+**WORKING** — 4/4 apps typecheck, i18n parity (2215 × 3), all commits pushed to origin/main. NOTE: full `bun test tests` still has pre-existing failures from the in-progress Phase 2 UI overhaul (HomePromoStrip design, seller-order-ux source tests, cookie-store 0600 needs `.ai/secrets/browser-cookies.json`) — confirmed present on the baseline before the tracking work.
 
 ### Active Tasks
+- **Multi-carrier tracking (integrated)** — **implemented, NOT pushed** (no commit made — task rule forbids commit/push without permission). New `backend/lib/tracking/` (adapter contract + J&T/Flash/SPX/TNT adapters + normalizer + safe-fetch + repo + service with cache/dedup/cooldown), `backend/routes/tracking.ts` (customer/seller/admin), additive DB columns on `shipments` + `tracking_events` (schema.sql + run-sqleditor.sql in sync, reconciler tests pass), frontends extended (ShopTracking refresh UI, seller ship dialog carrier select + refresh, VelCenter Tracking tab), i18n th/en/my at parity. Carrier status: J&T BLOCKED (captcha), Flash BLOCKED (anti-bot), SPX UNSUPPORTED (internal portal API), TNT PARTIAL (public API verified working). Report: `.ai/reports/LATEST.md`. Full docs: `.ai/context/tracking.md`.
 - **Phase 2 UI/UX Overhaul** — **Group 1 complete** (shared components + VelShop homepage/products) ✅ VERIFIED
   - **Group 2 in progress**: Created shared `ProductGrid` component (server-paginated, reusable) ✅
     - Integrated into `ShopProducts.tsx` — replaces manual grid + pagination logic

@@ -13,6 +13,7 @@ import {
   Clock3,
   MapPin,
   Package,
+  RefreshCw,
   Truck,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
@@ -29,9 +30,13 @@ interface TrackingEventRow {
 interface ShipmentRow {
   id: string;
   carrier: string;
+  carrierCode?: string | null;
   trackingNumber: string | null;
   status: string;
   estimatedDeliveryDate: string | null;
+  lastCheckedAt?: string | null;
+  lastError?: string | null;
+  trackingConfirmed?: boolean;
   events?: TrackingEventRow[];
 }
 
@@ -47,9 +52,12 @@ export default function ShopTracking() {
   const { t } = useLanguage();
   const { orderId } = useParams<{ orderId: string }>();
   const orderDetail = useAction(api.customer.orderDetail);
+  const refreshAction = useAction(api.customer.orderTrackingRefresh);
   const [order, setOrder] = useState<OrderForTracking | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshMsg, setRefreshMsg] = useState<string | null>(null);
 
   /** Translated label for a tracking status, falling back to the raw status. */
   const trackingLabel = useCallback(
@@ -77,6 +85,29 @@ export default function ShopTracking() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const onRefresh = useCallback(async () => {
+    if (!orderId || refreshing) return;
+    setRefreshing(true);
+    setRefreshMsg(null);
+    try {
+      const view = (await refreshAction({ orderId })) as unknown as {
+        message?: string;
+      };
+      if (view.message === "CARRIER_ERROR" || view.message === "CARRIER_NO_RECORD") {
+        setRefreshMsg(t("tracking.refreshError"));
+      } else if (view.message === "RECENTLY_CHECKED") {
+        setRefreshMsg(t("tracking.recentlyChecked"));
+      } else if (view.message === "UNSUPPORTED_CARRIER") {
+        setRefreshMsg(t("tracking.refreshError"));
+      }
+      await load();
+    } catch (err) {
+      setRefreshMsg(err instanceof Error ? err.message : t("tracking.refreshError"));
+    } finally {
+      setRefreshing(false);
+    }
+  }, [orderId, refreshing, refreshAction, load, t]);
 
   const shipments = order?.shipments ?? [];
   const anyEvents = shipments.some((s) => (s.events?.length ?? 0) > 0);
@@ -141,15 +172,50 @@ export default function ShopTracking() {
                             <Truck className="size-4 text-[#10B981]" />
                           </span>
                           <div>
-                            <p className="text-sm font-semibold text-slate-900">{s.carrier}</p>
-                            <p className="font-mono text-xs text-slate-500">{s.trackingNumber ?? t("tracking.noTrackingNo")}</p>
-                          </div>
+                              <p className="flex items-center gap-1.5 text-sm font-semibold text-slate-900">
+                                {s.carrier}
+                                {s.carrierCode && (
+                                  <span className="rounded-full bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] font-medium text-slate-500">
+                                    {s.carrierCode}
+                                  </span>
+                                )}
+                              </p>
+                              <p className="font-mono text-xs text-slate-500">{s.trackingNumber ?? t("tracking.noTrackingNo")}</p>
+                              {s.lastCheckedAt && (
+                                <p className="mt-0.5 text-[11px] text-slate-400">
+                                  {t("tracking.lastChecked", { time: formatIsoDateTime(s.lastCheckedAt) })}
+                                </p>
+                              )}
+                              {s.lastError && (
+                                <p className="mt-0.5 text-[11px] text-amber-600">
+                                  {t("tracking.carrierError", { code: s.lastError })}
+                                </p>
+                              )}
+                            </div>
                         </div>
-                        <Badge className="gap-1.5 rounded-full bg-[#ECFDF5] text-emerald-700 ring-1 ring-inset ring-emerald-600/15 hover:bg-[#ECFDF5]">
-                          <span className="size-1.5 rounded-full bg-[#10B981]" />
-                          {trackingLabel(s.status)}
-                        </Badge>
+                        <div className="flex items-center gap-2">
+                          <Badge className="gap-1.5 rounded-full bg-[#ECFDF5] text-emerald-700 ring-1 ring-inset ring-emerald-600/15 hover:bg-[#ECFDF5]">
+                            <span className="size-1.5 rounded-full bg-[#10B981]" />
+                            {trackingLabel(s.status)}
+                          </Badge>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="gap-1.5 border-slate-200 text-slate-600"
+                            disabled={refreshing}
+                            onClick={() => void onRefresh()}
+                          >
+                            <RefreshCw className={`size-3.5 ${refreshing ? "animate-spin" : ""}`} />
+                            {refreshing ? t("tracking.refreshing") : t("tracking.refresh")}
+                          </Button>
+                        </div>
                       </div>
+
+                  {refreshMsg && (
+                    <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700">
+                      {refreshMsg}
+                    </p>
+                  )}
 
                       {s.estimatedDeliveryDate && (
                         <p className="mt-3 flex items-center gap-1.5 text-xs text-slate-500">

@@ -23,6 +23,7 @@ import { registerBusinessVerificationRoutes } from "./routes/business-verificati
 import { setupStripeRoutes } from "./routes/stripe.js";
 import { setupSellerOrderRoutes } from "./routes/seller-orders.js";
 import { setupSellerIntelligenceRoutes } from "./routes/seller-intelligence.js";
+import { setupTrackingRoutes } from "./routes/tracking.js";
 import { setupCenterRoutes } from "./routes/center.js";
 import { setupAnnouncementRoutes } from "./routes/announcements.js";
 import { registerVerificationRoutes } from "./routes/verification.js";
@@ -460,6 +461,9 @@ registerVerificationRoutes(app);
 
 // ─── Seller Intelligence (goals / income / reorder suggestions) ──────────
 setupSellerIntelligenceRoutes(app);
+
+// ─── Multi-carrier tracking (customer / seller / admin) ────────────────────
+setupTrackingRoutes(app);
 
 // ─── WebSocket ──────────────────────────────────────────
 // maxPayload caps WebSocket frames (control + presence frames only — chat

@@ -1251,6 +1251,9 @@ export const en: Dict = {
     delivered: "Delivered",
     failed: "Delivery failed",
     returned: "Returned to seller",
+    returning: "Returning to seller",
+    lost: "Parcel lost",
+    unknown: "Unknown status",
     cancelled: "Delivery cancelled",
   },
 
@@ -1310,6 +1313,12 @@ export const en: Dict = {
     noTrackingNo: "No tracking number yet",
     eta: "Expected: {date}",
     loadFailed: "Couldn't load tracking info",
+    refresh: "Refresh tracking",
+    refreshing: "Refreshing…",
+    recentlyChecked: "Just checked — try again in a moment",
+    refreshError: "Couldn't reach the carrier right now. Please try again later.",
+    lastChecked: "Last checked: {time}",
+    carrierError: "Carrier error: {code}",
   },
 
   wishlist: {
