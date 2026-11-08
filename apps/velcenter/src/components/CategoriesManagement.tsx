@@ -71,60 +71,41 @@ function LucideIconPicker({
   value,
   onChange,
   placeholder = "pim-chue-icon...",
+  t,
 }: {
   value: string;
   onChange: (name: string) => void;
   placeholder?: string;
+  t: (key: string, vars?: Record<string, string | number>) => string;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
-  // Common Lucide icon names (subset of most used)
-  const lucideIcons = useMemo(() => [
-    "camera", "store", "package", "shopping-bag", "shopping-cart", "truck",
-    "heart", "star", "gem", "crown", "gift", "ticket", "tag", "ticket",
-    "home", "building", "building-2", "warehouse", "factory", "shop",
-    "phone", "smartphone", "tablet", "laptop", "monitor", "cpu", "hard-drive",
-    "headphones", "music", "video", "camera", "image", "film", "mic",
-    "book", "book-open", "graduation-cap", "pen", "pencil", "scissors",
-    "folder", "file", "archive", "database", "server", "cloud", "globe",
-    "map", "map-pin", "navigation", "compass", "anchor", "ship", "plane",
-    "car", "bike", "bus", "train", "truck", "van", "package", "box",
-    "bag", "briefcase", "wallet", "credit-card", "coins", "dollar-sign",
-    "piggy-bank", "receipt", "invoice", "calculator", "chart", "bar-chart",
-    "pie-chart", "trending-up", "trending-down", "activity", "zap", "battery",
-    "plug", "wifi", "bluetooth", "settings", "cog", "tool", "hammer",
-    "wrench", "screwdriver", "paintbrush", "palette", "brush", "spray-can",
-    "user", "users", "user-plus", "user-minus", "user-check", "user-x",
-    "shield", "shield-check", "shield-alert", "lock", "unlock", "key",
-    "eye", "eye-off", "search", "zoom-in", "zoom-out", "filter", "funnel",
-    "list", "grid", "layout", "columns", "rows", "split", "maximize",
-    "minimize", "fullscreen", "rotate-cw", "rotate-ccw", "flip-h", "flip-v",
-    "arrow-up", "arrow-down", "arrow-left", "arrow-right", "arrow-up-left",
-    "arrow-up-right", "arrow-down-left", "arrow-down-right", "chevron-up",
-    "chevron-down", "chevron-left", "chevron-right", "menu", "x", "plus",
-    "minus", "check", "check-circle", "alert-circle", "alert-triangle",
-    "info", "help-circle", "question-circle", "loader", "refresh-cw",
-    "refresh-ccw", "repeat", "shuffle", "skip-back", "skip-forward",
-    "play", "pause", "stop", "square", "circle", "triangle", "hexagon",
-    "octagon", "star", "heart", "thumb-up", "thumb-down", "flag",
-    "bookmark", "bell", "bell-off", "mail", "message", "send", "reply",
-    "share", "share-2", "link", "unlink", "anchor", "paperclip", "clipboard",
-    "copy", "cut", "paste", "save", "download", "upload", "cloud-download",
-    "cloud-upload", "hard-drive", "memory-stick", "printer", "scanner",
-    "fax", "phone", "voicemail", "contact", "address-book", "calendar",
-    "clock", "timer", "stopwatch", "alarm", "calendar-plus", "calendar-minus",
-    "calendar-x", "calendar-check", "calendar-heart", "calendar-search",
-  ], []);
+  // Get all Lucide icon names dynamically from the library
+  const lucideIcons = useMemo(() => {
+    const icons: string[] = [];
+    for (const key of Object.keys(lucideReact)) {
+      // lucide-react exports both PascalCase (e.g., "Camera") and PascalCase + "Icon" (e.g., "CameraIcon")
+      // We want the kebab-case version without the "Icon" suffix
+      if (key.endsWith("Icon")) {
+        const baseName = key.slice(0, -4);
+        // Convert PascalCase to kebab-case
+        const kebab = baseName.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase();
+        icons.push(kebab);
+      }
+    }
+    // Sort alphabetically and deduplicate
+    return [...new Set(icons)].sort();
+  }, []);
 
   const filteredIcons = useMemo(() => {
-    if (!search) return lucideIcons.slice(0, 30);
+    if (!search) return lucideIcons.slice(0, 50);
     return lucideIcons.filter((name) =>
       name.toLowerCase().includes(search.toLowerCase())
-    ).slice(0, 30);
-  }, [search]);
+    ).slice(0, 50);
+  }, [search, lucideIcons]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -185,7 +166,7 @@ function LucideIconPicker({
           ))}
           {filteredIcons.length === 0 && (
             <div className="px-3 py-2 text-sm text-slate-400 text-center">
-              ไม่พบไอคอน "{search}"
+              {t("velcenter.categories.noIconsFound", { search })}
             </div>
           )}
         </div>
@@ -319,7 +300,47 @@ export default function CategoriesManagement() {
 
   // Slugify helper - consistent with backend
   const slugifyCategory = (text: string): string => {
-    return text
+    // Thai character to Latin transliteration map
+    const thaiMap: Record<string, string> = {
+      'ก': 'k', 'ข': 'kh', 'ฃ': 'kh', 'ค': 'kh', 'ฅ': 'kh', 'ฆ': 'kh',
+      'ง': 'ng', 'จ': 'ch', 'ฉ': 'ch', 'ช': 'ch', 'ซ': 's', 'ฌ': 'ch',
+      'ญ': 'y', 'ฎ': 'd', 'ฏ': 't', 'ฐ': 'th', 'ฑ': 'th', 'ฒ': 'th',
+      'ณ': 'n', 'ด': 'd', 'ต': 't', 'ถ': 'th', 'ท': 'th', 'ธ': 'th',
+      'น': 'n', 'บ': 'b', 'ป': 'p', 'ผ': 'ph', 'ฝ': 'f', 'พ': 'ph',
+      'ฟ': 'f', 'ภ': 'ph', 'ม': 'm', 'ย': 'y', 'ร': 'r', 'ฤ': 'ru',
+      'ล': 'l', 'ฦ': 'lu', 'ว': 'w', 'ศ': 's', 'ษ': 's', 'ส': 's',
+      'ห': 'h', 'ฬ': 'l', 'อ': 'o', 'ฮ': 'h', 'ะ': 'a', 'า': 'a',
+      'ิ': 'i', 'ี': 'i', 'ึ': 'ue', 'ื': 'ue', 'ุ': 'u', 'ู': 'u',
+      'เ': 'e', 'แ': 'ae', 'โ': 'o', 'ใ': 'ai', 'ไ': 'ai', 'ำ': 'am',
+      '่': '', '้': '', '๊': '', '๋': '', '์': '', '็': '',
+      '๐': '0', '๑': '1', '๒': '2', '๓': '3', '๔': '4', '๕': '5', '๖': '6', '๗': '7', '๘': '8', '๙': '9',
+    };
+
+    // Burmese character to Latin transliteration map
+    const burmeseMap: Record<string, string> = {
+      'က': 'ka', 'ခ': 'kha', 'ဂ': 'ga', 'ဃ': 'gha', 'င': 'nga',
+      'စ': 'sa', 'ဆ': 'hsa', 'ဇ': 'za', 'ဈ': 'zha', 'ည': 'nya',
+      'ဋ': 'ta', 'ဌ': 'tha', 'ဍ': 'da', 'ဎ': 'dha', 'ဏ': 'na',
+      'တ': 'ta', 'ထ': 'tha', 'ဒ': 'da', 'ဓ': 'dha', 'န': 'na',
+      'ပ': 'pa', 'ဖ': 'pha', 'ဗ': 'ba', 'ဘ': 'bha', 'မ': 'ma',
+      'ယ': 'ya', 'ရ': 'ra', 'လ': 'la', 'ဝ': 'wa', 'သ': 'tha',
+      'ဟ': 'ha', 'ဠ': 'la', 'အ': 'a', 'ဢ': 'a', 'ဣ': 'i',
+      'ဤ': 'i', 'ဥ': 'u', 'ဦ': 'u', 'ဧ': 'e', 'ဨ': 'e', 'ဩ': 'o',
+      'ဪ': 'o', 'အာ': 'a', 'အား': 'a', 'အိ': 'i', 'အီ': 'i',
+      'အု': 'u', 'အူ': 'u', 'အေ': 'e', 'အေး': 'e', 'အို': 'o', 'အော့': 'o',
+      '၀': '0', '၁': '1', '၂': '2', '၃': '3', '၄': '4', '၅': '5', '၆': '6', '၇': '7', '၈': '8', '၉': '9',
+    };
+
+    let result = text;
+
+    // Transliterate Thai characters
+    result = result.split('').map(char => thaiMap[char] || char).join('');
+
+    // Transliterate Burmese characters
+    result = result.split('').map(char => burmeseMap[char] || char).join('');
+
+    // Now slugify the transliterated text
+    return result
       .toLowerCase()
       .replace(/[^a-z0-9\s-]/g, "")
       .replace(/\s+/g, "-")
@@ -357,7 +378,8 @@ export default function CategoriesManagement() {
         body: JSON.stringify({
           purpose: "category-icon",
           filename: file.name,
-          mimeType: file.type,
+          contentType: file.type,
+          categoryId: editingCategory?.id || "", // Send categoryId for existing categories
         }),
       });
 
@@ -366,7 +388,7 @@ export default function CategoriesManagement() {
         throw new Error(presignData.error?.message || "Failed to get upload URL");
       }
 
-      const { uploadUrl, publicUrl } = presignData.data;
+      const { uploadUrl, publicUrl, objectKey } = presignData.data;
 
       // Upload file to R2
       const uploadRes = await fetch(uploadUrl, {
@@ -386,8 +408,7 @@ export default function CategoriesManagement() {
         credentials: "include",
         body: JSON.stringify({
           purpose: "category-icon",
-          key: presignData.data.key,
-          mimeType: file.type,
+          objectKey: objectKey,
         }),
       });
 
@@ -558,26 +579,26 @@ export default function CategoriesManagement() {
     <div className="space-y-4">
       {/* Header */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h2 className="flex items-center gap-2 text-lg font-bold text-slate-900">
-            <FolderTree className="size-5 text-[#10B981]" />
+        <div className="min-w-0">
+          <h2 className="flex items-center gap-2 text-lg font-bold text-slate-900 truncate">
+            <FolderTree className="size-5 text-[#10B981] flex-shrink-0" />
             {t("velcenter.categories.title")}
           </h2>
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-sm text-slate-500 truncate">
             {t("velcenter.categories.totalCount", { total: totalCount, active: activeCount })}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="relative">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
+          <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder={t("velcenter.categories.searchPlaceholder")}
-              className="w-48 pl-9 text-sm"
+              className="w-full pl-9 text-sm"
             />
           </div>
-          <Button onClick={() => openCreateDialog()} className="gap-1.5 bg-[#10B981] text-white hover:bg-emerald-600">
+          <Button onClick={() => openCreateDialog()} className="gap-1.5 bg-[#10B981] text-white hover:bg-emerald-600 w-full sm:w-auto">
             <Plus className="size-4" />
             {t("velcenter.categories.addButton")}
           </Button>
@@ -620,7 +641,7 @@ export default function CategoriesManagement() {
 
       {/* Create/Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md max-h-[90vh] sm:max-h-none">
           <DialogHeader>
             <DialogTitle>{editingCategory ? t("velcenter.categories.editTitle") : t("velcenter.categories.createTitle")}</DialogTitle>
             <DialogDescription>
@@ -712,6 +733,7 @@ export default function CategoriesManagement() {
                     value={form.icon}
                     onChange={(name) => setForm((p) => ({ ...p, icon: name, image_url: '' }))}
                     placeholder={t("velcenter.categories.formIconLucidePlaceholder")}
+                    t={t}
                   />
                   <p className="text-[11px] text-slate-400 mt-1">
                     {t("velcenter.categories.formIconLucideHint")}
@@ -928,7 +950,7 @@ function CategoryRow({
   return (
     <div>
       <div
-        className={`flex items-center gap-2 px-4 py-3 transition-colors hover:bg-slate-50 ${
+        className={`flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3 px-4 py-3 transition-colors hover:bg-slate-50 ${
           !category.is_active ? "opacity-60" : ""
         }`}
         style={{ paddingLeft: `${16 + depth * 24}px` }}
@@ -937,7 +959,7 @@ function CategoryRow({
         {hasChildren ? (
           <button
             onClick={() => onToggle(category.id)}
-            className="shrink-0 rounded p-0.5 hover:bg-slate-200"
+            className="shrink-0 rounded p-0.5 hover:bg-slate-200 flex-shrink-0"
           >
             {isExpanded ? (
               <ChevronDown className="size-4 text-slate-500" />
@@ -946,17 +968,17 @@ function CategoryRow({
             )}
           </button>
         ) : (
-          <span className="w-5" />
+          <span className="w-5 flex-shrink-0" />
         )}
 
-        {/* Name + slug */}
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
+        {/* Name + slug + icon */}
+        <div className="min-w-0 flex-1 w-full sm:w-auto">
+          <div className="flex items-center gap-1.5 flex-wrap">
             {category.icon ? (
               category.icon.startsWith("http") || category.icon.startsWith("data:") ? (
-                <img src={category.icon} alt="" className="size-5 rounded object-cover" />
+                <img src={category.icon} alt="" className="size-5 rounded object-cover flex-shrink-0" />
               ) : (
-                <span className="size-5 flex items-center justify-center text-emerald-600">
+                <span className="size-5 flex items-center justify-center text-emerald-600 flex-shrink-0">
                   {(() => {
                     const IconComp = getLucideIcon(category.icon!);
                     if (IconComp) return <IconComp className="size-4" strokeWidth={2} />;
@@ -969,16 +991,16 @@ function CategoryRow({
                 </span>
               )
             ) : Number(category.sort_order) > 0 && (
-              <span className="size-5" />
+              <span className="size-5 flex-shrink-0" />
             )}
             <span className="truncate text-sm font-medium text-slate-900">{category.display_name ?? category.name}</span>
           </div>
-          <span className="ml-2 text-xs text-slate-400">/{category.slug}</span>
+          <span className="ml-2 text-xs text-slate-400 hidden sm:inline">/{category.slug}</span>
         </div>
 
         {/* Product count */}
         {(category.product_count ?? 0) > 0 && (
-          <Badge variant="secondary" className="gap-1 text-xs">
+          <Badge variant="secondary" className="gap-1 text-xs flex-shrink-0">
             <Package className="size-3" />
             {category.product_count}
           </Badge>
@@ -987,13 +1009,13 @@ function CategoryRow({
         {/* Active badge */}
         <Badge
           variant={category.is_active ? "default" : "outline"}
-          className={`text-xs ${category.is_active ? "bg-emerald-100 text-emerald-700" : "text-slate-400"}`}
+          className={`text-xs ${category.is_active ? "bg-emerald-100 text-emerald-700" : "text-slate-400"} flex-shrink-0`}
         >
           {category.is_active ? "ใช้งาน" : "ปิด"}
         </Badge>
 
-        {/* Actions */}
-        <div className="flex items-center gap-1">
+        {/* Actions - responsive */}
+        <div className="flex items-center gap-1 w-full sm:w-auto justify-start sm:justify-end flex-wrap">
           <Button
             variant="ghost"
             size="icon"
