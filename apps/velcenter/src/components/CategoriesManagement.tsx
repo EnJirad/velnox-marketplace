@@ -112,7 +112,7 @@ export default function CategoriesManagement() {
   const [saving, setSaving] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<CategoryNode | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [uploading, setUploading] = useState(false);
+  const [iconUploading, setIconUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -245,12 +245,12 @@ export default function CategoriesManagement() {
       return;
     }
 
-    setUploading(true);
+    setIconUploading(true);
     setUploadError(null);
 
     try {
       // Get presigned URL for category icon upload
-      const presignRes = await fetch(`${apiBaseUrl}/api/upload/presign`, {
+      const presignRes = await fetch(`/api/upload/presign`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -281,7 +281,7 @@ export default function CategoriesManagement() {
       }
 
       // Confirm upload (if needed by the API)
-      const confirmRes = await fetch(`${apiBaseUrl}/api/upload/confirm`, {
+      const confirmRes = await fetch(`/api/upload/confirm`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -302,7 +302,7 @@ export default function CategoriesManagement() {
     } catch (err: any) {
       setUploadError(err?.message || t("velcenter.categories.formIconUploadError"));
     } finally {
-      setUploading(false);
+      setIconUploading(false);
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
@@ -612,7 +612,7 @@ export default function CategoriesManagement() {
                   </div>
                 )}
                 <div className="space-y-3">
-                  <label className="flex flex-col items-center justify-center gap-3 w-full h-32 border-2 border-dashed border-slate-200 rounded-[12px] cursor-pointer hover:border-emerald-300 hover:bg-emerald-50 transition-colors">
+                  <label className="flex flex-col items-center justify-center gap-2 w-full h-24 border-2 border-dashed border-slate-200 rounded-[10px] cursor-pointer hover:border-emerald-300 hover:bg-emerald-50 transition-colors">
                     <span className="flex items-center gap-2 text-sm text-slate-500">
                       <Upload className="size-4" />
                       {t("velcenter.categories.formIconDragDrop")}
@@ -620,15 +620,29 @@ export default function CategoriesManagement() {
                     <input
                       type="file"
                       accept="image/png,image/svg+xml"
-                      onChange={handleIconUpload}
+                      onChange={(e) => { if (e.target.files?.[0]) void handleIconUpload(e); e.target.value = ""; }}
                       className="sr-only"
                       id="icon-upload"
                       ref={fileInputRef}
-                      disabled={uploading}
+                      disabled={iconUploading}
                     />
-                    <span className="text-sm text-emerald-600 font-medium underline">{t("velcenter.categories.formIconBrowse")}</span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5 border-slate-200 text-slate-600"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={iconUploading}
+                    >
+                      {iconUploading ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : (
+                        <Image className="size-3.5" />
+                      )}
+                      {iconUploading ? "อัปโหลด..." : "อัปโหลดไฟล์"}
+                    </Button>
                   </label>
-                  {uploading && (
+                  {iconUploading && (
                     <div className="flex items-center gap-2 text-sm text-slate-600">
                       <Loader2 className="size-4 animate-spin text-emerald-600" />
                       <span>{t("velcenter.categories.formIconUploading")}</span>
