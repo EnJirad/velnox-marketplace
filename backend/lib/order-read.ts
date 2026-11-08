@@ -12,6 +12,7 @@
  * them, and no second copy may be created.
  */
 import { query } from "../db/index.js";
+import { isSchemaGapError } from "./tracking/shipment-repo.js";
 
 /**
  * Resolve order item display data (snapshot-first) for one or more orders.
@@ -95,19 +96,34 @@ export async function fetchOrderItemsForOrders(orderIds: string[]): Promise<Reco
 
 /**
  * Load shipments for an order with their tracking events.
- * Tracking events are read defensively so legacy DBs without the table
- * still return shipments (events just empty).
+ *
+ * DEFENSIVE against a not-yet-reconciled database: production may still be on
+ * the legacy `shipments` / `tracking_events` shape (no tracking columns), and
+ * the order-detail endpoint MUST NOT 500 because of that. The extended
+ * projection is tried first, and on a schema-gap error ONLY (`42703` /
+ * `42P01`) the reader falls back to the legacy column set — same shapes, so
+ * the whole order still renders and the tracking columns simply come back
+ * null. Any other database error is rethrown, never masked as an empty order.
  */
 export async function fetchShipmentsForOrder(orderId: string): Promise<any[]> {
-  const sRes = await query(
-    `SELECT s.id, s.carrier, s.carrier_code, s.tracking_number, s.status,
+  const SHIPMENTS_EXTENDED = `SELECT s.id, s.carrier, s.carrier_code, s.tracking_number, s.status,
             s.estimated_delivery_date, s.original_status, s.last_checked_at,
             s.last_error, s.tracking_confirmed
      FROM shipments s
      WHERE s.order_id = $1
-     ORDER BY s.created_at DESC`,
-    [orderId],
-  );
+     ORDER BY s.created_at DESC`;
+  const SHIPMENTS_LEGACY = `SELECT s.id, s.carrier, s.tracking_number, s.status, s.estimated_delivery_date
+     FROM shipments s
+     WHERE s.order_id = $1
+     ORDER BY s.created_at DESC`;
+
+  let sRes;
+  try {
+    sRes = await query(SHIPMENTS_EXTENDED, [orderId]);
+  } catch (err) {
+    if (!isSchemaGapError(err)) throw err;
+    sRes = await query(SHIPMENTS_LEGACY, [orderId]);
+  }
   const shipments = sRes.rows.map((r: any) => ({
     id: r.id,
     carrier: r.carrier,
@@ -123,13 +139,21 @@ export async function fetchShipmentsForOrder(orderId: string): Promise<any[]> {
   }));
   if (shipments.length === 0) return shipments;
   try {
-    const eventsRes = await query(
-      `SELECT te.id, te.shipment_id, te.status, te.description, te.location, te.occurred_at, te.carrier_status
+    const EVENTS_EXTENDED = `SELECT te.id, te.shipment_id, te.status, te.description, te.location, te.occurred_at, te.carrier_status
        FROM tracking_events te
        WHERE te.shipment_id = ANY($1)
-       ORDER BY te.occurred_at ASC`,
-      [shipments.map((s) => s.id)],
-    );
+       ORDER BY te.occurred_at ASC`;
+    const EVENTS_LEGACY = `SELECT te.id, te.shipment_id, te.status, te.description, te.location, te.occurred_at
+       FROM tracking_events te
+       WHERE te.shipment_id = ANY($1)
+       ORDER BY te.occurred_at ASC`;
+    let eventsRes;
+    try {
+      eventsRes = await query(EVENTS_EXTENDED, [shipments.map((s) => s.id)]);
+    } catch (err) {
+      if (!isSchemaGapError(err)) throw err;
+      eventsRes = await query(EVENTS_LEGACY, [shipments.map((s) => s.id)]);
+    }
     const byShipment = new Map<string, any[]>();
     for (const e of eventsRes.rows) {
       const list = byShipment.get(e.shipment_id) ?? [];

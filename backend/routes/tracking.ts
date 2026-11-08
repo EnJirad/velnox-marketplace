@@ -27,6 +27,7 @@ import { query } from "../db/index.js";
 import { isCenterMember, userHasPermission } from "../lib/permissions.js";
 import { refreshOrderTracking, getTrackingView, TrackingRequestError } from "../lib/tracking/tracking-service.js";
 import { CARRIER_ADAPTERS, carrierIntegrationStatus } from "../lib/tracking/carrier-adapter.js";
+import { isSchemaGapError } from "../lib/tracking/shipment-repo.js";
 
 /** Shipment row → admin list projection (joined with order info). */
 function shipmentRow(row: any): any {
@@ -193,51 +194,59 @@ export function setupTrackingRoutes(app: Express): void {
       const limit = Math.min(Math.max(Number(req.query.limit) || 25, 1), 100);
       const offset = Math.max(Number(req.query.offset) || 0, 0);
 
-      const where: string[] = ["1 = 1"];
-      const params: unknown[] = [];
-      if (q) {
-        params.push(`%${q}%`);
-        where.push(`(
-          s.tracking_number ILIKE $${params.length}
-          OR s.order_id::text ILIKE $${params.length}
-          OR o.order_number ILIKE $${params.length}
-        )`);
-      }
-      if (carrier) {
-        params.push(carrier);
-        where.push(`(s.carrier_code = $${params.length} OR s.carrier ILIKE $${params.length})`);
-      }
-      if (status) {
-        params.push(status);
-        where.push(`s.status = $${params.length}`);
-      }
-      params.push(limit);
-      const limitParam = `$${params.length}`;
-      params.push(offset);
-      const offsetParam = `$${params.length}`;
+      // `carrier_code` is a new column — production may not be reconciled yet.
+      // Build the search twice: with the code term, falling back to label-only
+      // on a schema-gap error so an unreconciled DB still searches by label.
+      const runSearch = async (withCarrierCode: boolean): Promise<{ rows: any[]; count: number }> => {
+        const conds: string[] = ["1 = 1"];
+        const p: unknown[] = [];
+        if (q) {
+          p.push(`%${q}%`);
+          const k = p.length;
+          conds.push(
+            `(s.tracking_number ILIKE $${k} OR s.order_id::text ILIKE $${k} OR o.order_number ILIKE $${k})`,
+          );
+        }
+        if (carrier) {
+          p.push(`%${carrier}%`);
+          const k = p.length;
+          conds.push(withCarrierCode ? `s.carrier ILIKE $${k} OR s.carrier_code = $${k}` : `s.carrier ILIKE $${k}`);
+        }
+        if (status) {
+          p.push(status);
+          conds.push(`s.status = $${p.length}`);
+        }
+        const w = conds.join(" AND ");
+        const rows = await query(
+          `SELECT s.*, o.order_number, o.user_id, sh.name AS shop_name
+           FROM shipments s
+           LEFT JOIN orders o ON o.id = s.order_id
+           LEFT JOIN shops sh ON sh.id = o.shop_id
+           WHERE ${w} ORDER BY s.updated_at DESC LIMIT $${p.length + 1} OFFSET $${p.length + 2}`,
+          [...p, limit, offset],
+        );
+        const countRes = await query(
+          `SELECT COUNT(*)::int AS total FROM shipments s
+           LEFT JOIN orders o ON o.id = s.order_id
+           WHERE ${w}`,
+          p,
+        );
+        return { rows: rows.rows, count: countRes.rows[0]?.total ?? 0 };
+      };
 
-      const rows = await query(
-        `SELECT s.*, o.order_number, o.user_id, sh.name AS shop_name
-         FROM shipments s
-         LEFT JOIN orders o ON o.id = s.order_id
-         LEFT JOIN shops sh ON sh.id = o.shop_id
-         WHERE ${where.join(" AND ")}
-         ORDER BY s.updated_at DESC
-         LIMIT ${limitParam} OFFSET ${offsetParam}`,
-        params,
-      );
-      const countRes = await query(
-        `SELECT COUNT(*)::int AS total FROM shipments s
-         LEFT JOIN orders o ON o.id = s.order_id
-         WHERE ${where.join(" AND ")}`,
-        params.slice(0, params.length - 2),
-      );
+      let result;
+      try {
+        result = await runSearch(true);
+      } catch (err) {
+        if (!isSchemaGapError(err)) throw err;
+        result = await runSearch(false);
+      }
 
       res.json({
         success: true,
         data: {
-          shipments: rows.rows.map(shipmentRow),
-          total: countRes.rows[0]?.total ?? 0,
+          shipments: result.rows.map(shipmentRow),
+          total: result.count,
           limit,
           offset,
         },
@@ -266,11 +275,20 @@ export function setupTrackingRoutes(app: Express): void {
         res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Shipment not found" } });
         return;
       }
-      const events = await query(
-        `SELECT status, description, location, occurred_at, carrier_status
-         FROM tracking_events WHERE shipment_id = $1 ORDER BY occurred_at ASC`,
-        [shipmentId],
-      );
+      const events = await (async () => {
+        const LEGACY = `SELECT status, description, location, occurred_at
+         FROM tracking_events WHERE shipment_id = $1 ORDER BY occurred_at ASC`;
+        try {
+          return await query(
+            `SELECT status, description, location, occurred_at, carrier_status
+             FROM tracking_events WHERE shipment_id = $1 ORDER BY occurred_at ASC`,
+            [shipmentId],
+          );
+        } catch (err) {
+          if (!isSchemaGapError(err)) throw err;
+          return await query(LEGACY, [shipmentId]);
+        }
+      })();
       res.json({
         success: true,
         data: {

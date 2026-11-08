@@ -26,6 +26,7 @@ import {
   persistTrackingSync,
   persistTrackingError,
   recipientPhoneForOrder,
+  isSchemaGapError,
   type ShipmentRow,
   type IncomingTrackingEvent,
 } from "./shipment-repo.js";
@@ -105,12 +106,21 @@ function cacheKey(shipment: ShipmentRow): string {
 }
 
 async function loadEventsView(shipmentId: string): Promise<TrackingResultView["events"]> {
+  // Defensive: production may not be reconciled to `carrier_status`; only a
+  // schema-gap error falls back to the legacy column set. Any other failure is
+  // treated as "no events" for the read surface (never a 500 on the order).
+  const EVENTS_EXTENDED = `SELECT status, description, location, occurred_at, carrier_status
+       FROM tracking_events WHERE shipment_id = $1 ORDER BY occurred_at ASC`;
+  const EVENTS_LEGACY = `SELECT status, description, location, occurred_at
+       FROM tracking_events WHERE shipment_id = $1 ORDER BY occurred_at ASC`;
   try {
-    const res = await query(
-      `SELECT status, description, location, occurred_at, carrier_status
-       FROM tracking_events WHERE shipment_id = $1 ORDER BY occurred_at ASC`,
-      [shipmentId],
-    );
+    let res;
+    try {
+      res = await query(EVENTS_EXTENDED, [shipmentId]);
+    } catch (err) {
+      if (!isSchemaGapError(err)) throw err;
+      res = await query(EVENTS_LEGACY, [shipmentId]);
+    }
     return res.rows.map((r: any) => ({
       status: r.status as TrackedEventStatus,
       description: r.description ?? null,

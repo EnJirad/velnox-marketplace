@@ -1319,6 +1319,15 @@ export const en: Dict = {
     refreshError: "Couldn't reach the carrier right now. Please try again later.",
     lastChecked: "Last checked: {time}",
     carrierError: "Carrier error: {code}",
+    retry: "Try again",
+    sessionExpired: "Session expired",
+    sessionExpiredDesc: "Please sign in again to view this order",
+    accessDenied: "No access to this order",
+    accessDeniedDesc: "This order is not yours or your account can't view it",
+    serverError: "Server temporarily unavailable",
+    serverErrorDesc: "Something went wrong loading the data. Please try again later.",
+    networkError: "Can't connect to the internet",
+    networkErrorDesc: "Please check your connection and try again",
   },
 
   wishlist: {

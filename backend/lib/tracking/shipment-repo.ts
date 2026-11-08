@@ -10,6 +10,19 @@
 import { query, withTransaction } from "../../db/index.js";
 import type { TrackedEventStatus } from "./types.js";
 
+/**
+ * True when a Postgres error is a schema-gap error (a column or table the code
+ * references does not exist yet). These are the ONLY errors the read fallbacks
+ * handle — production may not have been reconciled to the new tracking columns,
+ * and the reader must degrade to the legacy projection instead of 500-ing the
+ * whole order. Every OTHER error (connection, SQL syntax, deadlock…) is
+ * rethrown so a genuine failure is never masked as "success with no data".
+ */
+export function isSchemaGapError(err: unknown): boolean {
+  const code = (err as { code?: string })?.code;
+  return code === "42703" || code === "42P01";
+}
+
 export interface ShipmentRow {
   id: string;
   orderId: string;
@@ -50,19 +63,26 @@ function rowToShipment(r: any): ShipmentRow {
   };
 }
 
-/** The canonical shipment for an order (one per order is enforced in the DB). */
+/** The canonical shipment for an order (one per order is enforced in the DB).
+ *  Defensive: if the DB has not been reconciled to the new tracking columns,
+ *  falls back to the legacy projection so the reader never 500s. */
 export async function getShipmentForOrder(orderId: string): Promise<ShipmentRow | null> {
-  const res = await query(
-    `SELECT id, order_id, carrier, carrier_code, tracking_number, status,
+  const EXTENDED = `SELECT id, order_id, carrier, carrier_code, tracking_number, status,
             estimated_delivery_date, original_status, last_checked_at,
             last_error, last_error_at, tracking_confirmed,
             shipped_at, delivered_at, created_at, updated_at
-     FROM shipments
-     WHERE order_id = $1
-     ORDER BY created_at DESC
-     LIMIT 1`,
-    [orderId],
-  );
+     FROM shipments WHERE order_id = $1 ORDER BY created_at DESC LIMIT 1`;
+  const LEGACY = `SELECT id, order_id, carrier, tracking_number, status,
+            estimated_delivery_date, shipped_at, delivered_at, created_at, updated_at
+     FROM shipments WHERE order_id = $1 ORDER BY created_at DESC LIMIT 1`;
+
+  let res;
+  try {
+    res = await query(EXTENDED, [orderId]);
+  } catch (err) {
+    if (!isSchemaGapError(err)) throw err;
+    res = await query(LEGACY, [orderId]);
+  }
   return res.rows[0] ? rowToShipment(res.rows[0]) : null;
 }
 

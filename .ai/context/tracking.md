@@ -84,6 +84,16 @@ carrier honestly.
 - Reconciler contract (canonical parity) is preserved — verified by
   `db-run-sqleditor-reconciler.test.ts` + `schema-drift.test.ts`.
 
+### Defensive reading (CRITICAL — do not regress)
+
+Production may NOT be reconciled to the new columns yet (verified 2026-11-08:
+`shipments` had all six tracking columns missing, `tracking_events` had no
+`carrier_status`). Every reader of the new columns MUST fall back to the legacy
+projection on a schema-gap error ONLY (`42703` undefined_column / `42P01`
+undefined_table, helper `isSchemaGapError` in `shipment-repo.ts`); any other DB
+error is rethrown — a genuine failure is never masked as an empty order. The
+regression guard is `backend/tests/order-read-schema-fallback.test.ts`.
+
 ## API endpoints
 
 - `GET  /api/customer/orders/:orderId/tracking` — customer’s own order (cache-first)

@@ -4,7 +4,7 @@ import { useLanguage } from "@/lib/i18n";
 import { Badge } from "@velnox/shared/components/ui/badge";
 import { Button } from "@velnox/shared/components/ui/button";
 import { Skeleton } from "@velnox/shared/components/ui/skeleton";
-import { api } from "@velnox/shared/lib/api-routes";
+import { api, ApiError } from "@velnox/shared/lib/api-routes";
 import { formatIsoDateTime } from "@velnox/shared/lib/commerce";
 import { useAction } from "@velnox/shared/lib/api-routes";
 import {
@@ -16,7 +16,7 @@ import {
   RefreshCw,
   Truck,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router";
 
 interface TrackingEventRow {
@@ -55,6 +55,8 @@ export default function ShopTracking() {
   const refreshAction = useAction(api.customer.orderTrackingRefresh);
   const [order, setOrder] = useState<OrderForTracking | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** HTTP status of the last failed load — null = network / non-HTTP error. */
+  const [errorStatus, setErrorStatus] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshMsg, setRefreshMsg] = useState<string | null>(null);
@@ -75,7 +77,10 @@ export default function ShopTracking() {
     try {
       const data = (await orderDetail({ orderId })) as unknown as OrderForTracking;
       setOrder(data);
+      setError(null);
+      setErrorStatus(null);
     } catch (err) {
+      setErrorStatus(err instanceof ApiError ? err.status : null);
       setError(err instanceof Error ? err.message : t("tracking.loadFailed"));
     } finally {
       setLoading(false);
@@ -112,6 +117,29 @@ export default function ShopTracking() {
   const shipments = order?.shipments ?? [];
   const anyEvents = shipments.some((s) => (s.events?.length ?? 0) > 0);
 
+  /**
+   * Failure classification — never present a backend error as a confirmed
+   * missing order. 401/403 need sign-in/access copy; 404 is a true not-found;
+   * 5xx and network errors are temporary and get a Retry action.
+   */
+  const failView = useMemo(() => {
+    if (!error) return { title: t("tracking.notFound"), desc: t("tracking.notFoundDesc"), retry: false };
+    switch (errorStatus) {
+      case 401:
+        return { title: t("tracking.sessionExpired"), desc: t("tracking.sessionExpiredDesc"), retry: true };
+      case 403:
+        return { title: t("tracking.accessDenied"), desc: t("tracking.accessDeniedDesc"), retry: false };
+      case 404:
+        return { title: t("tracking.notFound"), desc: t("tracking.notFoundDesc"), retry: false };
+      default:
+        // 5xx, or a network failure (no HTTP status), or anything unexpected.
+        if (typeof errorStatus === "number" && errorStatus >= 500) {
+          return { title: t("tracking.serverError"), desc: t("tracking.serverErrorDesc"), retry: true };
+        }
+        return { title: t("tracking.networkError"), desc: t("tracking.networkErrorDesc"), retry: true };
+    }
+  }, [error, errorStatus, t]);
+
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
       <ShopHeader />
@@ -125,14 +153,22 @@ export default function ShopTracking() {
         ) : error || !order ? (
           <div className="flex flex-col items-center rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center">
             <Truck className="size-8 text-slate-300" />
-            <h1 className="mt-4 text-lg font-semibold text-slate-900">{t("tracking.notFound")}</h1>
-            <p className="mt-1.5 text-sm text-slate-500">{error ?? t("tracking.notFoundDesc")}</p>
-            <Button className="mt-6 gap-1.5 bg-slate-900 text-white hover:bg-slate-800" asChild>
-              <Link to="/orders">
-                <ArrowLeft className="size-4" />
-                {t("tracking.backToOrders")}
-              </Link>
-            </Button>
+            <h1 className="mt-4 text-lg font-semibold text-slate-900">{failView.title}</h1>
+            <p className="mt-1.5 text-sm text-slate-500">{failView.desc}</p>
+            <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
+              {failView.retry && (
+                <Button className="gap-1.5 bg-slate-900 text-white hover:bg-slate-800" onClick={() => void load()}>
+                  <RefreshCw className="size-4" />
+                  {t("tracking.retry")}
+                </Button>
+              )}
+              <Button className={failView.retry ? "gap-1.5 border-slate-200 text-slate-600" : "gap-1.5 bg-slate-900 text-white hover:bg-slate-800"} variant={failView.retry ? "outline" : undefined} asChild>
+                <Link to="/orders">
+                  <ArrowLeft className="size-4" />
+                  {t("tracking.backToOrders")}
+                </Link>
+              </Button>
+            </div>
           </div>
         ) : (
           <>
