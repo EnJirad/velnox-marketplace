@@ -1,10 +1,10 @@
 # Velnox AI Handoff — Current State
 
-**Last verified:** 2026-11-05 · **Branch:** `main` · **HEAD:** `48b8f34813c323be20ce9465baede73930e194c4` (pushed to origin)
+**Last verified:** 2026-11-08 · **Branch:** `main` · **HEAD:** `3375fd8` (pushed to origin)
 
 ## 1. Current Project State
 
-**WORKING** — 4/4 apps typecheck, i18n parity (1704 × 3), 4/4 builds pass, all commits pushed to origin/main.
+**WORKING** — 4/4 apps typecheck, i18n parity (2177 × 3), 4/4 builds pass, all commits pushed to origin/main.
 
 ### Active Tasks
 - **Phase 2 UI/UX Overhaul** — **Group 1 complete** (shared components + VelShop homepage/products) ✅ VERIFIED
@@ -12,7 +12,10 @@
     - Integrated into `ShopProducts.tsx` — replaces manual grid + pagination logic
     - Typecheck + build PASS
   - Next: GalleryLightbox for Product Detail; integrate ProductGrid into ShopHome rails
-- Seller roadmap Part 2 (Orders / Order Detail re-verification) — **not started**.
+- **Category icons (2026-11-08, commit `3375fd8`)** ✅ — shared `CategoryIcon` renderer
+  (URL vs Lucide name vs fallback), VelCenter Lucide picker restored, PNG/JPG/WebP/SVG upload,
+  create-with-image now uploads to R2 (no base64). VelShop strip/categories/home render icons
+  via the shared component. Browser E2E still BLOCKED (no local DB/R2; expired saved cookies).
 - Seller roadmap Part 2 (Orders / Order Detail re-verification) — **not started**.
 - Shipping P0 (fee + quote) — **implemented and committed**; production schema reconciled
   2026-11-05 (money table + shop columns now exist in Neon).
@@ -23,6 +26,7 @@
 
 ### Important Unresolved Issues
 1. **No local PostgreSQL** — `initdb` hangs at "selecting default max_connections"
+[showing lines 1..25 of 120]
    (Android), so every `TEST_DATABASE_URL`-gated suite skips here, including the new
    `checkout-shipping-integrity.test.ts` and any local end-to-end purchase journey.
 2. **Responsive verification BLOCKED** — CDP cannot install on android/arm64.
