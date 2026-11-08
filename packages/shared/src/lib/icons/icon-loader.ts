@@ -94,15 +94,15 @@ export async function resolveIconBody(
   if (direct) return direct;
 
   // Alias → parent (aliases may chain; guard against cycles).
-  let seen = new Set<string>();
+  const seen = new Set<string>();
   let cur: string | undefined = name;
   while (cur && !seen.has(cur)) {
     seen.add(cur);
-    const parent = data.aliases[cur];
-    if (!parent) break;
-    const resolved = data.icons[parent];
+    const parentName: string | undefined = data.aliases[cur];
+    if (!parentName) break;
+    const resolved: IconBodyData | undefined = data.icons[parentName];
     if (resolved) return resolved;
-    cur = parent;
+    cur = parentName;
   }
   return undefined;
 }

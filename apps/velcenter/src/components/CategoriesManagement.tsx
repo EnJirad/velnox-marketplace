@@ -30,19 +30,17 @@ import {
   Eye,
   EyeOff,
   FolderTree,
-  X,
-  Copy,
-  Check,
-  RefreshCw,
   Upload,
   Image,
-  CheckIcon,
 } from "lucide-react";
+import { CategoryIcon } from "@velnox/shared/components/ui/category-icon";
 import {
-  CategoryIcon,
-  CATEGORY_ICON_NAMES,
-  resolveCategoryIcon,
-} from "@velnox/shared/components/ui/category-icon";
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@velnox/shared/components/ui/sheet";
 import { Button } from "@velnox/shared/components/ui/button";
 import { Input } from "@velnox/shared/components/ui/input";
 import { Label } from "@velnox/shared/components/ui/label";
@@ -64,111 +62,7 @@ import {
 } from "@velnox/shared/components/ui/dialog";
 import { toast } from "sonner";
 import { cn } from "@velnox/shared/lib/utils";
-
-/**
- * LucideIconPicker — searchable dropdown of available Lucide icons with live
- * SVG previews. Narrow floating list so it stays inside narrow mobile dialogs.
- */
-function LucideIconPicker({
-  value,
-  onSelect,
-  placeholder,
-}: {
-  value: string;
-  onSelect: (name: string) => void;
-  placeholder?: string;
-}) {
-  const { t } = useLanguage();
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const wrapRef = useRef<HTMLDivElement>(null);
-
-  const results = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return CATEGORY_ICON_NAMES.slice(0, 40);
-    return CATEGORY_ICON_NAMES.filter((n) => n.includes(q)).slice(0, 40);
-  }, [query]);
-
-  useEffect(() => {
-    if (!open) return;
-    const onClick = (e: MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", onClick);
-    return () => document.removeEventListener("mousedown", onClick);
-  }, [open]);
-
-  const selected = value ? (resolveCategoryIcon(value) ?? null) : null;
-
-  return (
-    <div ref={wrapRef} className="relative w-full">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-sm text-slate-700 hover:border-emerald-300"
-        aria-haspopup="listbox"
-        aria-expanded={open}
-      >
-        <span className="flex size-6 flex-shrink-0 items-center justify-center rounded-[6px] bg-emerald-50 text-emerald-600">
-          {selected ? (
-            <CategoryIcon icon={value} className="size-4" />
-          ) : (
-            <Image className="size-4 text-slate-300" />
-          )}
-        </span>
-        <span className="flex-1 truncate">
-          {value || t("velcenter.categories.formIconLucidePlaceholder")}
-        </span>
-        <ChevronDown className={cn("size-4 text-slate-400", open && "rotate-180")} />
-      </button>
-
-      {open && (
-        <div className="absolute z-50 mt-1 w-full rounded-lg border border-slate-200 bg-white shadow-lg">
-          <div className="relative border-b border-slate-100">
-            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder={t("velcenter.categories.formIconLucidePlaceholder")}
-              className="w-full bg-transparent py-2 pl-9 pr-3 text-sm outline-none"
-              autoFocus
-            />
-          </div>
-          <ul role="listbox" className="max-h-56 overflow-y-auto p-1">
-            {results.map((name) => {
-              const IconComp = resolveCategoryIcon(name);
-              return (
-                <li key={name}>
-                  <button
-                    type="button"
-                    role="option"
-                    aria-selected={value === name}
-                    onClick={() => {
-                      onSelect(name);
-                      setOpen(false);
-                      setQuery("");
-                    }}
-                    className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-slate-700 hover:bg-emerald-50 data-[selected=true]:bg-emerald-50"
-                    data-selected={value === name}
-                  >
-                    {IconComp ? <IconComp className="size-4 text-emerald-600" /> : null}
-                    <span className="flex-1 truncate">{name}</span>
-                    {value === name && <CheckIcon className="size-3.5 text-emerald-600" />}
-                  </button>
-                </li>
-              );
-            })}
-            {results.length === 0 && (
-              <li className="px-3 py-2 text-sm text-slate-400">
-                {t("velcenter.categories.noIconsFound", { search: query })}
-              </li>
-            )}
-          </ul>
-        </div>
-      )}
-    </div>
-  );
-}
+import { IconifyIconPicker } from "./IconifyIconPicker";
 
 interface CategoryNode {
   id: string;
@@ -184,6 +78,8 @@ interface CategoryNode {
   display_description?: string;
   image_url?: string | null;
   description?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
   children: CategoryNode[];
 }
 
@@ -239,7 +135,36 @@ export default function CategoriesManagement() {
   const [deleting, setDeleting] = useState(false);
   const [iconUploading, setIconUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [detailsCategory, setDetailsCategory] = useState<CategoryNode | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const findNode = (nodes: CategoryNode[], id: string): CategoryNode | null => {
+    for (const n of nodes) {
+      if (n.id === id) return n;
+      const found = findNode(n.children, id);
+      if (found) return found;
+    }
+    return null;
+  };
+
+  /** Root → node chain, used for breadcrumbs and parent/child relationships. */
+  const pathTo = (nodes: CategoryNode[], id: string, trail: CategoryNode[] = []): CategoryNode[] | null => {
+    for (const n of nodes) {
+      const next = [...trail, n];
+      if (n.id === id) return next;
+      const found = pathTo(n.children, id, next);
+      if (found) return found;
+    }
+    return null;
+  };
+
+  /** Open details for the FULL (unfiltered) node so counts/children stay exact. */
+  const openDetails = useCallback(
+    (cat: CategoryNode) => {
+      setDetailsCategory(findNode(categories, cat.id) ?? cat);
+    },
+    [categories],
+  );
 
   const loadCategories = useCallback(async () => {
     setLoading(true);
@@ -264,6 +189,10 @@ export default function CategoriesManagement() {
       setCategories(roots);
       // Auto-expand root nodes on first load
       setExpandedIds(new Set(roots.map((r) => r.id)));
+      // Keep the details panel in sync after a reload.
+      setDetailsCategory((prev) =>
+        prev ? findNode(roots, prev.id) ?? null : prev,
+      );
     } catch {
       setError(true);
     } finally {
@@ -687,6 +616,7 @@ export default function CategoriesManagement() {
                 onDelete={setDeleteConfirm}
                 onToggleActive={handleToggleActive}
                 onAddChild={openCreateDialog}
+                onOpenDetails={openDetails}
               />
             ))}
           </div>
@@ -724,37 +654,16 @@ export default function CategoriesManagement() {
             </div>
             <div className="grid gap-2">
               <Label>{t("velcenter.categories.formSlugLabel")}</Label>
-              <div className="relative">
-                <Input
-                  value={form.slug}
-                  onChange={(e) => setForm((p) => ({ ...p, slug: e.target.value, slugManuallyEdited: true }))}
-                  placeholder={t("velcenter.categories.formSlugPlaceholder")}
-                  className="pr-10"
-                />
-                <button
-                  type="button"
-                  onClick={() => setForm((p) => ({ ...p, slug: slugifyCategory(p.name), slugManuallyEdited: false }))}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-emerald-600"
-                  title={t("velcenter.categories.formSlugReset")}
-                >
-                  <RefreshCw className="size-4" />
-                </button>
-                <p className="text-[11px] text-slate-400 mt-1 flex items-center gap-2">
-                  <span>{t("velcenter.categories.formSlugPreview", { url: apiBaseUrl + "/category/" + (form.slug || "...") })}</span>
-                  <button
-                    type="button"
-                    onClick={() => navigator.clipboard.writeText(apiBaseUrl + "/category/" + form.slug)}
-                    className="text-emerald-600 hover:underline text-[11px]"
-                  >
-                    {t("velcenter.categories.formSlugCopy")}
-                  </button>
-                </p>
-              </div>
+              <Input
+                value={form.slug}
+                onChange={(e) => setForm((p) => ({ ...p, slug: e.target.value, slugManuallyEdited: true }))}
+                placeholder={t("velcenter.categories.formSlugPlaceholder")}
+              />
             </div>
             <div className="grid gap-2">
               <Label>{t("velcenter.categories.formIconLabel")}</Label>
 
-              {/* Mode tabs: Lucide icon name OR uploaded image */}
+              {/* Mode tabs: icon library OR uploaded image */}
               <div className="flex gap-1 border-b border-slate-200">
                 <button
                   type="button"
@@ -765,7 +674,7 @@ export default function CategoriesManagement() {
                       : "text-slate-500 hover:text-slate-700"
                   }`}
                 >
-                  {t("velcenter.categories.iconModeLucide")}
+                  {t("velcenter.categories.iconModePicker")}
                 </button>
                 <button
                   type="button"
@@ -781,7 +690,7 @@ export default function CategoriesManagement() {
               </div>
 
               {form.iconMode === "lucide" ? (
-                <LucideIconPicker
+                <IconifyIconPicker
                   value={form.icon}
                   onSelect={(name) => setForm((p) => ({ ...p, icon: name, iconFile: null, image_url: "" }))}
                   placeholder={t("velcenter.categories.formIconLucidePlaceholder")}
@@ -937,11 +846,204 @@ export default function CategoriesManagement() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Category Details Panel (right sheet; full width on mobile) */}
+      <Sheet open={!!detailsCategory} onOpenChange={(o) => { if (!o) setDetailsCategory(null); }}>
+        <SheetContent side="right" className="w-full p-0 sm:max-w-md">
+          {detailsCategory && <CategoryDetails
+            category={detailsCategory}
+            path={pathTo(categories, detailsCategory.id) ?? []}
+            onNavigate={openDetails}
+            onEdit={(node) => { setDetailsCategory(null); openEditDialog(node); }}
+            onAddChild={(node) => { setDetailsCategory(null); openCreateDialog(node.id); }}
+            onToggleActive={(node) => void handleToggleActive(node)}
+            onDelete={(node) => { setDetailsCategory(null); setDeleteConfirm(node); }}
+          />}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
 
-// ─── Category Row Component ──────────────────────────────────────────
+// ─── Category Details Panel ─────────────────────────────────────────────
+function CategoryDetails({
+  category,
+  path,
+  onEdit,
+  onAddChild,
+  onToggleActive,
+  onDelete,
+  onNavigate,
+}: {
+  category: CategoryNode;
+  path: CategoryNode[];
+  onEdit: (node: CategoryNode) => void;
+  onAddChild: (node: CategoryNode) => void;
+  onToggleActive: (node: CategoryNode) => void;
+  onDelete: (node: CategoryNode) => void;
+  onNavigate: (node: CategoryNode) => void;
+}) {
+  const { t } = useLanguage();
+  const node = category;
+  const parentNode = path.length > 1 ? path[path.length - 2] : null;
+  const labelName = node.display_name ?? node.name;
+  const desc = node.display_description ?? node.description;
+  const fmtDate = (v: string | null | undefined) =>
+    v ? new Date(v).toLocaleString() : "—";
+
+  return (
+    <div className="flex h-full flex-col">
+      {/* Header */}
+      <SheetHeader className="border-b border-slate-100">
+        <div className="flex items-center gap-3 pr-8">
+          <span className="flex size-12 flex-shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
+            <CategoryIcon icon={node.icon} imageUrl={node.image_url} className="size-7" alt={labelName} />
+          </span>
+          <div className="min-w-0">
+            <SheetTitle className="truncate">{labelName}</SheetTitle>
+            <SheetDescription className="truncate">/{node.slug}</SheetDescription>
+          </div>
+        </div>
+      </SheetHeader>
+
+      <div className="flex-1 overflow-y-auto p-4">
+        {/* Breadcrumb */}
+        {path.length > 0 && (
+          <div className="mb-4 flex flex-wrap items-center gap-1 text-xs text-slate-500">
+            {path.map((n, idx) => (
+              <React.Fragment key={n.id}>
+                {idx > 0 && <ChevronRight className="size-3 flex-shrink-0 text-slate-300" />}
+                <button
+                  type="button"
+                  onClick={() => onNavigate(n)}
+                  className={idx === path.length - 1 ? "font-medium text-slate-800" : "hover:text-emerald-700 hover:underline"}
+                >
+                  {n.display_name ?? n.name}
+                </button>
+              </React.Fragment>
+            ))}
+          </div>
+        )}
+
+        {/* Quick actions */}
+        <div className="mb-5 grid grid-cols-2 gap-2">
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={() => onEdit(node)}>
+            <Pencil className="size-3.5" />
+            {t("velcenter.categories.detailsActionEdit")}
+          </Button>
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={() => onAddChild(node)}>
+            <Plus className="size-3.5" />
+            {t("velcenter.categories.detailsActionAddChild")}
+          </Button>
+          <Button
+            variant={node.is_active ? "outline" : "default"}
+            size="sm"
+            className={`gap-1.5 ${node.is_active ? "" : "bg-emerald-600 text-white hover:bg-emerald-700"}`}
+            onClick={() => onToggleActive(node)}
+          >
+            {node.is_active ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+            {node.is_active
+              ? t("velcenter.categories.detailsActionDeactivate")
+              : t("velcenter.categories.detailsActionActivate")}
+          </Button>
+          <Button variant="destructive" size="sm" className="gap-1.5" onClick={() => onDelete(node)}>
+            <Trash2 className="size-3.5" />
+            {t("velcenter.categories.detailsActionDelete")}
+          </Button>
+        </div>
+
+        {/* Basic information */}
+        <DetailSection title={t("velcenter.categories.detailsBasicInfo")}>
+          <DetailRow label={t("velcenter.categories.detailsSlug")} value={`/${node.slug}`} mono />
+          <DetailRow label={t("velcenter.categories.detailsDescription")} value={desc || "—"} />
+          <DetailRow
+            label={t("velcenter.categories.detailsParent")}
+            value={parentNode ? (parentNode.display_name ?? parentNode.name) : t("velcenter.categories.detailsNoParent")}
+          />
+          <DetailRow
+            label={t("velcenter.categories.detailsDirectChildren")}
+            value={String(node.children.length)}
+          />
+          <DetailRow label={t("velcenter.categories.detailsCategoryId")} value={node.id} mono />
+        </DetailSection>
+
+        {/* Product statistics */}
+        <DetailSection title={t("velcenter.categories.detailsProductStats")}>
+          <DetailRow label={t("velcenter.categories.detailsPublishedProducts")} value={String(node.product_count ?? 0)} />
+        </DetailSection>
+
+        {/* Status */}
+        <DetailSection title={t("velcenter.categories.detailsStatusInfo")}>
+          <div className="flex items-center justify-between py-1.5">
+            <span className="text-sm text-slate-500">{t("velcenter.categories.detailsStatusInfo")}</span>
+            <Badge
+              variant={node.is_active ? "default" : "outline"}
+              className={node.is_active ? "bg-emerald-100 text-emerald-700" : "text-slate-400"}
+            >
+              {node.is_active ? t("velcenter.categories.detailsActive") : t("velcenter.categories.detailsInactive")}
+            </Badge>
+          </div>
+          <DetailRow label={t("velcenter.categories.detailsSortOrder")} value={String(node.sort_order ?? 0)} />
+          <DetailRow label={t("velcenter.categories.detailsCreatedAt")} value={fmtDate(node.created_at)} />
+          <DetailRow label={t("velcenter.categories.detailsUpdatedAt")} value={fmtDate(node.updated_at)} />
+        </DetailSection>
+
+        {/* Related — direct child categories */}
+        <DetailSection title={t("velcenter.categories.detailsChildren")}>
+          {node.children.length === 0 ? (
+            <p className="py-2 text-sm text-slate-400">{t("velcenter.categories.detailsNoChildren")}</p>
+          ) : (
+            <ul className="divide-y divide-slate-100">
+              {node.children.map((child) => (
+                <li key={child.id}>
+                  <button
+                    type="button"
+                    onClick={() => onNavigate(child)}
+                    className="flex w-full items-center gap-2 py-2 text-left text-sm hover:text-emerald-700"
+                  >
+                    <ChevronRight className="size-3.5 flex-shrink-0 text-slate-300" />
+                    <span className="min-w-0 flex-1 truncate text-slate-700">
+                      {child.display_name ?? child.name}
+                    </span>
+                    <Badge
+                      variant={child.is_active ? "default" : "outline"}
+                      className={`text-[10px] ${child.is_active ? "bg-emerald-100 text-emerald-700" : "text-slate-400"}`}
+                    >
+                      {child.is_active ? t("velcenter.categories.detailsActive") : t("velcenter.categories.detailsInactive")}
+                    </Badge>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </DetailSection>
+      </div>
+    </div>
+  );
+}
+
+function DetailSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="mb-5">
+      <h4 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">{title}</h4>
+      <div className="rounded-lg border border-slate-100 px-3 py-1">{children}</div>
+    </section>
+  );
+}
+
+function DetailRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="flex items-start justify-between gap-3 py-1.5">
+      <span className="flex-shrink-0 text-sm text-slate-500">{label}</span>
+      <span
+        className={`min-w-0 flex-1 truncate text-right text-sm text-slate-800 ${mono ? "font-mono text-xs" : ""}`}
+        title={value}
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
 function CategoryRow({
   category,
   depth,
@@ -951,6 +1053,7 @@ function CategoryRow({
   onDelete,
   onToggleActive,
   onAddChild,
+  onOpenDetails,
 }: {
   category: CategoryNode;
   depth: number;
@@ -960,7 +1063,9 @@ function CategoryRow({
   onDelete: (cat: CategoryNode) => void;
   onToggleActive: (cat: CategoryNode) => void;
   onAddChild: (parentId: string) => void;
+  onOpenDetails: (cat: CategoryNode) => void;
 }) {
+  const { t } = useLanguage();
   const hasChildren = category.children.length > 0;
   const isExpanded = expandedIds.has(category.id);
 
@@ -988,7 +1093,7 @@ function CategoryRow({
           <span className="w-5 flex-shrink-0" />
         )}
 
-        {/* Name + slug + icon */}
+        {/* Name + slug + icon — clicking the name opens the details panel */}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
             {category.icon || category.image_url ? (
@@ -996,18 +1101,20 @@ function CategoryRow({
                 <CategoryIcon icon={category.icon} imageUrl={category.image_url} className="size-5 rounded" />
               </span>
             ) : null}
-            <span className="truncate text-sm font-medium text-slate-900">{category.display_name ?? category.name}</span>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenDetails(category);
+              }}
+              title={t("velcenter.categories.detailsOpenName")}
+              className="min-w-0 cursor-pointer truncate text-left text-sm font-medium text-slate-900 hover:text-emerald-700 hover:underline"
+            >
+              {category.display_name ?? category.name}
+            </button>
           </div>
           <span className="ml-2 text-xs text-slate-400 hidden sm:inline">/{category.slug}</span>
         </div>
-
-        {/* Product count */}
-        {(category.product_count ?? 0) > 0 && (
-          <Badge variant="secondary" className="gap-1 text-xs flex-shrink-0">
-            <Package className="size-3" />
-            {category.product_count}
-          </Badge>
-        )}
 
         {/* Active badge */}
         <Badge
@@ -1072,6 +1179,7 @@ function CategoryRow({
               onDelete={onDelete}
               onToggleActive={onToggleActive}
               onAddChild={onAddChild}
+              onOpenDetails={onOpenDetails}
             />
           ))}
         </div>

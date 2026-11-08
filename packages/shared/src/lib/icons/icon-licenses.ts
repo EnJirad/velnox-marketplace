@@ -1,7 +1,7 @@
 /**
  * icon-licenses.ts — licensing + attribution for every collection bundled in
  * the local Velnox icon library. Sourced from the official Iconify
- * `@iconify-json/*/info.json` files (verified at generation time) — never typed
+ * `@iconify-json/<prefix>/info.json` files (verified at generation time) — never typed
  * by hand from memory.
  *
  * All five collections permit commercial use:

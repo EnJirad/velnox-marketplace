@@ -4,16 +4,22 @@
  * One component to render a category's icon no matter which app shows it
  * (VelCenter, VelShop, VelSeller). The stored value can be:
  *
- *   1. An image URL       → `<img>` (uploaded PNG/JPG/WEBP/SVG on R2)
- *   2. A Lucide icon name → real Lucide SVG resolved by name
- *   3. Anything else      → a graceful default fallback (never a broken/blank cell)
+ *   1. An image URL             → `<img>` (uploaded PNG/JPG/WEBP/SVG on R2)
+ *   2. An Iconify namespaced id → lazy-loaded local SVG: "mdi:shopping",
+ *                                 "tabler:device-laptop", "ph:house", …
+ *   3. A legacy Lucide name     → real Lucide SVG resolved by name (curated
+ *                                 set synchronously; unknown names resolve via
+ *                                 the full local Lucide collection lazily)
+ *   4. Anything else            → a graceful default fallback (never a broken/blank cell)
  *
- * It NEVER renders a raw Lucide name as text, never treats a URL as an icon
- * name, and never falls back to a hard-coded generic image. Invalid names
- * degrade to the passed/default fallback icon.
+ * It NEVER renders a raw name as text, never treats a URL as an icon name, and
+ * never falls back to a hard-coded generic image. Invalid names degrade to the
+ * passed/default fallback icon.
  *
- * Only the curated set below is bundled (tree-shakeable named imports), so we
- * never ship the entire Lucide library just to render category icons.
+ * The curated set below is bundled as tree-shakeable named imports (the
+ * synchronous fast-path for every legacy value); Iconify names and unknown
+ * names render through the on-demand local library (code-split per collection,
+ * loaded lazily, cached — no runtime requests).
  */
 import {
   Package,
@@ -82,6 +88,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@velnox/shared/lib/utils";
+import { LibraryIcon } from "@velnox/shared/lib/icons";
 
 /**
  * Curated Lucide icon set used by the category picker and this renderer.
@@ -201,7 +208,7 @@ function firstUrl(...values: Array<string | null | undefined>): string | null {
 }
 
 export interface CategoryIconProps {
-  /** Stored icon value: image URL, data: URL, or Lucide kebab name. */
+  /** Stored icon value: image URL, data: URL, Iconify "prefix:name", or Lucide name. */
   icon?: string | null;
   /** Legacy/uploaded image URL (kept for backward compatibility). */
   imageUrl?: string | null;
@@ -216,8 +223,13 @@ export interface CategoryIconProps {
  * Unified renderer. Resolution order:
  *   1. imageUrl (legacy field) if it is a URL
  *   2. icon value if it is a URL / data: URI
- *   3. icon value as a Lucide name
- *   4. fallback / default icon
+ *   3. Iconify namespaced value ("prefix:name", e.g. "mdi:shopping") → lazy-loaded
+ *      local SVG via LibraryIcon (offline, code-split per collection)
+ *   4. icon value resolved against the curated Lucide set (synchronous fast-path,
+ *      keeps every existing kebab-case / PascalCase / "Icon"-suffixed legacy name)
+ *   5. any other bare name → full local Lucide collection (enhancement; invalid
+ *      names degrade to the fallback)
+ *   6. fallback / default icon
  */
 export function CategoryIcon({ icon, imageUrl, className, fallback = Package, alt = "" }: CategoryIconProps) {
   const src = firstUrl(imageUrl, icon);
@@ -235,6 +247,27 @@ export function CategoryIcon({ icon, imageUrl, className, fallback = Package, al
     );
   }
 
-  const IconComp = resolveCategoryIcon(icon) ?? fallback;
-  return <IconComp aria-hidden={alt === ""} className={className} strokeWidth={2} />;
+  const value = (icon ?? "").trim();
+  const renderFallback = () => {
+    const FallbackIcon = fallback ?? Package;
+    return <FallbackIcon aria-hidden={alt === ""} className={className} strokeWidth={2} />;
+  };
+
+  if (value) {
+    // Namespaced Iconify identifier → full local library (lazy, offline).
+    if (value.includes(":")) {
+      return <LibraryIcon icon={value} className={className} title={alt || undefined} fallback={renderFallback} />;
+    }
+
+    // Curated Lucide fast-path — preserves all legacy kebab/Pascal names exactly.
+    const IconComp = resolveCategoryIcon(value);
+    if (IconComp) {
+      return <IconComp aria-hidden={alt === ""} className={className} strokeWidth={2} />;
+    }
+
+    // Bare name not in the curated set → try the full local Lucide collection.
+    return <LibraryIcon icon={value} className={className} title={alt || undefined} fallback={renderFallback} />;
+  }
+
+  return renderFallback();
 }

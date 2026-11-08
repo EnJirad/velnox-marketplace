@@ -20,7 +20,35 @@ categories (DB) → GET /api/categories|/tree → VelCenter admin / Velseller se
 
 ## Important Files
 
-`db/schema.sql`, `backend/lib/categories.ts`, `backend/routes/products.ts`, `apps/velcenter/src/components/CategoriesManagement.tsx`, `packages/shared/src/components/seller/CategoryPicker.tsx`, `packages/shared/src/components/seller/ProductFormDialog.tsx`.
+`db/schema.sql`, `backend/lib/categories.ts`, `backend/routes/products.ts`, `apps/velcenter/src/components/CategoriesManagement.tsx`, `apps/velcenter/src/components/IconifyIconPicker.tsx`, `packages/shared/src/lib/icons/` (offline Iconify library: registry, lazy loader, name search, safe SVG renderer, licenses), `packages/shared/src/components/ui/category-icon.tsx`, `packages/shared/src/components/seller/CategoryPicker.tsx`, `packages/shared/src/components/seller/ProductFormDialog.tsx`.
+
+## Icon Values (categories.icon)
+
+A category icon value may be one of:
+
+- **Image URL / R2 URL / data:** → rendered as `<img>` (upload route: `category-icon` purpose, R2).
+- **Iconify namespaced id** — `"mdi:shopping"`, `"tabler:device-laptop"`, `"ph:house"`,
+  `"lucide:shopping-bag"`, `"fa6-solid:cart-shopping"` → rendered lazily from local generated
+  data (`packages/shared/src/lib/icons/generated/icons/<prefix>.json`, code-split + cached; no
+  runtime icon API). 5 collections, 26,620 primary icons.
+- **Legacy Lucide kebab / PascalCase / "Icon"-suffix** → curated `CATEGORY_ICON_SET` synchronous
+  fast-path (map covers names that differ from Iconify lucide naming, e.g. `tools`→Wrench);
+  unknown bare names resolve via the full local Lucide collection.
+- **Anything else** → `Package` fallback (never blank/broken).
+
+Render ONLY through `CategoryIcon` (shared). Licenses: lucide ISC · mdi Apache-2.0 · tabler MIT ·
+ph MIT · fa6-solid CC-BY-4.0 (attribution shown in the picker). Regenerate assets:
+`scripts/generate-icon-library.mjs` (writes manifest + per-collection icons/names JSON).
+
+## VelCenter Details Panel
+
+The category tree no longer shows product-count badges. Clicking a category **name** opens a
+right-side details sheet (`Sheet side="right"`, full width on mobile) fed only by the existing
+`GET /api/admin/categories` fields: `product_count` (published products — labelled as such),
+`child_count`, `is_active`, `sort_order`, `created_at`, `updated_at`, `display_description`, plus
+breadcrumb/parent/children derived from the tree. Quick actions reuse the existing edit/add-child/
+activate/delete dialogs. Expand/collapse and the per-row action buttons stay independent of the
+name-triggered details open.
 
 ## Important Rules
 

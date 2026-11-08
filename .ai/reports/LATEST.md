@@ -1,106 +1,107 @@
-# Velnox — Category Icon, R2 Upload & AI Office Synchronization — 2026-11-08
+# Velnox — Icon Library (offline Iconify) + Category Details Panel — 2026-11-08
 
 Date: 2026-11-08
-Agent / Session: AndroidHarness (AI 01/02 inline — AI 02 subagent BLOCKED, see field 18)
-Starting commit: `6cd61ce0585d515cb6250a63788b3f1c3e44e49d`
-Ending commit: `3375fd8` (pushed to origin/main)
+Agent / Session: AndroidHarness (AI 01 implement + AI 02 independent QA via subagent)
+Starting commit: `96870bb4cdb9f12d4be1170d8c7ef086aaf12fc6` (HEAD == origin/main, tree clean)
+Ending commit: see final git log (pushed to origin/main)
 Branch: `main`
-Committed? Yes — `3375fd8`
 
-Task: Restore complete category icon support (searchable Lucide picker + image/SVG upload), fix
-the create-with-image R2 upload flow (never persist base64), create a unified cross-app icon
-renderer, polish Category Management mobile/desktop UI, then sync the AI Office docs.
+## 1. Task
 
-## 1. Inspection (before changes)
+Bring the full Iconify icon library into VelCenter category management (offline local, lazy,
+backward compatible), remove the category Slug URL-preview/copy/refresh UI, and move the product
+count out of the category tree into a new category details panel.
 
-- `git fetch origin`; `HEAD == origin/main == 6cd61ce`; working tree clean.
-- `.ai/AI_HANDOFF.md` + `.ai/reports/LATEST.md` + `.ai/tasks/active/README.md` read (docs were stale:
-  handoff still referenced commit 48b8f34, LATEST referenced Phase 1/2 UI/UX).
-- `.ai/AI_RULES.md` §§18–19 read (MANDATORY Change Report + Development Memory format).
-- Read: `apps/velcenter/src/components/CategoriesManagement.tsx`, `backend/routes/upload.ts`,
-  `backend/routes/products.ts` (admin category CRUD + category GETs), `packages/shared/src/lib/i18n/locales/{th,en,my}.ts` + `index.tsx`,
-  `apps/velshop/src/pages/ShopHome.tsx`, `apps/velshop/src/pages/ShopCategories.tsx`,
-  `apps/velshop/src/components/shop/CategoryStrip.tsx`.
+## 2. Repository safety
 
-## 2. Findings (VERIFIED FACTS vs ASSUMPTIONS)
+- `git fetch origin`; `HEAD == origin/main == 96870bb`; working tree clean before edits.
+- No force-push, no production changes, no data writes.
 
-VERIFIED FACTS
-- Backend upload purpose `category-icon` exists, is `settings.manage`-gated at presign, mints
-  `categories/{categoryId}/icon.webp`, and confirm writes `categories.icon`. `image/svg+xml` is
-  allowed only for that purpose (added previously). jpeg/png/webp/avif allowed for all purposes.
-- VelCenter `CategoriesManagement.tsx` had NO Lucide picker (removed earlier); only PNG/SVG upload
-  remained. It DID upload the replacement to R2 for existing categories but used a **base64 data URL**
-  for NEW categories (create-path), which was sent verbatim to the backend — the Phase-2 bug.
-- Frontend used `${apiBaseUrl}/upload/presign` + `/confirm` correctly (apiBaseUrl already has `/api`).
-- VelShop: `CategoryStrip` took a Lucide *component* (`icon?: LucideIcon`) or `imageUrl?: string`;
-  `ShopHome` kept a hardcoded `CATEGORY_ICONS` slug map + a URL-only `catIconMap`; `ShopCategories`
-  read a `imageUrl` field from the stats API that the backend does NOT return (it returns `icon` +
-  `image_url`) — its icon never rendered.
-- i18n keys for both icon modes already existed (th/en/my) at parity.
-- No local PostgreSQL: `initdb` hangs on this Android device (documented in the handoff). Saved
-  `.ai/secrets/browser-cookies.json` sessions (`seller`, `owner`) were expired at run time
-  (`2026-11-08T04:00Z` / `05:31Z`), so live authenticated browser E2E against the deployed backend
-  could not run.
+## 3. What changed
 
-ASSUMPTIONS (not independently verified)
-- Backend `isStoredContentTypeAllowed` now accepts `image/svg+xml` for `category-icon`; the unit test
-  `upload-security.test.ts` previously asserted an outdated allowlist WITHOUT `category-icon` and
-  failed. We corrected the test to the real allowlist.
+1. **Iconify full library connected** — `packages/shared/src/lib/icons/` (scaffolded at `7d06455`,
+   previously unused) is now wired in:
+   - Fixed latent bugs that only appear once the module graph is imported: `icon-licenses.ts`
+     block-comment `*/` termination, `icon-loader.ts` TS7022 alias-loop annotation, `index.ts`
+     `ICON_TOTAL_COUNT` re-export.
+   - `CategoryIcon` (shared renderer) now supports Iconify `prefix:name` (lazy, offline) while
+     keeping the curated Lucide synchronous fast-path + image/R2 URLs + legacy
+     PascalCase/"Icon"-suffix + fallback. API unchanged.
+2. **Picker** — `apps/velcenter/src/components/IconifyIconPicker.tsx`: collection chips (All + 5),
+   cross-collection search, real SVG previews (bodies batch-loaded per page), namespaced ids
+   (`mdi:shopping`, `tabler:device-laptop`, `ph:house`, `fa6-solid:cart-shopping`), pagination
+   (48/page), license footer, fully offline. Custom PNG/JPG/WebP/SVG upload + R2 flow untouched.
+3. **Slug UI** — removed the example-URL text, copy button and refresh/reset button; kept the Slug
+   input and auto-generation (respects manual edits).
+4. **Details panel** — product-count badge removed from tree rows. Clicking a category **name**
+   opens a right sheet (`Sheet side="right"`, full width on mobile) with basic info (name, icon
+   preview, slug, description, id, parent, direct-child count, breadcrumb), product stats
+   (published-product count, labelled), status (active/inactive, sort order, created/updated),
+   direct-children list with status + navigation, and quick actions reusing the existing
+   edit/add-child/activate/delete flows. Expand/collapse and action buttons stay independent.
+5. **i18n** — th/en/my updated; removed `formSlugReset/formSlugPreview/formSlugCopy/iconModeLucide`,
+   added `details*` + `iconPicker*` + `iconModePicker`. Parity: **2206 keys × 3**.
 
-## 3. Changes made
+## 4. Icon collections integrated & icon count
 
-| File | Change |
-|------|--------|
-| `packages/shared/src/components/ui/category-icon.tsx` (NEW) | `CategoryIcon` + `CATEGORY_ICON_SET`/`CATEGORY_ICON_NAMES` + `resolveCategoryIcon`. Distinguishes image URL / data: URI (→ `<img>`) vs Lucide kebab name (→ real SVG) vs unknown (→ fallback `Package`). Curated tree-shakeable set (no full-lib import). Backward-compatible with PascalCase/“Icon”-suffixed legacy names. |
-| `apps/velcenter/src/components/CategoriesManagement.tsx` | Restored searchable `LucideIconPicker` (live SVG previews, floating list, kebab search); form now has **mode tabs** (Lucide name / upload); upload accepts PNG/JPG/WebP/SVG; create-with-image now flows **create → upload to R2 → set icon URL** (no base64 persisted); edit with new file uploads replacement first, then updates; `CategoryRow` renders via shared `CategoryIcon`. |
-| `apps/velshop/src/components/shop/CategoryStrip.tsx` | Chip + strip accept `iconName` (stored Lucide name) alongside `imageUrl`; render via shared `CategoryIcon`. |
-| `apps/velshop/src/pages/ShopHome.tsx` | `catIconMap` now stores the raw icon value (URL **or** Lucide name); strip receives both `imageUrl` and `iconName`. |
-| `apps/velshop/src/pages/ShopCategories.tsx` | Fixed field contract (`icon`/`image_url` from stats API); renders via shared `CategoryIcon`. |
-| `backend/tests/upload-security.test.ts` | Updated presign allowlist assertion to include `category-icon` (real regression from when the purpose was added). |
+| Collection | Primary icons | Aliases | License |
+|---|---|---|---|
+| lucide | 2,109 | 237 | ISC |
+| mdi | 7,638 | 6,363 | Apache-2.0 |
+| tabler | 6,305 | 194 | MIT |
+| ph | 9,161 | 37 | MIT |
+| fa6-solid | 1,407 | 1 | CC-BY-4.0 (attribution shown) |
+| **Total** | **26,620** | 6,832 | |
 
-## 4. What was removed
+Sources: `@iconify-json/*/info.json`, generated into `packages/shared/src/lib/icons/generated/`
+by `scripts/generate-icon-library.mjs`.
 
-- VelCenter create-path base64 data-URL persistence (`iconRaw`/`image_url` set to `data:` and sent).
-- The old manual `imageUrl`-only mapping in VelShop category surfaces.
-- Dead `catId`/`isSvg` variables.
+## 5. Performance / offline
 
-## 5. Tests run (real commands) + results
+- No runtime requests to any Iconify API. All data ships in the commit (generated assets).
+- Each collection's body and name index is its own Vite lazy chunk (dynamic `import()`), verified
+  in the production build: `mdi`/`ph`/`tabler`/`fa6-solid`/`lucide` body chunks are separate
+  files — none in the initial bundle. Search uses the small name index (no body render until the
+  page shows), then bodies are batch-loaded per visible page and cached.
+- Large on-demand chunks: mdi ~2.9 MB and ph ~4.5 MB raw (gzip ~729/957 KB). Noted limitation.
 
-- `bun run typecheck` — PASS (4/4 apps)
-- `bun run build:apps` — PASS (4/4 apps; velcenter Center chunk ~377 KB stable)
-- `bun run i18n:check` — PASS (2177 × 3, all locales at parity)
-- `git diff --check` — PASS
-- `bun test backend/tests/upload-security.test.ts` — PASS (14 pass, 7 skip, 0 fail)
-- `bun test backend/tests/product-upload-guards.test.ts` — PASS (7 pass, 0 fail)
-- Browser: velcenter dev server served `/auth` with no runtime JS errors (console clean). Full
-  authenticated category-page E2E + R2 upload + VelShop render check: **BLOCKED** — no local DB/R2
-  and the saved production session cookies are expired (see Findings).
+## 6. Test results
 
-## 6. Bugs found / fixed
+Executed on this session (never claimed without running):
 
-- Fixed: Lucide picker missing entirely (restored).
-- Fixed: create-with-upload persisted base64 data URLs (now uploads to R2 after create).
-- Fixed: VelShop `ShopCategories` read a non-existent `imageUrl` field (icons never rendered).
-- Fixed: stale `upload-security.test.ts` allowlist assertion (test failure).
-- Not fixed (pre-existing, out of scope): no live DB/R2 local e2e.
+| Check | Result |
+|---|---|
+| velcenter typecheck | PASS |
+| velshop typecheck | PASS |
+| velseller typecheck | PASS |
+| velnox typecheck | PASS |
+| `i18n:check` (th=en=my parity) | PASS (2206 × 3) |
+| velcenter `vite build` | PASS (icons are lazy chunks) |
+| velshop / velseller / velnox `vite build` | PASS |
+| `git diff --check` | PASS (clean) |
+| `bun test backend/tests` | 1345 pass / 418 skip / **7 fail — all PRE-EXISTING at HEAD** (verified against `git show HEAD`: source-assertion tests expecting `...payload`/`createCategory(payload)`/multi-line toggle; ShopHome `HomePromoStrip` removed earlier; missing `.ai/secrets/browser-cookies.json`; velseller nav/orders source assertions). No new failure introduced. |
 
-## 7. Known issues / limitations
+Independent AI 02 QA (subagent): **PASS with minor fixes** — 1 P0 fixed (picker pendingRef
+unmount cleanup), P1/P2 nits (renames / error-retry state) documented but not blocking.
 
-- Curated Lucide set (~70 icons) — not the entire Lucide library. Names outside the set resolve to
-  the fallback icon (`Package`). This is intentional: the task required avoiding importing the whole
-  library; the shared set covers the category-relevant icons.
-- Dependabot/test CI may still require a disposable Postgres to run other DB-gated suites (not run
-  here — no local DB).
+Browser E2E of the live authenticated flow: **BLOCKED** (no local DB/R2; saved cookies expired).
+
+## 7. Backward compatibility
+
+- Existing stored category icons keep rendering: R2 URLs, uploaded raster/SVG, legacy Lucide
+  kebab names, PascalCase and "Icon"-suffix names, invalid values → `Package` fallback.
+- `CategoryIcon` component API unchanged; the curated set still maps names that differ from
+  raw lucide iconify names (e.g. `tools` → Wrench).
+- Create/edit with image upload still uploads to R2 (no base64); namespaced ids persist as the
+  `categories.icon` string.
 
 ## 8. Deployment status
 
-NOT DEPLOYED. Branch `main` only. (Task: do not deploy to production.)
+NOT DEPLOYED. Branch `main` only — task said do not deploy to production.
 
-## 9. What the next agent must know first
+## 9. What the next agent must know
 
-- The category icon value in the DB is either an R2 URL (upload) or a Lucide kebab name; render it
-  ONLY through `CategoryIcon` from `packages/shared/src/components/ui/category-icon.tsx`.
-- New-category-with-image: create first, then `uploadIconToR2(newId, file)`, then PATCH the URL.
-- Live authenticated browser testing needs fresh session cookies in `.ai/secrets/browser-cookies.json`
-  and/or a local DB; re-export otherwise.
-- Full report after commit: see final `git log` + this report.
+- Render any category icon through `CategoryIcon`; it now understands `prefix:name` lazily.
+- Regenerate icon assets with `scripts/generate-icon-library.mjs` only when bumping collections.
+- The details panel consumes only existing `GET /api/admin/categories` data — no new backend.
+- Full repo context: `.ai/context/categories.md` (updated) and `.ai/history/2026-11-08-icon-library-category-details.md`.

@@ -31,4 +31,4 @@ export type { IconSvgProps } from "./icon-render";
 export { LibraryIcon } from "./library-icon";
 export type { LibraryIconProps } from "./library-icon";
 
-export { ICON_TOTAL_COUNT };
+export { ICON_TOTAL_COUNT } from "./icon-collections";
