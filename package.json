@@ -27,16 +27,24 @@
     "typecheck": "bun --filter '@velnox/velshop' typecheck && bun --filter '@velnox/velseller' typecheck && bun --filter '@velnox/velcenter' typecheck && bun --filter '@velnox/velnox' typecheck",
     "i18n:check": "bun packages/shared/scripts/i18n-check.ts",
     "test": "bun test backend/tests",
-    "lint": "echo 'Lint not yet configured'",
-    "format": "echo 'Format not yet configured'"
+    "lint": "eslint .",
+    "format": "prettier --check ."
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@iconify-json/fa6-solid": "^1.2.4",
     "@iconify-json/lucide": "^1.2.152",
     "@iconify-json/mdi": "^1.2.3",
     "@iconify-json/ph": "^1.2.2",
     "@iconify-json/tabler": "^1.2.43",
-    "typescript": "~5.9.3"
+    "eslint": "^10.14.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.7",
+    "globals": "^17.14.0",
+    "prettier": "^3.9.10",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.72.1"
   },
   "dependencies": {
     "leaflet": "^1.9.4"
