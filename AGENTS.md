@@ -1,16 +1,103 @@
-# AGENTS.md — Velnox Marketplace
+AGENTS.md — Velnox Marketplace
 
-Monorepo (`bun` workspaces: `apps/velshop|velseller|velcenter|velnox`, `backend`, `packages/shared`). Default branch: `main`.
+Monorepo ("bun" workspaces: "apps/velshop|velseller|velcenter|velnox", "backend", "packages/shared"). Default branch: "main".
 
-## What is Velnox
+What is Velnox
 
 Multi-vendor marketplace. Four Vercel frontends → one Render backend (Express + WebSocket) → one Neon PostgreSQL (source of truth) + Cloudflare R2 (file storage). Google OAuth + JWT httpOnly cookies. Languages: th, en, my.
 
-## Progressive Context Loading — START HERE
+1. Communication Language — Thai (MANDATORY)
 
-The canonical agent workspace is **`.ai/`**. **New sessions start with `.ai/office/QUICK_START.md`** — it contains the essential entry point (~500 tokens). Load additional context only when required.
+The project owner communicates with AI agents primarily in Thai.
 
-```
+ALL user-facing communication MUST be in Thai, regardless of the language used in the user's instructions.
+
+The owner may write instructions, prompts, and technical requirements in English. Agents must understand and execute those instructions normally, but all explanations and progress reports must be in Thai.
+
+Rules:
+
+1. All explanations, progress updates, implementation summaries, test reports, error reports, and final responses MUST be written in Thai.
+2. Technical work can use English normally, including code, variable names, function names, API names, database identifiers, Git commands, commit messages, and technical documentation.
+3. Keep technical identifiers in their original form. Do not unnecessarily translate code or technical terminology.
+4. Explain technical concepts in clear, natural Thai so the project owner understands what happened, why it was necessary, and what the result means.
+5. When an English error message appears, explain its actual cause and impact in Thai. Include the original error when useful.
+6. Always distinguish between completed work, ongoing work, pending work, and blocked work.
+7. Never respond with an English-only progress report or final summary.
+8. These rules apply to ALL agents, including Main Agent, Planning Agent, Coding Agent, QA Agent, Architect Agent, and delegated subagents.
+9. Internal agent communication and technical artifacts may remain in English when appropriate, but any summary presented to the project owner MUST be in Thai.
+10. The language of the user's prompt MUST NOT determine the language of the response.
+
+Important: The owner must never need to translate an AI agent's progress report to understand the current project status.
+
+2. Android Harness Native Checklist — MANDATORY
+
+Android Harness already provides its own native Checklist / Task Tracking functionality.
+
+Agents MUST use the existing Android Harness Checklist functionality instead of creating a separate checklist system.
+
+Checklist Creation
+
+1. EVERY task MUST have an Android Harness native Checklist created before implementation begins.
+2. This requirement applies to all tasks, including small fixes, bug fixes, feature development, refactoring, audits, investigations, and documentation changes.
+3. Do not assume Android Harness will automatically create a Checklist. Explicitly create one for every new task using the available native functionality.
+4. Break the task into clear, sequential, actionable steps.
+5. Use steps that represent meaningful work and can be independently completed and verified.
+6. Keep the number of steps proportional to the task complexity. Avoid unnecessary fragmentation.
+7. Checklist descriptions and task summaries visible to the project owner MUST be written in Thai.
+8. Technical filenames, commands, API names, and code identifiers may remain in English.
+9. Do not create duplicate checklists for the same task if an appropriate active Checklist already exists. Update and reuse it instead.
+10. Never claim a Checklist was created unless the Android Harness confirms that it was successfully created.
+
+Real-Time Checklist Updates
+
+Update the native Android Harness Checklist immediately after each step is completed and verified, BEFORE proceeding to the next step.
+
+Rules:
+
+1. When a step is completed and its required verification passes, immediately update that step to Completed.
+2. Do not wait until all steps are finished before updating completed steps.
+3. Never mark a step as Completed based only on an assumption, intention, or unverified result.
+4. Keep the currently active step accurately marked as In Progress whenever the native Checklist supports this status.
+5. Leave unfinished steps as Pending.
+6. If a step fails or cannot continue, mark it Blocked or Failed when supported, and explain the reason in Thai.
+7. If a step needs to be repeated because verification failed, do not mark it as Completed until it passes.
+8. If the task scope changes, update the existing Checklist to reflect the new scope.
+9. Keep checklist steps in the actual execution order.
+10. Update the Checklist before starting the next meaningful step.
+11. Do not mark the entire task as completed while any required step remains unfinished or blocked.
+12. Final Checklist status must reflect the actual result, not a retrospective guess.
+
+Native Checklist Availability and Fallback
+
+- First, identify and use the Checklist functionality provided by the current Android Harness environment.
+- Do not invent tool names, APIs, or unsupported Checklist operations.
+- Do not replace the native Checklist with Markdown, external task managers, custom files, or another tracking system when native functionality is available.
+- If native Checklist creation or updating is unavailable, report the limitation in Thai.
+- As a temporary fallback only, maintain a concise progress checklist in the task conversation.
+- Clearly distinguish this temporary fallback from the actual Android Harness native Checklist.
+- Retry native Checklist functionality when it becomes available.
+- Never claim that a fallback text checklist is a native Checklist.
+
+Checklist Completion Example
+
+The expected execution behavior is:
+
+1. Create a Checklist containing all required task steps.
+2. Start step 1.
+3. Complete and verify step 1.
+4. Immediately mark step 1 as Completed in Android Harness.
+5. Start step 2.
+6. Complete and verify step 2.
+7. Immediately mark step 2 as Completed.
+8. Continue until all required steps are completed.
+9. Verify the final task state.
+
+The project owner should be able to open Android Harness and see the actual task progress at any point.
+
+3. Progressive Context Loading — START HERE
+
+The canonical agent workspace is ".ai/". New sessions start with ".ai/office/QUICK_START.md" — it contains the essential entry point (~500 tokens). Load additional context only when required.
+
 1. .ai/office/QUICK_START.md          ← ALWAYS (this is the new startup entry point)
 2. .ai/AI_RULES.md                    ← when changing code (full rulebook)
 3. .ai/AI_HANDOFF.md                  ← current state + remaining gaps (compact)
@@ -18,76 +105,58 @@ The canonical agent workspace is **`.ai/`**. **New sessions start with `.ai/offi
 5. .ai/context/<subsystem>.md         ← only the subsystem you touch
 6. Actual source code                 ← authoritative implementation
 7. Verify → update .ai/AI_HANDOFF.md
-```
 
 Do NOT read every doc file. Load the smallest useful set.
 
-| Task | Read this next |
-|------|---------------|
-| Assigned work brief | `.ai/tasks/active/` |
-| Fix product card / catalog | `.ai/context/products.md` |
-| Fix category selector / tree | `.ai/context/categories.md` + `.ai/context/seller.md` |
-| Fix login / session | `.ai/context/security.md` |
-| Fix image upload / R2 | `.ai/context/media.md` |
-| Fix checkout / orders | `.ai/context/checkout.md` |
-| Fix payment / Stripe / COD flags | `.ai/context/payment.md` |
-| Fix seller verification / V badge | `.ai/context/verification.md` |
-| Fix database / schema | `.ai/context/database.md` |
-| Fix API / backend / authz | `.ai/context/backend.md` |
-| Fix realtime / live updates | `.ai/context/realtime.md` |
-| Fix styling / theme / mobile | `.ai/context/frontend.md` |
-| Full audit | `.ai/context/architecture.md` then subsystems as needed |
+Task| Read this next
+Assigned work brief| ".ai/tasks/active/"
+Fix product card / catalog| ".ai/context/products.md"
+Fix category selector / tree| ".ai/context/categories.md" + ".ai/context/seller.md"
+Fix login / session| ".ai/context/security.md"
+Fix image upload / R2| ".ai/context/media.md"
+Fix checkout / orders| ".ai/context/checkout.md"
+Fix payment / Stripe / COD flags| ".ai/context/payment.md"
+Fix seller verification / V badge| ".ai/context/verification.md"
+Fix database / schema| ".ai/context/database.md"
+Fix API / backend / authz| ".ai/context/backend.md"
+Fix realtime / live updates| ".ai/context/realtime.md"
+Fix styling / theme / mobile| ".ai/context/frontend.md"
+Full audit| ".ai/context/architecture.md" then subsystems as needed
 
-History is **reference only** — do not load it automatically:
-`.ai/history/AI_Handoff_Archive.md` (dated index) → `.ai/history/archive/` (full
-records). `.ai/AI_HANDOFF.md` holds current state + remaining gaps only and must
-stay small — this environment's file-edit tools stop matching past roughly 55 KB,
-so archive superseded sections instead of growing it. Policy: `.ai/history/README.md`.
+History is reference only — do not load it automatically:
 
-**No duplicate authority:** the rulebook, handoff, and context docs live only under
-`.ai/`. Root-level `AI_RULES.md` / `AI_Handoff.md` were removed (2026-09-25) — do not
-recreate them; write rules and handoff state only under `.ai/`.text/backend.md` |
-| Fix realtime / live updates | `.ai/context/realtime.md` |
-| Fix styling / theme / mobile | `.ai/context/frontend.md` |
-| Full audit | `.ai/context/architecture.md` then subsystems as needed |
+".ai/history/AI_Handoff_Archive.md" (dated index) → ".ai/history/archive/" (full records).
 
-History is **reference only** — do not load it automatically:
-`.ai/history/AI_Handoff_Archive.md` (dated index) → `.ai/history/archive/` (full
-records). `.ai/AI_HANDOFF.md` holds current state + remaining gaps only and must
-stay small — this environment's file-edit tools stop matching past roughly 55 KB,
-so archive superseded sections instead of growing it. Policy: `.ai/history/README.md`.
+".ai/AI_HANDOFF.md" holds current state + remaining gaps only and must stay small — this environment's file-edit tools stop matching past roughly 55 KB, so archive superseded sections instead of growing it. Policy: ".ai/history/README.md".
 
-**No duplicate authority:** the rulebook, handoff, and context docs live only under
-`.ai/`. Root-level `AI_RULES.md` / `AI_Handoff.md` were removed (2026-09-25) — do not
-recreate them; write rules and handoff state only under `.ai/`.ntext/frontend.md` |
-| Full audit | `.ai/context/architecture.md` then subsystems as needed |
+No duplicate authority: the rulebook, handoff, and context docs live only under ".ai/". Root-level "AI_RULES.md" / "AI_Handoff.md" were removed (2026-09-25) — do not recreate them; write rules and handoff state only under ".ai/".
 
-History is **reference only** — do not load it automatically:
-`.ai/history/AI_Handoff_Archive.md` (dated index) → `.ai/history/archive/` (full
-records). `.ai/AI_HANDOFF.md` holds current state + remaining gaps only and must
-stay small — this environment's file-edit tools stop matching past roughly 55 KB,
-so archive superseded sections instead of growing it. Policy: `.ai/history/README.md`.
+4. Rules for Every Task
 
-**No duplicate authority:** the rulebook, handoff, and context docs live only under
-`.ai/`. Root-level `AI_RULES.md` / `AI_Handoff.md` were removed (2026-09-25) — do not
-recreate them; write rules and handoff state only under `.ai/`.
+0. GitHub remote is the source of truth — the sandbox is temporary and may be stale. Before editing: "git fetch origin", then compare "git rev-parse HEAD" with "git rev-parse origin/<branch>". Behind → synchronize first; diverged → STOP. (".ai/AI_RULES.md" §0)
 
-## Rules for Every Task
+1. Inspect before editing — verify the file, function, route, table, and schema exist in the current repo. Previous AI memory may be stale; the repo wins.
 
-0. **GitHub remote is the source of truth** — the sandbox is temporary and may be stale. Before editing: `git fetch origin`, then compare `git rev-parse HEAD` with `git rev-parse origin/<branch>`. Behind → synchronize first; diverged → STOP. (`.ai/AI_RULES.md` §0)
-1. **Inspect before editing** — verify the file, function, route, table, and schema exist in the current repo. Previous AI memory may be stale; the repo wins.
-2. **Minimal correct change** — fix the root cause, preserve existing functionality, reuse existing systems. No duplicate tables, APIs, or components.
-3. **Source of truth** — `Neon → Backend API → Frontend`. Frontend never touches Neon or server secrets. No fake data or mock APIs unless explicitly requested.
-4. **Database sync** — any schema change must update **both** `db/schema.sql` and `db/run-sqleditor.sql` (see `.ai/context/database.md`). Never recreate `db/run-update.sql`.
-5. **Verify** — `git diff --check`, typecheck/build relevant apps, and test the affected flow.
-6. **Memory** — every session leaves a dated record in `.ai/history/` (investigations, failed fixes and BLOCKED sessions included), then updates `.ai/AI_HANDOFF.md` with current state + remaining gaps only (not history), keeping it small. See `.ai/AI_RULES.md` §19.
-7. **Auto-commit and push** — when a repository-changing task completes successfully, commit the changes and push to GitHub via Git CLI. Do not stop after editing or committing. See *Default Completion State* below and `.ai/context/workflow.md`.
+2. Minimal correct change — fix the root cause, preserve existing functionality, reuse existing systems. No duplicate tables, APIs, or components.
 
-### Default Completion State
+3. Source of truth — "Neon → Backend API → Frontend". Frontend never touches Neon or server secrets. No fake data or mock APIs unless explicitly requested.
+
+4. Database sync — any schema change must update both "db/schema.sql" and "db/run-sqleditor.sql" (see ".ai/context/database.md"). Never recreate "db/run-update.sql".
+
+5. Verify — "git diff --check", typecheck/build relevant apps, and test the affected flow.
+
+6. Memory — every session leaves a dated record in ".ai/history/" (investigations, failed fixes and BLOCKED sessions included), then updates ".ai/AI_HANDOFF.md" with current state + remaining gaps only (not history), keeping it small. See ".ai/AI_RULES.md" §19.
+
+7. Auto-commit and push — when a repository-changing task completes successfully, commit the changes and push to GitHub via Git CLI. Do not stop after editing or committing. See Default Completion State below and ".ai/context/workflow.md".
+
+8. Checklist compliance — create and maintain the Android Harness native Checklist for every task, following Section 2. Do not rely on automatic creation.
+
+9. Thai communication — all progress updates, explanations, blockers, and final reports directed to the project owner must be in Thai.
+
+5. Default Completion State
 
 A successful repository-changing task ends with ALL of:
 
-```
 implementation complete
 + validation passed (typecheck / tests / diff --check)
 + commit created
@@ -95,22 +164,43 @@ implementation complete
 + remote verified (local SHA == remote SHA)
 + .ai/AI_HANDOFF.md updated when required
 + working tree clean
-```
++ Android Harness native Checklist fully updated and completed
 
-Do not say "done" until every line is true. If any step fails, report the exact failure and state.
+Do not say "done" until every line is true.
 
-If the user explicitly says *do not commit* / *do not push* / *keep changes local*, skip only those steps and report `NOT PUSHED — USER REQUEST`.
+If any step fails, report the exact failure and state in Thai.
 
-## Quick Reference
+If the user explicitly says do not commit / do not push / keep changes local, skip only those steps and report "NOT PUSHED — USER REQUEST".
 
-- Install: `bun install` · Dev: `bun run dev:velshop` + `bun run api:dev` · Typecheck: `bun run typecheck` · DB bootstrap: run `db/run-sqleditor.sql` once in Neon SQL Editor
-- Docs: `INSTALLATION.md` (setup), `VELNOX_DESIGN_THEME.md` (design source of truth), `.ai/README.md` (agent workspace + full context map)
-- Repo: `https://github.com/EnJirad/velnox-marketplace.git`
+6. Final Report — MANDATORY
 
-## Repo Conventions
+At the end of every task, provide a final report in Thai.
 
-- Default branch: `main`. Feature branches: `fix/…`, `feat/…`; open PRs only when asked.
-- Commit style: `fix(velshop): …`, `feat(db): …`, `docs(ai): …`. Always `git diff --check` clean before commit.
-- Push: `git push origin <branch>` — Git CLI only. No GitHub REST API / Git Data API fallback.
+The report MUST contain:
+
+1. สรุปงาน: อธิบายว่างานที่ได้รับมอบหมายคืออะไร และดำเนินการอะไรไปแล้ว
+2. ไฟล์ที่เปลี่ยนแปลง: ระบุไฟล์และหน้าที่ของไฟล์ที่แก้ไข
+3. ผลการทดสอบ: รายงานผล typecheck, build, tests และ "git diff --check" ตามที่ได้รันจริง
+4. สถานะ Git: ระบุ branch, commit SHA, push status และผลการตรวจสอบ remote เมื่อเกี่ยวข้อง
+5. สถานะ Checklist: ระบุว่า Checklist ของ Android Harness ถูกสร้างและอัปเดตถึงขั้นตอนไหนแล้ว
+6. ปัญหาที่ยังคงเหลือ: ระบุข้อผิดพลาดหรือสิ่งที่ยังทำไม่สำเร็จ
+7. ขั้นตอนถัดไป: ระบุสิ่งที่ควรดำเนินการต่อไป ถ้ามี
+
+Never report an unverified result as successful. If a test was not run, explicitly report "ไม่ได้ทดสอบ" instead of claiming it passed.
+
+7. Quick Reference
+
+- Install: "bun install"
+- Dev: "bun run dev:velshop" + "bun run api:dev"
+- Typecheck: "bun run typecheck"
+- DB bootstrap: run "db/run-sqleditor.sql" once in Neon SQL Editor
+- Docs: "INSTALLATION.md" (setup), "VELNOX_DESIGN_THEME.md" (design source of truth), ".ai/README.md" (agent workspace + full context map)
+- Repo: "https://github.com/EnJirad/velnox-marketplace.git"
+
+8. Repo Conventions
+
+- Default branch: "main". Feature branches: "fix/…", "feat/…"; open PRs only when asked.
+- Commit style: "fix(velshop): …", "feat(db): …", "docs(ai): …". Always "git diff --check" clean before commit.
+- Push: "git push origin <branch>" — Git CLI only. No GitHub REST API / Git Data API fallback.
 - If push fails, diagnose the Git error. Do not fabricate alternative push mechanisms.
-- Never `git push --force` unless owner-instructed and verified safe.
+- Never "git push --force" unless owner-instructed and verified safe.

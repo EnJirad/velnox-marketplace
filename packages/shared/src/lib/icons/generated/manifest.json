@@ -1,0 +1,127 @@
+[
+  {
+    "prefix": "lucide",
+    "name": "Lucide",
+    "total": 2109,
+    "aliases": 237,
+    "height": 24,
+    "version": null,
+    "license": {
+      "title": "ISC",
+      "spdx": "ISC",
+      "url": "https://github.com/lucide-icons/lucide/blob/main/LICENSE"
+    },
+    "author": {
+      "name": "Lucide Contributors",
+      "url": "https://github.com/lucide-icons/lucide"
+    },
+    "samples": [
+      "circle-check",
+      "award",
+      "house",
+      "check",
+      "mountain",
+      "chevron-up"
+    ]
+  },
+  {
+    "prefix": "mdi",
+    "name": "Material Design Icons",
+    "total": 7638,
+    "aliases": 6363,
+    "height": 24,
+    "version": null,
+    "license": {
+      "title": "Apache 2.0",
+      "spdx": "Apache-2.0",
+      "url": "https://github.com/Templarian/MaterialDesign/blob/master/LICENSE"
+    },
+    "author": {
+      "name": "Pictogrammers",
+      "url": "https://github.com/Templarian/MaterialDesign"
+    },
+    "samples": [
+      "account-check",
+      "bell-alert-outline",
+      "calendar-edit",
+      "skip-previous",
+      "home-variant",
+      "lock-open-outline"
+    ]
+  },
+  {
+    "prefix": "tabler",
+    "name": "Tabler Icons",
+    "total": 6305,
+    "aliases": 194,
+    "height": 24,
+    "version": "3.50.0",
+    "license": {
+      "title": "MIT",
+      "spdx": "MIT",
+      "url": "https://github.com/tabler/tabler-icons/blob/master/LICENSE"
+    },
+    "author": {
+      "name": "Paweł Kuna",
+      "url": "https://github.com/tabler/tabler-icons"
+    },
+    "samples": [
+      "alien",
+      "device-desktop",
+      "photo",
+      "chevron-right",
+      "check",
+      "square-root"
+    ]
+  },
+  {
+    "prefix": "ph",
+    "name": "Phosphor",
+    "total": 9161,
+    "aliases": 37,
+    "height": 24,
+    "version": "2.1.1",
+    "license": {
+      "title": "MIT",
+      "spdx": "MIT",
+      "url": "https://github.com/phosphor-icons/core/blob/main/LICENSE"
+    },
+    "author": {
+      "name": "Phosphor Icons",
+      "url": "https://github.com/phosphor-icons/core"
+    },
+    "samples": [
+      "folder-open-duotone",
+      "check-square-offset-thin",
+      "pencil-line-fill",
+      "check-thin",
+      "browser-duotone",
+      "thermometer-simple-fill"
+    ]
+  },
+  {
+    "prefix": "fa6-solid",
+    "name": "Font Awesome 6 Solid",
+    "total": 1407,
+    "aliases": 1,
+    "height": 32,
+    "version": "6.7.2",
+    "license": {
+      "title": "CC BY 4.0",
+      "spdx": "CC-BY-4.0",
+      "url": "https://creativecommons.org/licenses/by/4.0/"
+    },
+    "author": {
+      "name": "Dave Gandy",
+      "url": "https://github.com/FortAwesome/Font-Awesome"
+    },
+    "samples": [
+      "location-pin",
+      "gem",
+      "folder",
+      "mound",
+      "toggle-on",
+      "table-columns"
+    ]
+  }
+]
