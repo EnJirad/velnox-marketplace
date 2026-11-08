@@ -7,6 +7,7 @@ import { useLanguage } from "@/lib/i18n";
 import { setSeo } from "@/lib/seo";
 import { useAction } from "@velnox/shared/lib/api-routes";
 import { ArrowRight, Boxes, ImageOff, LayoutGrid, Package } from "lucide-react";
+import { CategoryIcon } from "@velnox/shared/components/ui/category-icon";
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router";
 
@@ -17,7 +18,8 @@ interface CategoryNode {
   description: string | null;
   display_name?: string;
   display_description?: string;
-  imageUrl: string | null;
+  icon?: string | null;
+  image_url?: string | null;
   parentId: string | null;
   level: number;
   productCount: number;
@@ -99,8 +101,8 @@ export default function ShopCategories() {
                 >
                   <Link to={to} className="block">
                     <div className="flex h-24 items-center gap-4 bg-gradient-to-r from-[#0f766e] via-[#10B981] to-[#34d399] px-5">
-                      {root.imageUrl ? (
-                        <img src={root.imageUrl} alt="" className="size-12 rounded-[12px] object-cover" loading="lazy" />
+                      {root.icon || root.image_url ? (
+                        <CategoryIcon icon={root.icon} imageUrl={root.image_url} className="size-12 rounded-[12px]" />
                       ) : (
                         <span className="flex size-12 items-center justify-center rounded-[12px] bg-white/20 backdrop-blur">
                           <Package className="size-6 text-white" />

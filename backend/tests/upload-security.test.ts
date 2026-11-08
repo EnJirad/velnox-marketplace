@@ -114,7 +114,7 @@ describe("upload routes enforce the limits server-side", () => {
 
   test("the presign purpose allowlist can only mint namespaces confirm validates", () => {
     expect(uploadSrc).toContain(
-      'const UPLOAD_PURPOSES = ["avatar", "cover", "shop-logo", "shop-cover", "chat", "announcement"] as const;',
+      'const UPLOAD_PURPOSES = ["avatar", "cover", "shop-logo", "shop-cover", "chat", "announcement", "category-icon"] as const;',
     );
     expect(uploadSrc).toContain("if (!isUploadPurpose(purpose))");
     // Announcement artwork is owner/company content: the namespace is

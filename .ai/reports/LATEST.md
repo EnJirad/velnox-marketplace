@@ -1,478 +1,106 @@
-# Phase 1 — Full Ecosystem UI/UX Audit + Phase 2 Implementation Progress
+# Velnox — Category Icon, R2 Upload & AI Office Synchronization — 2026-11-08
 
-**Date:** 2026-11-05 · **Branch:** `main` · **Starting SHA:** `3eaa5fd30d019f9eb4f6f16252445a205948e996`
-**Head SHA:** `1fe29a60ac821a598702c407f46fe2e74d2dde62` (pushed to origin/main)
-**4/4 typecheck:** PASS | **4/4 builds:** PASS
-**i18n parity:** 1715 × 3 keys (th/en/my) ✅
+Date: 2026-11-08
+Agent / Session: AndroidHarness (AI 01/02 inline — AI 02 subagent BLOCKED, see field 18)
+Starting commit: `6cd61ce0585d515cb6250a63788b3f1c3e44e49d`
+Ending commit: `(see final git log — HEAD pushed to origin/main)`
+Branch: `main`
+Committed? Yes — see "Ending commit"
 
-**IMPECCABLE: BLOCKED** — ARM64 binary unavailable (`unexpected e_type: 2`). Manual design review performed.
+Task: Restore complete category icon support (searchable Lucide picker + image/SVG upload), fix
+the create-with-image R2 upload flow (never persist base64), create a unified cross-app icon
+renderer, polish Category Management mobile/desktop UI, then sync the AI Office docs.
 
----
+## 1. Inspection (before changes)
 
-## Phase 2 Progress — VelShop Foundation (Group 1) ✅ COMPLETE
+- `git fetch origin`; `HEAD == origin/main == 6cd61ce`; working tree clean.
+- `.ai/AI_HANDOFF.md` + `.ai/reports/LATEST.md` + `.ai/tasks/active/README.md` read (docs were stale:
+  handoff still referenced commit 48b8f34, LATEST referenced Phase 1/2 UI/UX).
+- `.ai/AI_RULES.md` §§18–19 read (MANDATORY Change Report + Development Memory format).
+- Read: `apps/velcenter/src/components/CategoriesManagement.tsx`, `backend/routes/upload.ts`,
+  `backend/routes/products.ts` (admin category CRUD + category GETs), `packages/shared/src/lib/i18n/locales/{th,en,my}.ts` + `index.tsx`,
+  `apps/velshop/src/pages/ShopHome.tsx`, `apps/velshop/src/pages/ShopCategories.tsx`,
+  `apps/velshop/src/components/shop/CategoryStrip.tsx`.
 
-### Shared Components Created
-| Component | Path | Status |
-|-----------|------|--------|
-| `SectionHeader` | `packages/shared/components/ui/section-header.tsx` | ✅ |
-| `EmptyState` | `packages/shared/components/ui/empty-state.tsx` | ✅ |
-| `LoadingSkeleton` + `ProductGridSkeleton` | `packages/shared/src/components/ui/loading-skeleton.tsx` | ✅ |
+## 2. Findings (VERIFIED FACTS vs ASSUMPTIONS)
 
-### Global CSS Updates
-- Added consistent `focus-visible` ring (`ring-2 ring-emerald-500/40`) for all interactive elements
-- Added `.skip-link` for accessibility
+VERIFIED FACTS
+- Backend upload purpose `category-icon` exists, is `settings.manage`-gated at presign, mints
+  `categories/{categoryId}/icon.webp`, and confirm writes `categories.icon`. `image/svg+xml` is
+  allowed only for that purpose (added previously). jpeg/png/webp/avif allowed for all purposes.
+- VelCenter `CategoriesManagement.tsx` had NO Lucide picker (removed earlier); only PNG/SVG upload
+  remained. It DID upload the replacement to R2 for existing categories but used a **base64 data URL**
+  for NEW categories (create-path), which was sent verbatim to the backend — the Phase-2 bug.
+- Frontend used `${apiBaseUrl}/upload/presign` + `/confirm` correctly (apiBaseUrl already has `/api`).
+- VelShop: `CategoryStrip` took a Lucide *component* (`icon?: LucideIcon`) or `imageUrl?: string`;
+  `ShopHome` kept a hardcoded `CATEGORY_ICONS` slug map + a URL-only `catIconMap`; `ShopCategories`
+  read a `imageUrl` field from the stats API that the backend does NOT return (it returns `icon` +
+  `image_url`) — its icon never rendered.
+- i18n keys for both icon modes already existed (th/en/my) at parity.
+- No local PostgreSQL: `initdb` hangs on this Android device (documented in the handoff). Saved
+  `.ai/secrets/browser-cookies.json` sessions (`seller`, `owner`) were expired at run time
+  (`2026-11-08T04:00Z` / `05:31Z`), so live authenticated browser E2E against the deployed backend
+  could not run.
 
-### VelShop Pages Refactored
-| Page | Changes |
-|------|---------|
-| `ShopHome.tsx` | All 5 product rails now use `SectionHeader`; loading/empty states use shared components; removed dead `ShopFooter` import |
-| `ShopProducts.tsx` | Loading skeleton → `ProductGridSkeleton`; empty/error states → `EmptyState`; removed unused Lucide imports; **migrated to shared `ProductGrid` component** |
+ASSUMPTIONS (not independently verified)
+- Backend `isStoredContentTypeAllowed` now accepts `image/svg+xml` for `category-icon`; the unit test
+  `upload-security.test.ts` previously asserted an outdated allowlist WITHOUT `category-icon` and
+  failed. We corrected the test to the real allowlist.
 
-### New Shared Component (Group 2)
-| Component | Path | Status |
-|-----------|------|--------|
-| `ProductGrid` | `packages/shared/src/components/shop/ProductGrid.tsx` | ✅ |
-| | Server-paginated product grid with SectionHeader, load-more, loading/empty/error states | |
-| | Replaces manual grid logic in ShopProducts.tsx | |
+## 3. Changes made
 
-### Dead Code Removal
-- Removed `ShopFooter` import from `ShopHome.tsx` (was rendering null)
-- Removed unused Lucide imports (`ArrowRight`, `PackageSearch`, `RotateCcw` where unused)
-- `ShopFooter` component kept (exported null) — 19 other pages still import it
-
----
-
-## Thaimart-Style Redesign (2026-11-05) ✅ COMPLETE
-
-Reference: https://thaimart.com (inspected live via browser)
-
-### VelShop — Thaimart-inspired Homepage
-| Component | Path | What it does |
-|-----------|------|--------------|
-| `TopBanner` | `apps/velshop/src/components/shop/TopBanner.tsx` | Emerald gradient banner "เริ่มธุรกิจของคุณกับ Velnox · สมัครฟรี ไม่มีค่าธรรมเนียม" + CTA → velseller; session-dismissible |
-| `CategoryStrip` | `apps/velshop/src/components/shop/CategoryStrip.tsx` | Horizontal scrollable pill chips (ทั้งหมด + categories) with native scroll arrows, aria roles, uploaded image icons |
-| `LiveSection` | `apps/velshop/src/components/shop/LiveSection.tsx` | LIVE NOW + upcoming horizontal stream cards (placeholder — no live infra, renders only when streams exist) |
-
-### VelShop Homepage order (mirrors Thaimart):
-1. Top banner (seller CTA) — in ShopHeader, all pages
-2. Announcement carousel
-3. Horizontal category strip
-4. LIVE section
-5. Promo strip
-6. Product rails (trending, new) + full grid
-
-### VelCenter — Category Icon Upload
-- Form dialog now has image upload (presign category-icon → R2 PUT → confirm), WebP-compressed ≤256px, preview + delete
-- Category tree rows render uploaded icon thumbnails
-- Backend: new `category-icon` upload purpose (settings.manage gated), key `categories/{id}/icon.webp`, confirm writes `categories.icon`
-- Storefront category strip + ShopCategories read `categories.icon` from `/api/categories/stats` and render the uploaded image
-
-### Shared
-- `SITE_URLS` corrected to real production domains (velshop/velseller/velcenter/velnox-theta)
-- i18n: th/en/my `topBanner`, `categoryStrip`, `liveSection` (1715×3 parity)
-
-**Status:** Typecheck 4/4 PASS · Builds 4/4 PASS · i18n parity PASS · pushed `1fe29a6`
-
----
-
-## AI 02 Independent Verification — Group 1 ✅ APPROVED
-
-### Code Review Findings (2026-11-05)
-
-| Component | Status | Notes |
-|-----------|--------|-------|
-| `SectionHeader` | ✅ PASS | Renders correctly, no overflow on mobile, icon renders via `React.createElement`, correct props typing |
-| `EmptyState` | ✅ PASS | Accessible (semantic heading + description), size variants work, CTA button wired |
-| `LoadingSkeleton` | ✅ PASS | All 5 variants render, `ProductGridSkeleton` produces responsive grid (2/3/4 cols) |
-| `TableSkeleton` | ✅ PASS | **FIXED** — now respects `columns` prop (was hardcoded to 6) |
-| `OrderListSkeleton` | ✅ PASS | Uses list variant correctly |
-| `ProductGridSkeleton` | ✅ PASS | Responsive: `grid-cols-2` → `sm:grid-cols-3` → `lg:grid-cols-4` |
-
-### CSS Focus-Visible Verification
-- Global `:focus-visible` ring applied to all interactive elements
-- `ring-2 ring-emerald-500/40 ring-offset-2` matches design tokens
-- No conflicts with existing shadcn/ui focus styles
-- `.focus-card`, `.product-card`, `.order-row` utility classes available for card focus
-
-### Integration Verification
-- `ShopHome.tsx`: All 6 SectionHeader instances render correctly (categories, reorder, regulars, recommendations, trending, new)
-- `ShopProducts.tsx`: Loading → `ProductGridSkeleton(8)`, empty → `EmptyState` with Search icon
-- Import paths correct: `@velnox/shared/components/ui/...`
-- No duplicate components introduced
-
-### Functional Tests
-| Test | Result |
+| File | Change |
 |------|--------|
-| Typecheck (4/4 apps) | ✅ PASS |
-| Build (4/4 apps) | ✅ PASS |
-| i18n parity (1704×3) | ✅ PASS |
-
-### Visual QA (Browser)
-| Viewport | Homepage | Products Page |
-|----------|----------|---------------|
-| 320-390px | Loads, SectionHeader fits, tab bar present | Loads, grid 2-col, filters accessible |
-| 768px | Grid 3-col, SectionHeader spacing OK | Grid 3-col, filter button visible |
-| 1024-1440px | Grid 4-col, desktop header | Grid 4-col, pagination works |
-
-**Screenshots**: BLOCKED — in-app browser surface hidden, cannot capture.
-
-### Impeccable Status
-**IMPECCABLE: BLOCKED** — ARM64 binary unavailable (`unexpected e_type: 2` on aarch64). Manual review performed.
-
-### Remaining Blockers
-1. Browser screenshots unavailable (hidden surface)
-
-### AI 02 Approval
-**APPROVED** — Group 1 foundation is solid. Ready for Group 2 (Catalog & Product Detail).
-
----
-
-## 1. Website & Route Inventory
-
-### VelShop — Customer Marketplace (`https://velshop.vercel.app`)
-
-| Route | Page | Auth | Notes |
-|-------|------|------|-------|
-| `/` | ShopHome.tsx (484) | No | Homepage, announcements, categories, product rails |
-| `/products` | ShopProducts.tsx (678) | No | Catalog grid, filters, search, sort, pagination |
-| `/products/:id` | ShopProductDetail.tsx (1831) | No | Gallery, variants, reviews, ATC, buy now |
-| `/categories` | ShopCategories.tsx (177) | No | Category tree browser |
-| `/cart` | ShopCart.tsx (545) | No | Cart lines, selection, quantity, checkout |
-| `/checkout` | ShopCheckout.tsx (1238) | Yes | Address, quote, payment method, summary |
-| `/checkout/success` | ShopCheckoutSuccess.tsx (309) | Yes | Post-payment confirmation |
-| `/checkout/cancel` | ShopCheckoutCancel.tsx (130) | Yes | Cancelled payment landing |
-| `/orders` | MyOrders.tsx (624) | Yes | Customer order list, pagination, filters |
-| `/orders/:id` | ShopOrderDetail.tsx (1247) | Yes | Single order, timeline, tracking |
-| `/tracking/:orderId` | ShopTracking.tsx (208) | Yes | Carrier tracking events |
-| `/wishlist` | ShopWishlist.tsx (287) | Yes | Saved products |
-| `/addresses` | ShopAddresses.tsx (775) | Yes | CRUD addresses with map picker |
-| `/profile` | ShopProfile.tsx (457) | Yes | Account menu hub |
-| `/profile/account` | ShopAccount.tsx (299) | Yes | Edit name, phone, avatar, cover |
-| `/chat` | ShopChat.tsx (900) | Yes | Real-time messaging, inbox, threads |
-| `/notifications` | ShopNotifications.tsx (186) | Yes | Notification list, mark read |
-| `/help` | ShopHelp.tsx (242) | No | Static help content, searchable |
-| `/auth` | Auth (shared) | No | Google OAuth login |
-| `/cookies` | CookiePolicy | No | Cookie consent policy |
-| `*` | NotFound | No | 404 page |
-
-**Live:** ✅ Accessible (200)
-
-### Velseller — Seller Dashboard (`https://velseller.vercel.app`)
-
-| Route | Page | Auth | Notes |
-|-------|------|------|-------|
-| `/auth` | Auth (shared) | No | Login |
-| `/seller/goals` | SellerGoals.tsx (493) | Yes+seller | Goals, income snapshot, CRUD |
-| `/seller/shop` | MyShop.tsx (888) | Yes+seller | Shop identity, products table, onboarding |
-| `/seller/orders` | SellerOrders.tsx (439) | Yes+seller | Order list, pagination, status filters |
-| `/seller/orders/:id` | SellerOrderDetail.tsx (752) | Yes+seller | Single order, fulfilment actions |
-| `/seller/income` | Income.tsx (357) | Yes+seller | Gross, commission, payout, transaction table |
-| `/seller/reorder` | Reorder.tsx (290) | Yes+seller | Reorder suggestions, stock alerts |
-| `/seller/chat` | SellerChat.tsx (873) | Yes+seller | Real-time messaging, shop conversations |
-| `/seller/profile` | SellerProfile.tsx (450) | Yes+seller | Shop profile editor, R2 upload |
-| `*` | NotFound | No | 404 |
-
-**Live:** ✅ Accessible (200)
-
-### VelCenter — Admin Operations (`https://velcenter.vercel.app`)
-
-| Route | Page | Auth | Notes |
-|-------|------|------|-------|
-| `/` | Center.tsx (2708) | Yes+center | Tabs: Users, Sellers, Products, Orders, Categories, Chat, Audit, Settings, Banners, Payments |
-| `/auth` | Auth (shared) | No | Login (scrypt password for staff) |
-| `*` | NotFound | No | 404 |
-
-**Components called from Center.tsx:** EmployeeManager, SellerVerificationQueue, ProductModerationQueue, CategoriesManagement, ChatManagement, MarketingBanners, AuditLogTab, PaymentIncidentTab, ChangePasswordScreen, OrderShipDialog.
-
-**Live:** ✅ Accessible (200)
-
-### Velnox Corporate — Brand Identity (`https://velnox-group.vercel.app`)
-
-| Route | Page | Auth |
-|-------|------|------|
-| `/` | CorporateHome.tsx (282) | No |
-| `/about`, `/vision`, `/business`, `/ecosystem`, `/technology`, `/careers`, `/news`, `/privacy`, `/terms` | StaticPage.tsx (110) + content.ts (234) | No |
-| `/contact` | Contact.tsx (128) | No |
-
-**Live:** ❌ **DEPLOYMENT_NOT_FOUND (404)** — Latest deployment not found on Vercel for `velnox-group.vercel.app`.
-
----
-
-## 2. Audit Findings
-
-### 2.1 VelShop — Customer Marketplace
-
-**P0 — Critical**
-
-None found. All routes assemble, data flows are real (no mock APIs), checkout works (verified in prior report).
-
-**P1 — Major**
-
-1. **[Layout] Homepage loads ALL products client-side** — `GET /api/products/catalog?status=published&limit=100` fetches everything, then the page sorts/slices in memory. Slow with >100 products. No cursor pagination on the home feed.
-2. **[Layout] ShopProducts.tsx uses `useState` for catalog data instead of server-driven pagination** — `PAGE_SIZE = 24` but the page fetches all results then paginates client-side. Breaks down beyond ~200 products.
-3. **[Mobile] ProductDetail gallery has no pinch-zoom or full-screen viewer** — images open in a small container; `Maximize2` icon exists but no actual lightbox.
-4. **[Accessibility] Focus-visible styles inconsistent** — some interactive elements lack `focus-visible:ring-2`. Keyboard navigation degraded on product cards and menu rows.
-
-**P2 — Moderate**
-
-5. **[Layout] ShopHome has 5 product rails (Popular Categories + Trending + New + Recommendations + Continue Shopping)** — each gets a full `border-b border-slate-100 bg-white` section. Creates a very long page. Two rails are behind `CUSTOMER_MEMORY_ENABLED` flag (parked feature) but still compile in.
-6. **[Typography] Section heading pattern repeated 5x with inline emerald icon tiles** — the `flex items-center gap-2.5` pattern with `rounded-[10px]` is duplicated manually per rail. No shared section-header component.
-7. **[Mobile] Cart page selection UI** — `selectedKeys` is a `Set<string>` kept in `useState`; toggle logic is clean but the cart page has no "Select All" indicator in all states.
-8. **[Visual] Help Center uses static content only** — no CMS, no API-driven content. Acceptable for v1 but limits scalability.
-9. **[Mobile] Checkout is 1238 lines** — single monolithic file. Address selection, payment methods, quote, order summary all in one component.
-
-**P3 — Polish**
-
-10. **[Visual] `ShopFooter` import in ShopProducts, ShopCart, ShopCheckout, ShopProfile etc.** — renders `null` (empty footer) but is imported everywhere.
-11. **[Visual] Profile page "Session" group heading** — developer jargon, not user-facing language.
-12. **[Visual] `rounded-[10px]` used across app for cards** — design token `rounded-xl` matches this but some places use raw values.
-
-### 2.2 Velseller — Seller Dashboard
-
-**P0 — Critical**
-
-None found. All routes protected by `RequireRole seller`, data flows real.
-
-**P1 — Major**
-
-1. **[Layout] AppHeader nav is hidden below `lg` (1024px)** — MobileTabBar also hidden. Tablets (768-1023px) have **no navigation** except the chat icon. Gap between md/lg breakpoints.
-2. **[Data] SellerOrders page paginates server-side** — well implemented. But the filter chip bar and order table layout on mobile is dense, overflows horizontal.
-3. **[Data] SellerOrderDetail 752 lines** — monolithic. Fulfilment actions, status transitions, shipment dialog, and item display all in one file.
-4. **[Mobile] SellerProfile R2 upload flow** — logo/cover upload uses `compressImage` then a multi-step presign+confirm. Works but no upload progress bar.
-
-**P2 — Moderate**
-
-5. **[Typography] Goals page income summary** — uses a card layout with `formatBaht`. The income card could be more visually prominent (KPIs).
-6. **[Visual] Reorder table** — uses a simple div-based card layout. No inline stock-level bar or visual urgency indicator for out-of-stock items.
-7. **[Layout] MyShop product table** — rendered inside a `<Table>` component. On mobile the table has horizontal scroll. Acceptable but not ideal.
-8. **[Accessibility] Inline icon buttons** — chat badge, filter buttons lack explicit aria-labels in some states.
-
-**P3 — Polish**
-
-9. **[Visual] Inconsistent card corner radius** — AppHeader uses `rounded-[10px]`, GoalCard uses shadcn defaults.
-10. **[Visual] `Import { ArrowLeft }` not used** in Income.tsx.
-
-### 2.3 VelCenter — Admin Operations
-
-**P0 — Critical**
-
-None found.
-
-**P1 — Major**
-
-1. **[Architecture] Center.tsx is 2708 lines** — single monolithic file containing ALL admin tabs. Every tab component is imported and conditionally rendered. Extremely hard to maintain.
-2. **[Performance] All admin data loads on mount** — tabs don't lazy-load; switching triggers re-fetch but the component tree is always mounted in memory.
-3. **[Mobile] No mobile navigation** — the admin interface relies on `<Tabs>` at the top. On small screens the tab strip overflows horizontally. No bottom tab bar, no hamburger menu.
-
-**P2 — Moderate**
-
-4. **[Layout] Tab content uses full width with no max-width constraint** — on desktop, tabs stretch to viewport width. Readability suffers on wide screens.
-5. **[Visual] ProductModerationQueue 1120 lines** — pagination, search, filters, review dialog all in one component.
-6. **[Visual] AuditLogTab uses a flat table** — no hierarchical or timeline visualization for audit events.
-7. **[Accessibility] Tab list** — native `<Tabs>` from shadcn but no arrow-key navigation support between tabs.
-
-**P3 — Polish**
-
-8. **[Visual] Center.tsx imports ~90 Lucide icons** — many unused. Wastes bundle.
-9. **[Visual] MarketingBanners and PaymentIncidentTab** — no image preview thumbnails; raw URLs shown.
-
-### 2.4 Velnox Corporate — Brand Identity
-
-**P0 — Critical**
-
-1. **Vercel deployment NOT FOUND** — `velnox-group.vercel.app` returns 404. The site is not deployed to production. Root cause: Vercel project likely not configured or the `apps/velnox` directory not linked. The `vercel.json` SPA rewrite is correct. Needs redeployment.
-
-**P1 — Major**
-
-2. **[Content] No English version** — all copy is Thai. The site has no language switcher despite the ecosystem supporting `th`, `en`, `my`.
-3. **[Layout] StaticPage renders all content from `content.ts`** — no images, no data-driven sections, pure text. Pages are long text blocks with no visual break.
-
-**P2 — Moderate**
-
-4. **[Visual] No hero imagery or illustrations** — CorporateHome has a text-only hero with a mockup card. No brand photography, illustrations, or diagrams.
-5. **[Visual] Navigation is Thai-only hardcoded** — the nav items array in CorporateLayout.tsx is Thai strings, not i18n keys.
-6. **[SEO] No meta tags in StaticPage** — title/description set only in CorporateLayout via a map object. Individual pages don't update `<title>` dynamically.
-7. **[Typography] Content pages lack section hierarchy** — `StaticPage.tsx` renders headings and body paragraphs sequentially with no visual distinction between primary/secondary content.
-
-**P3 — Polish**
-
-8. **[Layout] Footer ecosystem links** — VelShop and VelSeller links work, but VelCenter link also points to the same non-existent deployment.
-9. **[Visual] Contact page** — minimal form with no captcha, no phone number, no map embed.
-
----
-
-## 3. Shared Design System Assessment
-
-### Strengths
-
-- **Single CSS source**: `packages/shared/src/index.css` with Tailwind v4 theme tokens.
-- **56 shadcn/ui components** shared across all apps.
-- **Consistent button variants** (default/outline/ghost/destructive) via `button.tsx`.
-- **MobileTabBar** is shared, floating pill design works well.
-- **Color tokens** defined in `VELNOX_DESIGN_THEME.md` and CSS variables.
-- **Language switcher** shared across velshop/velseller/velcenter (but not velnox).
-- **OrderStatusBadge**, **VBadge**, **AppHeader**, **UserMenu** all shared.
-
-### Weaknesses
-
-1. **No shared section-header component** — each rail on ShopHome reinvents `flex items-center gap-2.5` with emerald icon tiles.
-2. **`rounded-[10px]` used in ~20 places** — should be `rounded-xl` from the theme.
-3. **ShopFooter renders `null`** — imported everywhere but produces nothing. Dead code.
-4. **No shared empty state component** — each page renders its own "nothing here" layout (icon circle + title + description).
-5. **No shared loading skeleton** — each page implements its own skeleton pattern.
-6. **`CUSTOMER_MEMORY_ENABLED` feature flag** gates two homepage rails but code still compiles in. Dead code if flag stays off.
-7. **Velnox Corporate has no i18n** — uses hardcoded Thai strings, no language switcher. Stands apart from the ecosystem.
-
-### Design Token Compliance
-
-| Token | Status | Notes |
-|-------|--------|-------|
-| Page background `#f8fafc` | ✅ Used | `bg-[#F8FAFC]` |
-| Card background `#ffffff` | ✅ Used | `bg-white` |
-| Primary text `#0f172a` | ✅ Used | `text-slate-900` |
-| Emerald accent `#10B981` | ✅ Used | Brand, ATC, tab bar active |
-| Buy Now `bg-slate-900 text-white` | ✅ Used | `bg-slate-900` |
-| Mobile tab bar emerald active | ✅ Used | Floating pill |
-| Focus ring `#10b981` | Partial | Not consistently applied |
-
----
-
-## 4. Responsive & Cross-browser Concerns
-
-### VelShop
-- **Mobile (320-390px)**: Fits. Tab bar works. Search bar in header shrinks but stays usable. Product card grid `grid-cols-2` fine.
-- **Tablet (768px)**: Gap between `md` and `lg` where desktop nav appears. Mid-sized tablets see mobile header.
-- **Desktop (1024px+)**: Good. `max-w-6xl` constrains content width.
-
-### Velseller
-- **Mobile**: Table content in MyShop and Orders overflows horizontally. Tab bar works.
-- **Tablet (768-1023px)**: **No navigation** — AppHeader nav hidden below `lg`, MobileTabBar hidden at `md`. Gap.
-- **Desktop**: Clean. `AppHeader` navigation works.
-
-### VelCenter
-- **Mobile**: Tab strip overflows. No dedicated navigation. Not designed for phone use.
-- **Desktop/Tablet**: Functional but horizontally unconstrained.
-
-### Velnox Corporate
-- **All sizes**: Not deployed — cannot verify. Source code shows `max-w-6xl` and responsive grid. Likely adequate.
-
----
-
-## 5. Functional & Technical Checks
-
-| Check | Result |
-|-------|--------|
-| Typecheck (4/4 apps) | ✅ PASS |
-| Console errors (source inspection) | No obvious runtime errors |
-| Broken routes | None found in source |
-| CORS / API contracts | All routes use `api/useAction` pattern |
-| Authentication flows | Google OAuth via shared Auth page |
-| Real-time chat | WebSocket via shared `chat-socket.ts` |
-| Payment flows | Stripe Checkout + PromptPay, test mode |
-| Image upload | R2 presign + confirm, all apps |
-| i18n keys | `bun run i18n:check` passes (1702×3) |
-| Velnox Corporate deployment | ❌ **NOT FOUND (404)** |
-| Responsive browser testing (CDP) | ❌ **BLOCKED** — no CDP on ARM64 |
-| Stripe E2E with real card | ❌ **BLOCKED** — test mode, hidden iframe |
-
----
-
-## 6. Impeccable Execution Status
-
-| Attempt | Result |
-|---------|--------|
-| `engine-probe` | ❌ BLOCKED — `unexpected e_type: 2` on aarch64 |
-| Binary search | No ARM64 binary under `scripts/bin/` |
-| Resolution | The shipped binary is AMD64 only. ARM64 binary requires building from source or a prebuilt aarch64 release, neither available in this environment |
-| Fallback | **Manual design review performed** via source code analysis |
-
-Design critiques in this report (heuristic evaluation, visual assessment, layout analysis) were performed manually.
-
----
-
-## 7. Design Direction Recommendations
-
-### VelShop — Customer Marketplace
-- **Goal**: Professional ecommerce storefront, competitive with Lazada/Shopee quality.
-- **Key moves**:
-  - Server-driven pagination on catalog (replace client-side slice).
-  - Shared section-header component for homepage rails.
-  - Lightbox/gallery zoom on product detail.
-  - Consistent focus-visible ring across all interactive elements.
-  - Remove dead `ShopFooter` imports.
-  - Reduce monolithic checkout page (~1238 lines → split address/form/payment/summary).
-
-### Velseller — Seller Dashboard
-- **Goal**: Clear, productive business management interface.
-- **Key moves**:
-  - Fix navigation gap at 768-1023px (show tab bar until lg or show header nav from md).
-  - Monolithic files: split SellerOrderDetail into sub-components.
-  - Improve KPI card visual hierarchy on Goals/Income pages.
-  - Mobile-responsive order table.
-  - Upload progress indicators for R2 uploads.
-
-### VelCenter — Admin Operations
-- **Goal**: Professional enterprise admin with clear information hierarchy.
-- **Key moves**:
-  - **Split Center.tsx (2708 lines)** into separate page routes per tab.
-  - Lazy-load tab content.
-  - Add mobile navigation (hamburger or bottom tab).
-  - Constrain content width on desktop for readability.
-  - Remove unused icon imports.
-
-### Velnox Corporate — Brand Identity
-- **Goal**: Premium brand site that feels modern and trustworthy.
-- **Key moves**:
-  - **Fix deployment** — redeploy to Vercel.
-  - Add i18n support to match ecosystem (th/en/my).
-  - Add brand imagery, hero illustrations or diagrams.
-  - Improve content pages with visual hierarchy (images, cards, tables).
-  - Dynamic meta tags per page.
-
-### Cross-ecosystem Improvements
-- Shared empty-state component.
-- Shared section-header component.
-- Shared loading skeleton pattern.
-- Fix `rounded-[10px]` → `rounded-xl` consistently.
-- Add i18n to Velnox Corporate.
-
----
-
-## 8. Implementation Priority
-
-| Priority | Scope | Website | Effort |
-|----------|-------|---------|--------|
-| P0 | Redeploy Velnox Corporate | velnox | Quick |
-| P0 | Fix navigation gap at 768-1023px | velseller | Quick |
-| P1 | Server-driven pagination on catalog | velshop | Medium |
-| P1 | Split Center.tsx into route-based pages | velcenter | Large |
-| P1 | Lightbox/gallery on product detail | velshop | Medium |
-| P2 | Shared section-header component | All | Quick |
-| P2 | Add i18n + images to corporate site | velnox | Medium |
-| P2 | Fix focus-visible consistency | All | Quick |
-| P3 | Remove dead code (ShopFooter, unused icons) | All | Quick |
-| P3 | Design polish pass (radius tokens, spacing) | All | Medium |
-
----
-
-## 9. Blockers & Limitations
-
-| Issue | Impact | Workaround |
-|-------|--------|------------|
-| No CDP on ARM64 | Cannot visually test responsive layouts in browser | Source-inspection + static analysis |
-| Impeccable binary AMD64 only | Cannot run design tool | Manual review |
-| Velnox Corporate not deployed | Cannot audit live site | Source code only |
-| No local PostgreSQL | DB-gated tests skip; no E2E purchase test | Previous production E2E report exists |
-| Stripe test mode | Cannot complete real payment flow | Intentional; production not enabled |
-
----
-
-## 10. Next Steps (awaiting approval)
-
-Phase 1 audit complete. Ready for **Phase 2 — Design Direction & Planning**.
-
-Proposed sequence: **VelShop → Velseller → VelCenter → Velnox Corporate**
-
-1. Fix Velnox Corporate deployment (P0, quick).
-2. Design shared component improvements.
-3. Begin VelShop redesign per approved plan.
+| `packages/shared/src/components/ui/category-icon.tsx` (NEW) | `CategoryIcon` + `CATEGORY_ICON_SET`/`CATEGORY_ICON_NAMES` + `resolveCategoryIcon`. Distinguishes image URL / data: URI (→ `<img>`) vs Lucide kebab name (→ real SVG) vs unknown (→ fallback `Package`). Curated tree-shakeable set (no full-lib import). Backward-compatible with PascalCase/“Icon”-suffixed legacy names. |
+| `apps/velcenter/src/components/CategoriesManagement.tsx` | Restored searchable `LucideIconPicker` (live SVG previews, floating list, kebab search); form now has **mode tabs** (Lucide name / upload); upload accepts PNG/JPG/WebP/SVG; create-with-image now flows **create → upload to R2 → set icon URL** (no base64 persisted); edit with new file uploads replacement first, then updates; `CategoryRow` renders via shared `CategoryIcon`. |
+| `apps/velshop/src/components/shop/CategoryStrip.tsx` | Chip + strip accept `iconName` (stored Lucide name) alongside `imageUrl`; render via shared `CategoryIcon`. |
+| `apps/velshop/src/pages/ShopHome.tsx` | `catIconMap` now stores the raw icon value (URL **or** Lucide name); strip receives both `imageUrl` and `iconName`. |
+| `apps/velshop/src/pages/ShopCategories.tsx` | Fixed field contract (`icon`/`image_url` from stats API); renders via shared `CategoryIcon`. |
+| `backend/tests/upload-security.test.ts` | Updated presign allowlist assertion to include `category-icon` (real regression from when the purpose was added). |
+
+## 4. What was removed
+
+- VelCenter create-path base64 data-URL persistence (`iconRaw`/`image_url` set to `data:` and sent).
+- The old manual `imageUrl`-only mapping in VelShop category surfaces.
+- Dead `catId`/`isSvg` variables.
+
+## 5. Tests run (real commands) + results
+
+- `bun run typecheck` — PASS (4/4 apps)
+- `bun run build:apps` — PASS (4/4 apps; velcenter Center chunk ~377 KB stable)
+- `bun run i18n:check` — PASS (2177 × 3, all locales at parity)
+- `git diff --check` — PASS
+- `bun test backend/tests/upload-security.test.ts` — PASS (14 pass, 7 skip, 0 fail)
+- `bun test backend/tests/product-upload-guards.test.ts` — PASS (7 pass, 0 fail)
+- Browser: velcenter dev server served `/auth` with no runtime JS errors (console clean). Full
+  authenticated category-page E2E + R2 upload + VelShop render check: **BLOCKED** — no local DB/R2
+  and the saved production session cookies are expired (see Findings).
+
+## 6. Bugs found / fixed
+
+- Fixed: Lucide picker missing entirely (restored).
+- Fixed: create-with-upload persisted base64 data URLs (now uploads to R2 after create).
+- Fixed: VelShop `ShopCategories` read a non-existent `imageUrl` field (icons never rendered).
+- Fixed: stale `upload-security.test.ts` allowlist assertion (test failure).
+- Not fixed (pre-existing, out of scope): no live DB/R2 local e2e.
+
+## 7. Known issues / limitations
+
+- Curated Lucide set (~70 icons) — not the entire Lucide library. Names outside the set resolve to
+  the fallback icon (`Package`). This is intentional: the task required avoiding importing the whole
+  library; the shared set covers the category-relevant icons.
+- Dependabot/test CI may still require a disposable Postgres to run other DB-gated suites (not run
+  here — no local DB).
+
+## 8. Deployment status
+
+NOT DEPLOYED. Branch `main` only. (Task: do not deploy to production.)
+
+## 9. What the next agent must know first
+
+- The category icon value in the DB is either an R2 URL (upload) or a Lucide kebab name; render it
+  ONLY through `CategoryIcon` from `packages/shared/src/components/ui/category-icon.tsx`.
+- New-category-with-image: create first, then `uploadIconToR2(newId, file)`, then PATCH the URL.
+- Live authenticated browser testing needs fresh session cookies in `.ai/secrets/browser-cookies.json`
+  and/or a local DB; re-export otherwise.
+- Full report after commit: see final `git log` + this report.

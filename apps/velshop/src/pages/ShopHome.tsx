@@ -145,7 +145,9 @@ export default function ShopHome() {
 
   // Localized category name map (slug → display_name)
   const [catNameMap, setCatNameMap] = useState<Map<string, string>>(new Map());
-  // Real category icons uploaded via VelCenter (categories.icon = R2 URL).
+  // Real category icons set via VelCenter: either an uploaded image URL
+  // (categories.icon = R2 URL) or a Lucide icon name. Keep the raw value so the
+  // shared CategoryIcon can resolve URLs vs names consistently.
   const [catIconMap, setCatIconMap] = useState<Map<string, string>>(new Map());
   useEffect(() => {
     let alive = true;
@@ -156,8 +158,11 @@ export default function ShopHome() {
       const walk = (nodes: any[]) => {
         for (const n of nodes) {
           if (n.slug) m.set(n.slug, n.display_name ?? n.name);
-          if (n.slug && typeof n.icon === "string" && (n.icon.startsWith("http") || n.icon.startsWith("data:"))) {
-            im.set(n.slug, n.icon);
+          if (n.slug && typeof n.icon === "string" && n.icon.trim()) {
+            im.set(n.slug, n.icon.trim());
+          }
+          if (n.slug && typeof n.image_url === "string" && n.image_url.trim()) {
+            im.set(n.slug, n.image_url.trim());
           }
           if (n.children?.length) walk(n.children);
         }
@@ -316,13 +321,18 @@ export default function ShopHome() {
       {/* Category Strip — horizontal scrollable pills, max 6 categories */}
       {!productsData.loading && popularCategories.length > 0 && (
         <CategoryStrip
-          categories={popularCategories.map(([id, count]) => ({
-            id: id as StoreProductCategory,
-            label: catNameMap.get(id) ?? (PRODUCT_CATEGORY_META as Record<string, { label: string }>)[id]?.label ?? id,
-            imageUrl: catIconMap.get(id),
-            icon: (CATEGORY_ICONS as Record<string, LucideIcon>)[id] ?? Package,
-            count,
-          }))}
+          categories={popularCategories.map(([id, count]) => {
+            const raw = catIconMap.get(id) ?? "";
+            const isUrl = raw.startsWith("http") || raw.startsWith("data:");
+            return {
+              id: id as StoreProductCategory,
+              label: catNameMap.get(id) ?? (PRODUCT_CATEGORY_META as Record<string, { label: string }>)[id]?.label ?? id,
+              imageUrl: isUrl ? raw : undefined,
+              iconName: !isUrl && raw ? raw : undefined,
+              icon: (CATEGORY_ICONS as Record<string, LucideIcon>)[id] ?? Package,
+              count,
+            };
+          })}
           activeCategory="all"
           onCategoryChange={(id) => {
             if (id === "all") {

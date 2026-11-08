@@ -4,6 +4,10 @@ import { useLanguage } from "@/lib/i18n";
 import { ChevronLeft, ChevronRight, type LucideIcon } from "lucide-react";
 import { cn } from "@velnox/shared/lib/utils";
 import {
+  CategoryIcon,
+  type CategoryIconProps,
+} from "@velnox/shared/components/ui/category-icon";
+import {
   PRODUCT_CATEGORY_META,
   type StoreProductCategory,
 } from "@velnox/shared/lib/commerce";
@@ -14,6 +18,8 @@ interface CategoryChipProps {
   icon?: LucideIcon;
   /** Optional uploaded image URL (VelCenter category icon) — overrides lucide icon */
   imageUrl?: string;
+  /** Optional stored Lucide icon name (VelCenter category icon) */
+  iconName?: string;
   count?: number;
   isActive: boolean;
   onClick: (id: StoreProductCategory) => void;
@@ -23,7 +29,21 @@ interface CategoryChipProps {
  * Individual category chip — horizontal scrollable strip.
  * Clean, pill-style with optional count badge.
  */
-function CategoryChip({ id, label, icon: Icon, imageUrl, count, isActive, onClick }: CategoryChipProps) {
+function CategoryChip({
+  id,
+  label,
+  icon: Icon,
+  imageUrl,
+  iconName,
+  count,
+  isActive,
+  onClick,
+}: CategoryChipProps) {
+  const iconProps: CategoryIconProps = {
+    icon: iconName,
+    imageUrl,
+    className: "size-4",
+  };
   return (
     <button
       type="button"
@@ -36,8 +56,8 @@ function CategoryChip({ id, label, icon: Icon, imageUrl, count, isActive, onClic
       )}
       aria-pressed={isActive}
     >
-      {imageUrl ? (
-        <img src={imageUrl} alt="" className="size-4" />
+      {iconName || imageUrl ? (
+        <CategoryIcon {...iconProps} />
       ) : Icon ? (
         <Icon className="size-3.5" />
       ) : null}
@@ -52,6 +72,7 @@ interface CategoryStripProps {
     label: string;
     icon?: LucideIcon;
     imageUrl?: string;
+    iconName?: string;
     count?: number;
   }>;
   activeCategory: StoreProductCategory | "all";
@@ -168,8 +189,8 @@ export function CategoryStrip({
                     : "bg-white text-slate-700 border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50"
                 )}
               >
-                {cat.imageUrl ? (
-                  <img src={cat.imageUrl} alt="" className="size-4" />
+                {cat.iconName || cat.imageUrl ? (
+                  <CategoryIcon icon={cat.iconName} imageUrl={cat.imageUrl} className="size-4" />
                 ) : cat.icon ? (
                   <cat.icon className="size-3.5" />
                 ) : null}
