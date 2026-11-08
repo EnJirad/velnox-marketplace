@@ -1,6 +1,6 @@
 # Velnox AI Handoff — Current State
 
-**Last verified:** 2026-11-08 · **Branch:** `main` · **HEAD:** `96870bb` → pending new commit (iconify + details panel)
+**Last verified:** 2026-11-08 · **Branch:** `main` · **HEAD:** `f93c9ae` (pushed to origin, == local)
 
 ## 1. Current Project State
 
