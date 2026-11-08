@@ -101,8 +101,9 @@ function profileKindFromObjectKey(objectKey: string): ProfileImageKind | null {
  * A missing type falls back to the canonical one so a storage quirk cannot
  * break an otherwise valid image (the key is fixed, so the format is known).
  */
-function isStoredContentTypeAllowed(contentType: string | null | undefined): boolean {
+function isStoredContentTypeAllowed(contentType: string | null | undefined, purpose?: UploadPurpose | null): boolean {
   if (!contentType) return true;
+  if (purpose === "category-icon" && contentType === "image/svg+xml") return true;
   return ALLOWED_TYPES.includes(contentType);
 }
 
@@ -297,8 +298,8 @@ export function setupUploadRoutes(app: Express): void {
         return;
       }
 
-      if (!ALLOWED_TYPES.includes(contentType)) {
-        res.status(400).json({ success: false, error: { code: "INVALID_FILE_TYPE", message: "File type not allowed. Allowed: jpeg, png, webp, avif" } });
+      if (!ALLOWED_TYPES.includes(contentType) && !(purpose === "category-icon" && contentType === "image/svg+xml")) {
+        res.status(400).json({ success: false, error: { code: "INVALID_FILE_TYPE", message: "File type not allowed. Allowed: jpeg, png, webp, avif (+ svg for category icons)" } });
         return;
       }
 
@@ -439,7 +440,7 @@ export function setupUploadRoutes(app: Express): void {
         res.status(400).json({ success: false, error: { code: "FILE_TOO_LARGE", message: "File exceeds the maximum allowed size" } });
         return;
       }
-      if (!isStoredContentTypeAllowed(obj.contentType)) {
+      if (!isStoredContentTypeAllowed(obj.contentType, purpose)) {
         r2Log("confirm", { step: "mime_check", status: "rejected", objectKey, contentType: obj.contentType });
         res.status(400).json({ success: false, error: { code: "INVALID_FILE_TYPE", message: "Stored object is not an allowed image type" } });
         return;

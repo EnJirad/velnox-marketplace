@@ -79,6 +79,7 @@ type CategoryForm = {
   name: string;
   slug: string;
   image_url: string;
+  iconRaw: string;
   parent_id: string;
   sort_order: number;
   description: string;
@@ -90,6 +91,7 @@ const defaultForm: CategoryForm = {
   name: "",
   slug: "",
   image_url: "",
+  iconRaw: "",
   parent_id: "",
   sort_order: 0,
   description: "",
@@ -245,12 +247,29 @@ export default function CategoriesManagement() {
       return;
     }
 
+    // When creating a NEW category there is no categoryId yet, so the icon
+    // cannot be presigned to R2. Show a local data-URL preview instead; the
+    // upload happens after the category row exists (edit mode).
+    if (!editingCategory) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        setForm((p) => ({ ...p, iconRaw: String(reader.result), image_url: String(reader.result) }));
+        setUploadError(null);
+      };
+      reader.onerror = () => {
+        setUploadError(t("velcenter.categories.formIconUploadError"));
+      };
+      reader.readAsDataURL(file);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+
     setIconUploading(true);
     setUploadError(null);
 
     try {
-      // Get presigned URL for category icon upload
-      const presignRes = await fetch(`/api/upload/presign`, {
+      // Get presigned URL for category icon upload (apiBaseUrl already includes /api)
+      const presignRes = await fetch(`${apiBaseUrl}/upload/presign`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -258,7 +277,7 @@ export default function CategoriesManagement() {
           purpose: "category-icon",
           filename: file.name,
           contentType: file.type,
-          categoryId: editingCategory?.id || "", // Send categoryId for existing categories
+          categoryId: editingCategory.id,
         }),
       });
 
@@ -280,15 +299,12 @@ export default function CategoriesManagement() {
         throw new Error("Upload to storage failed");
       }
 
-      // Confirm upload (if needed by the API)
-      const confirmRes = await fetch(`/api/upload/confirm`, {
+      // Confirm upload — backend derives purpose from the key + persists the URL
+      const confirmRes = await fetch(`${apiBaseUrl}/upload/confirm`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({
-          purpose: "category-icon",
-          objectKey: objectKey,
-        }),
+        body: JSON.stringify({ objectKey }),
       });
 
       const confirmData = await confirmRes.json();
@@ -296,8 +312,8 @@ export default function CategoriesManagement() {
         console.warn("Upload confirm warning:", confirmData.error);
       }
 
-      // Set the image URL
-      setForm((p) => ({ ...p, image_url: publicUrl }));
+      // Set the image URL on BOTH fields so the list + dialog + payload agree
+      setForm((p) => ({ ...p, image_url: publicUrl, iconRaw: publicUrl }));
       toast.success(t("velcenter.categories.formIconUploadSuccess"));
     } catch (err: any) {
       setUploadError(err?.message || t("velcenter.categories.formIconUploadError"));
@@ -333,7 +349,8 @@ export default function CategoriesManagement() {
     setForm({
       name: cat.name,
       slug: cat.slug,
-      image_url: cat.image_url ?? "",
+      image_url: cat.image_url ?? cat.icon ?? "",
+      iconRaw: cat.image_url ?? cat.icon ?? "",
       parent_id: cat.parent_id ?? "",
       sort_order: cat.sort_order,
       description: cat.description ?? "",
@@ -353,6 +370,7 @@ export default function CategoriesManagement() {
       const payload = {
         name: form.name.trim(),
         slug: form.slug.trim() || form.name.trim().toLowerCase().replace(/[^a-z0-9\s-]/g, "").replace(/\s+/g, "-"),
+        icon: form.image_url.trim() || null,
         image_url: form.image_url.trim() || null,
         parent_id: form.parent_id || null,
         sort_order: form.sort_order,
@@ -576,83 +594,72 @@ export default function CategoriesManagement() {
             <div className="grid gap-2">
               <Label>{t("velcenter.categories.formIconLabel")}</Label>
               
-              {/* Custom Icon Upload - PNG/SVG only */}
-              <div>
-                {form.image_url && (
-                  <div className="mb-3 p-3 rounded-[10px] border border-emerald-200 bg-emerald-50">
-                    <p className="text-[11px] text-emerald-700 font-medium">{t("velcenter.categories.formIconCurrent")}</p>
-                    <div className="flex items-center gap-3 mt-2">
-                      <div className="relative w-16 h-16 flex-shrink-0">
-                        {form.image_url.toLowerCase().endsWith('.svg') ? (
-                          <img src={form.image_url} alt="" className="w-full h-full object-contain rounded-[8px] border border-emerald-200 bg-white" />
-                        ) : (
-                          <img src={form.image_url} alt="" className="w-full h-full object-cover rounded-[8px] border border-emerald-200" />
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-emerald-800 truncate">{form.image_url}</p>
-                        <div className="flex gap-2 mt-1">
-                          <button
-                            type="button"
-                            onClick={() => navigator.clipboard.writeText(form.image_url)}
-                            className="text-[11px] text-emerald-600 hover:underline"
-                          >
-                            {t("velcenter.categories.formIconCopyUrl")}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setForm((p) => ({ ...p, image_url: '' }))}
-                            className="text-[11px] text-red-600 hover:underline"
-                          >
-                            {t("velcenter.categories.formIconRemove")}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-                <div className="space-y-3">
-                  <label className="flex flex-col items-center justify-center gap-2 w-full h-24 border-2 border-dashed border-slate-200 rounded-[10px] cursor-pointer hover:border-emerald-300 hover:bg-emerald-50 transition-colors">
-                    <span className="flex items-center gap-2 text-sm text-slate-500">
-                      <Upload className="size-4" />
-                      {t("velcenter.categories.formIconDragDrop")}
-                    </span>
-                    <input
-                      type="file"
-                      accept="image/png,image/svg+xml"
-                      onChange={(e) => { if (e.target.files?.[0]) void handleIconUpload(e); e.target.value = ""; }}
-                      className="sr-only"
-                      id="icon-upload"
-                      ref={fileInputRef}
-                      disabled={iconUploading}
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="gap-1.5 border-slate-200 text-slate-600"
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={iconUploading}
-                    >
-                      {iconUploading ? (
-                        <Loader2 className="size-3.5 animate-spin" />
-                      ) : (
-                        <Image className="size-3.5" />
-                      )}
-                      {iconUploading ? "อัปโหลด..." : "อัปโหลดไฟล์"}
-                    </Button>
-                  </label>
-                  {iconUploading && (
-                    <div className="flex items-center gap-2 text-sm text-slate-600">
-                      <Loader2 className="size-4 animate-spin text-emerald-600" />
-                      <span>{t("velcenter.categories.formIconUploading")}</span>
-                    </div>
+              {/* Compact icon upload strip - PNG/SVG only */}
+              <div className="flex items-center gap-3">
+                {/* Preview thumbnail */}
+                <div className="w-12 h-12 flex-shrink-0 rounded-[8px] border border-slate-200 bg-slate-50 overflow-hidden flex items-center justify-center">
+                  {form.image_url ? (
+                    form.image_url.toLowerCase().endsWith('.svg') ? (
+                      <img src={form.image_url} alt="" className="w-full h-full object-contain p-1" />
+                    ) : (
+                      <img src={form.image_url} alt="" className="w-full h-full object-cover" />
+                    )
+                  ) : (
+                    <Image className="size-5 text-slate-300" />
                   )}
-                  {uploadError && (
-                    <p className="text-sm text-red-600">{uploadError}</p>
+                </div>
+
+                <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
+                  <input
+                    type="file"
+                    accept="image/png,image/svg+xml"
+                    onChange={(e) => {
+                      void handleIconUpload(e);
+                      e.target.value = "";
+                    }}
+                    className="sr-only"
+                    id="icon-upload"
+                    ref={fileInputRef}
+                    disabled={iconUploading}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5 border-slate-200 text-slate-600"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={iconUploading}
+                  >
+                    {iconUploading ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <Upload className="size-3.5" />
+                    )}
+                    {iconUploading ? t("velcenter.categories.formIconUploading") : t("velcenter.categories.formIconBrowse")}
+                  </Button>
+                  {form.image_url && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => navigator.clipboard.writeText(form.image_url)}
+                        className="text-xs text-emerald-600 hover:underline"
+                      >
+                        {t("velcenter.categories.formIconCopyUrl")}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setForm((p) => ({ ...p, image_url: "", iconRaw: "" }))}
+                        className="text-xs text-red-600 hover:underline"
+                      >
+                        {t("velcenter.categories.formIconRemove")}
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
+              {uploadError && (
+                <p className="text-xs text-red-600 mt-1">{uploadError}</p>
+              )}
             </div>
             <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="grid min-w-0 gap-2">
@@ -799,17 +806,18 @@ function CategoryRow({
         {/* Name + slug + icon */}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
-            {category.image_url ? (
-              category.image_url.startsWith("http") || category.image_url.startsWith("data:") ? (
-                <img src={category.image_url} alt="" className="size-5 rounded object-cover flex-shrink-0" />
-              ) : (
+            {(() => {
+              const iconSrc = category.image_url ?? category.icon ?? "";
+              if (!iconSrc) return null;
+              if (iconSrc.startsWith("http") || iconSrc.startsWith("data:")) {
+                return <img src={iconSrc} alt="" className="size-5 rounded object-cover flex-shrink-0" />;
+              }
+              return (
                 <span className="size-5 flex items-center justify-center text-emerald-600 flex-shrink-0">
                   <Image className="size-4" />
                 </span>
-              )
-            ) : Number(category.sort_order) > 0 && (
-              <span className="size-5 flex-shrink-0" />
-            )}
+              );
+            })()}
             <span className="truncate text-sm font-medium text-slate-900">{category.display_name ?? category.name}</span>
           </div>
           <span className="ml-2 text-xs text-slate-400 hidden sm:inline">/{category.slug}</span>
