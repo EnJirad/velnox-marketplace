@@ -40,8 +40,18 @@ Render ONLY through `CategoryIcon` (shared). Licenses: lucide ISC · mdi Apache-
 ph MIT · fa6-solid CC-BY-4.0 (attribution shown in the picker). Regenerate assets:
 `scripts/generate-icon-library.mjs` (writes manifest + per-collection icons/names JSON).
 
-## VelCenter Details Panel
+## VelCenter Icon Picker (Modal)
 
+The category icon field opens a **responsive modal** (`IconifyIconPicker.tsx`, Radix Dialog) —
+not a dropdown. Header (title/description/close/expand), search + clear, collection chips
+(All + 5), icon grid with a dedicated fixed-size preview container per icon (icon centered in a
+`h-12 w-12 flex-shrink-0` box, name on its own line, prefix below — no overlap/crop), pagination.
+Selection is **temporary**: opened with the current icon, applied to the form only on Confirm;
+Cancel/ESC/close discards it (no DB writes in the picker — the category Save button owns
+persistence). Expand/collapse only changes geometry and preserves query/collection/scroll/temp.
+Legacy/uploaded/namespaced icons all render via `CategoryIcon`.
+
+## VelCenter Details Panel
 The category tree no longer shows product-count badges. Clicking a category **name** opens a
 right-side details sheet (`Sheet side="right"`, full width on mobile) fed only by the existing
 `GET /api/admin/categories` fields: `product_count` (published products — labelled as such),

@@ -1,6 +1,6 @@
 # Velnox AI Handoff — Current State
 
-**Last verified:** 2026-11-08 · **Branch:** `main` · **HEAD:** `6bcf283` (pushed to origin, == local)
+**Last verified:** 2026-11-08 · **Branch:** `main` · **HEAD:** `96bbb743` (pushed SHIPPING task) — icon-picker modal work below is UNCOMMITTED (task forbids commit/push without permission)
 
 ## 1. Current Project State
 
@@ -17,11 +17,16 @@
   VelCenter: 5 collections (lucide 2109 · mdi 7638 · tabler 6305 · ph 9161 · fa6-solid 1407 primary
   icons) via `packages/shared/src/lib/icons/` (scaffolded at `7d06455`, now typecheck-fixed and
   connected). CategoryIcon resolves `prefix:name` lazily (code-split chunks, offline); curated
-  Lucide fast-path + URLs preserved. VelCenter picker rewritten (collection chips, search,
-  SVG previews, pagination). Slug preview/copy/refresh removed. Product count badge moved from the
-  tree into a right-side details panel (Sheet; full width on mobile) showing published-product
-  count, status, dates, breadcrumb, children navigation and quick actions. Report:
-  `.ai/reports/LATEST.md`. Browser E2E still BLOCKED (no local DB/R2; expired saved cookies).
+  Lucide fast-path + URLs preserved. Slug preview/copy/refresh removed. Product count badge moved
+  from the tree into a right-side details panel (Sheet; full width on mobile) showing published-
+  product count, status, dates, breadcrumb, children navigation and quick actions.
+  **Update (same day): icon picker is now a responsive modal** (was an overflowing dropdown) —
+  `IconifyIconPicker.tsx` rewritten on Radix Dialog: header title/desc/close/expand, search+clear,
+  collection chips, icon grid with dedicated preview container (no text overlap; `flex-shrink-0`,
+  fixed 48px box, name on its own line), temporary selection applied only on Confirm (cancel/ESC/
+  close discards), expand/collapse preserves query/collection/scroll/temp, pagination kept.
+  UNCOMMITTED (task forbids commit/push without permission). Report: `.ai/reports/LATEST.md`.
+  Browser E2E still BLOCKED (no local DB/R2; expired saved cookies).
 - Seller roadmap Part 2 (Orders / Order Detail re-verification) — **not started**.
 - Shipping P0 (fee + quote) — **implemented and committed**; production schema reconciled
   2026-11-05 (money table + shop columns now exist in Neon).
