@@ -761,10 +761,10 @@ function CategoryRow({
   return (
     <div>
       <div
-        className={`flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3 px-4 py-3 transition-colors hover:bg-slate-50 ${
+        className={`flex items-center gap-2 px-4 py-2 transition-colors hover:bg-slate-50 ${
           !category.is_active ? "opacity-60" : ""
         }`}
-        style={{ paddingLeft: `${16 + depth * 24}px` }}
+        style={{ paddingLeft: `${12 + depth * 16}px` }}
       >
         {/* Expand/collapse toggle */}
         {hasChildren ? (
@@ -783,8 +783,8 @@ function CategoryRow({
         )}
 
         {/* Name + slug + icon */}
-        <div className="min-w-0 flex-1 w-full sm:w-auto">
-          <div className="flex items-center gap-1.5 flex-wrap">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
             {category.image_url ? (
               category.image_url.startsWith("http") || category.image_url.startsWith("data:") ? (
                 <img src={category.image_url} alt="" className="size-5 rounded object-cover flex-shrink-0" />
@@ -817,8 +817,8 @@ function CategoryRow({
           {category.is_active ? "ใช้งาน" : "ปิด"}
         </Badge>
 
-        {/* Actions - responsive */}
-        <div className="flex items-center gap-1 w-full sm:w-auto justify-start sm:justify-end flex-wrap">
+        {/* Actions - single row, no wrap */}
+        <div className="flex items-center gap-1 flex-shrink-0">
           <Button
             variant="ghost"
             size="icon"
