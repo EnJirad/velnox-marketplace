@@ -1,6 +1,6 @@
 # Velnox AI Handoff — Current State
 
-**Last verified:** 2026-11-08 · **Branch:** `main` · **HEAD:** `3375fd8` (pushed to origin)
+**Last verified:** 2026-11-09 · **Branch:** `main` · **HEAD:** `6a2543e` (pushed to origin)
 
 ## 1. Current Project State
 
@@ -112,7 +112,9 @@
 
 - `TEST_DATABASE_URL` is the only database a test may write to; DB tests **skip** when unset.
 - `DATABASE_URL` points at production Neon — never write to it from a test.
-- `bun run lint` / `bun run format` are placeholders; they prove nothing.
+- `bun run lint` now runs real ESLint (`eslint .`) and `bun run format` runs `prettier --check .`
+  (wired 2026-11-09, commit `6a2543e`). Both report the repo's pre-existing style debt
+  (1061 eslint problems, many prettier-formattable files) — they are tools, not a clean bill of health.
 
 ---
 
