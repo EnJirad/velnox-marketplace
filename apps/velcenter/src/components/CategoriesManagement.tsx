@@ -9,6 +9,7 @@
  * - Product count display
  * - Search filtering
  * - Localized names
+ * - Custom PNG/SVG icon uploads only
  */
 import { api } from "@velnox/shared/lib/api-routes";
 import { apiBaseUrl } from "@velnox/shared/lib/sites";
@@ -33,8 +34,9 @@ import {
   Copy,
   Check,
   RefreshCw,
+  Upload,
+  Image,
 } from "lucide-react";
-import * as lucideReact from "lucide-react";
 import { Button } from "@velnox/shared/components/ui/button";
 import { Input } from "@velnox/shared/components/ui/input";
 import { Label } from "@velnox/shared/components/ui/label";
@@ -56,125 +58,6 @@ import {
 } from "@velnox/shared/components/ui/dialog";
 import { toast } from "sonner";
 
-// Helper to resolve Lucide icon component by name
-// Uses lucide-react's icons object directly for comprehensive icon support
-function getLucideIcon(name: string): React.ComponentType<React.SVGProps<SVGSVGElement>> | null {
-  // Convert kebab-case to PascalCase (lucide-react export format)
-  const pascal = name.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
-  return (lucideReact as any)[pascal] || null;
-}
-
-/**
- * Lucide Icon Picker - searchable dropdown with icon preview.
- */
-function LucideIconPicker({
-  value,
-  onChange,
-  placeholder = "pim-chue-icon...",
-  t,
-}: {
-  value: string;
-  onChange: (name: string) => void;
-  placeholder?: string;
-  t: (key: string, vars?: Record<string, string | number>) => string;
-}) {
-  const [isOpen, setIsOpen] = useState(false);
-  const [search, setSearch] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
-  const listRef = useRef<HTMLDivElement>(null);
-
-  // Get all Lucide icon names dynamically from the library
-  const lucideIcons = useMemo(() => {
-    const icons: string[] = [];
-    for (const key of Object.keys(lucideReact)) {
-      // lucide-react exports both PascalCase (e.g., "Camera") and PascalCase + "Icon" (e.g., "CameraIcon")
-      // We want the kebab-case version without the "Icon" suffix
-      if (key.endsWith("Icon")) {
-        const baseName = key.slice(0, -4);
-        // Convert PascalCase to kebab-case
-        const kebab = baseName.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase();
-        icons.push(kebab);
-      }
-    }
-    // Sort alphabetically and deduplicate
-    return [...new Set(icons)].sort();
-  }, []);
-
-  const filteredIcons = useMemo(() => {
-    if (!search) return lucideIcons.slice(0, 50);
-    return lucideIcons.filter((name) =>
-      name.toLowerCase().includes(search.toLowerCase())
-    ).slice(0, 50);
-  }, [search, lucideIcons]);
-
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (inputRef.current && !inputRef.current.contains(e.target as Node) &&
-          listRef.current && !listRef.current.contains(e.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  return (
-    <div className="relative" ref={listRef}>
-      <Input
-        ref={inputRef}
-        value={value}
-        onChange={(e) => {
-          setSearch(e.target.value);
-          onChange(e.target.value);
-        }}
-        onFocus={() => setIsOpen(true)}
-        onBlur={() => setTimeout(() => setIsOpen(false), 150)}
-        placeholder={placeholder}
-        className="w-full"
-      />
-      {isOpen && search && (
-        <div className="absolute z-50 mt-1 w-full max-h-60 overflow-auto rounded-md border border-slate-200 bg-white shadow-lg divide-y divide-slate-100">
-          {filteredIcons.map((name) => (
-            <button
-              key={name}
-              type="button"
-              onClick={() => {
-                onChange(name);
-                setSearch(name);
-                setIsOpen(false);
-                inputRef.current?.blur();
-              }}
-              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
-            >
-              {/* Icon preview */}
-              <span className="flex-shrink-0 w-8 flex items-center justify-center">
-                {(() => {
-                  const IconComp = getLucideIcon(name);
-                  if (IconComp) {
-                    return <IconComp className="size-4 text-emerald-600" strokeWidth={2} />;
-                  }
-                  // Fallback: show abbreviated name in a colored badge
-                  return (
-                    <span className="inline-flex items-center justify-center w-8 h-8 rounded bg-emerald-100 text-[8px] font-bold text-emerald-700">
-                      {name.slice(0, 2).toUpperCase()}
-                    </span>
-                  );
-                })()}
-              </span>
-              <span className="font-medium">{name}</span>
-            </button>
-          ))}
-          {filteredIcons.length === 0 && (
-            <div className="px-3 py-2 text-sm text-slate-400 text-center">
-              {t("velcenter.categories.noIconsFound", { search })}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
 interface CategoryNode {
   id: string;
   name: string;
@@ -195,26 +78,22 @@ interface CategoryNode {
 type CategoryForm = {
   name: string;
   slug: string;
-  icon: string;
   image_url: string;
   parent_id: string;
   sort_order: number;
   description: string;
   is_active: boolean;
-  iconMode: 'lucide' | 'upload';
   slugManuallyEdited: boolean;
 };
 
 const defaultForm: CategoryForm = {
   name: "",
   slug: "",
-  icon: "",
   image_url: "",
   parent_id: "",
   sort_order: 0,
   description: "",
   is_active: true,
-  iconMode: 'lucide',
   slugManuallyEdited: false,
 };
 
@@ -348,13 +227,13 @@ export default function CategoriesManagement() {
       .substring(0, 120);
   };
 
-  // Handle custom icon upload to R2
+  // Handle custom icon upload to R2 (PNG/SVG only)
   const handleIconUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Validate file type
-    const allowedTypes = ["image/png", "image/jpeg", "image/webp", "image/svg+xml"];
+    // Validate file type (PNG/SVG only)
+    const allowedTypes = ["image/png", "image/svg+xml"];
     if (!allowedTypes.includes(file.type)) {
       setUploadError(t("velcenter.categories.formIconUploadErrorType"));
       return;
@@ -418,7 +297,7 @@ export default function CategoriesManagement() {
       }
 
       // Set the image URL
-      setForm((p) => ({ ...p, image_url: publicUrl, icon: "" }));
+      setForm((p) => ({ ...p, image_url: publicUrl }));
       toast.success(t("velcenter.categories.formIconUploadSuccess"));
     } catch (err: any) {
       setUploadError(err?.message || t("velcenter.categories.formIconUploadError"));
@@ -454,13 +333,11 @@ export default function CategoriesManagement() {
     setForm({
       name: cat.name,
       slug: cat.slug,
-      icon: cat.icon ?? "",
       image_url: cat.image_url ?? "",
       parent_id: cat.parent_id ?? "",
       sort_order: cat.sort_order,
       description: cat.description ?? "",
       is_active: cat.is_active,
-      iconMode: cat.image_url ? 'upload' : 'lucide',
       slugManuallyEdited: false,
     });
     setDialogOpen(true);
@@ -476,7 +353,6 @@ export default function CategoriesManagement() {
       const payload = {
         name: form.name.trim(),
         slug: form.slug.trim() || form.name.trim().toLowerCase().replace(/[^a-z0-9\s-]/g, "").replace(/\s+/g, "-"),
-        icon: form.icon.trim() || null,
         image_url: form.image_url.trim() || null,
         parent_id: form.parent_id || null,
         sort_order: form.sort_order,
@@ -700,134 +576,69 @@ export default function CategoriesManagement() {
             <div className="grid gap-2">
               <Label>{t("velcenter.categories.formIconLabel")}</Label>
               
-              {/* Icon mode tabs */}
-              <div className="flex gap-1 border-b border-slate-200 mb-2">
-                <button
-                  type="button"
-                  onClick={() => setForm((p) => ({ ...p, iconMode: 'lucide' }))}
-                  className={`px-3 py-1.5 text-sm rounded-t font-medium transition-colors ${
-                    form.iconMode === 'lucide'
-                      ? 'bg-emerald-50 text-emerald-700 border-b-2 border-emerald-600 -mb-px'
-                      : 'text-slate-500 hover:text-slate-700'
-                  }`}
-                >
-                  {t("velcenter.categories.iconModeLucide")}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setForm((p) => ({ ...p, iconMode: 'upload' }))}
-                  className={`px-3 py-1.5 text-sm rounded-t font-medium transition-colors ${
-                    form.iconMode === 'upload'
-                      ? 'bg-emerald-50 text-emerald-700 border-b-2 border-emerald-600 -mb-px'
-                      : 'text-slate-500 hover:text-slate-700'
-                  }`}
-                >
-                  {t("velcenter.categories.iconModeUpload")}
-                </button>
-              </div>
-
-              {/* Lucide Icon Picker */}
-              {form.iconMode === 'lucide' && (
-                <div>
-                  <LucideIconPicker
-                    value={form.icon}
-                    onChange={(name) => setForm((p) => ({ ...p, icon: name, image_url: '' }))}
-                    placeholder={t("velcenter.categories.formIconLucidePlaceholder")}
-                    t={t}
-                  />
-                  <p className="text-[11px] text-slate-400 mt-1">
-                    {t("velcenter.categories.formIconLucideHint")}
-                    <a href="https://lucide.dev/icons/" target="_blank" rel="noopener" className="text-emerald-600 hover:underline ml-1">
-                      lucide.dev/icons
-                    </a>
-                  </p>
-
-                  {/* Icon preview when selected */}
-                  {form.icon && (
-                    <div className="mt-2 p-2 rounded-[10px] border border-emerald-200 bg-emerald-50">
-                      <p className="text-[11px] text-emerald-700 font-medium">{t("velcenter.categories.formIconSelected")}</p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-[8px] border border-emerald-200 bg-white">
-                          {(() => {
-                            const IconComp = getLucideIcon(form.icon);
-                            if (IconComp) return <IconComp className="size-6 text-emerald-600" strokeWidth={2} />;
-                            return (
-                              <span className="inline-flex items-center justify-center w-10 h-10 rounded-[8px] bg-emerald-100 text-[10px] font-bold text-emerald-700">
-                                {form.icon.slice(0, 2).toUpperCase()}
-                              </span>
-                            );
-                          })()}
-                        </span>
-                        <span className="text-sm font-medium text-emerald-800">{form.icon}</span>
+              {/* Custom Icon Upload - PNG/SVG only */}
+              <div>
+                {form.image_url && (
+                  <div className="mb-3 p-3 rounded-[10px] border border-emerald-200 bg-emerald-50">
+                    <p className="text-[11px] text-emerald-700 font-medium">{t("velcenter.categories.formIconCurrent")}</p>
+                    <div className="flex items-center gap-3 mt-2">
+                      <div className="relative w-16 h-16 flex-shrink-0">
+                        {form.image_url.toLowerCase().endsWith('.svg') ? (
+                          <img src={form.image_url} alt="" className="w-full h-full object-contain rounded-[8px] border border-emerald-200 bg-white" />
+                        ) : (
+                          <img src={form.image_url} alt="" className="w-full h-full object-cover rounded-[8px] border border-emerald-200" />
+                        )}
                       </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Custom Icon Upload */}
-              {form.iconMode === 'upload' && (
-                <div>
-                  {form.image_url && (
-                    <div className="mb-3 p-3 rounded-[10px] border border-emerald-200 bg-emerald-50">
-                      <p className="text-[11px] text-emerald-700 font-medium">{t("velcenter.categories.formIconCurrent")}</p>
-                      <div className="flex items-center gap-3 mt-2">
-                        <div className="relative w-16 h-16 flex-shrink-0">
-                          {form.image_url.toLowerCase().endsWith('.svg') ? (
-                            <img src={form.image_url} alt="" className="w-full h-full object-contain rounded-[8px] border border-emerald-200 bg-white" />
-                          ) : (
-                            <img src={form.image_url} alt="" className="w-full h-full object-cover rounded-[8px] border border-emerald-200" />
-                          )}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-emerald-800 truncate">{form.image_url}</p>
-                          <div className="flex gap-2 mt-1">
-                            <button
-                              type="button"
-                              onClick={() => navigator.clipboard.writeText(form.image_url)}
-                              className="text-[11px] text-emerald-600 hover:underline"
-                            >
-                              {t("velcenter.categories.formIconCopyUrl")}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setForm((p) => ({ ...p, image_url: '' }))}
-                              className="text-[11px] text-red-600 hover:underline"
-                            >
-                              {t("velcenter.categories.formIconRemove")}
-                            </button>
-                          </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-emerald-800 truncate">{form.image_url}</p>
+                        <div className="flex gap-2 mt-1">
+                          <button
+                            type="button"
+                            onClick={() => navigator.clipboard.writeText(form.image_url)}
+                            className="text-[11px] text-emerald-600 hover:underline"
+                          >
+                            {t("velcenter.categories.formIconCopyUrl")}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setForm((p) => ({ ...p, image_url: '' }))}
+                            className="text-[11px] text-red-600 hover:underline"
+                          >
+                            {t("velcenter.categories.formIconRemove")}
+                          </button>
                         </div>
                       </div>
                     </div>
-                  )}
-                  <div className="space-y-3">
-                    <label className="flex flex-col items-center justify-center gap-3 w-full h-32 border-2 border-dashed border-slate-200 rounded-[12px] cursor-pointer hover:border-emerald-300 hover:bg-emerald-50 transition-colors">
-                      <span className="text-sm text-slate-500">{t("velcenter.categories.formIconDragDrop")}</span>
-                      <input
-                        type="file"
-                        accept="image/png,image/jpeg,image/webp,image/svg+xml"
-                        onChange={handleIconUpload}
-                        className="sr-only"
-                        id="icon-upload"
-                        ref={fileInputRef}
-                        disabled={uploading}
-                      />
-                      <span className="text-sm text-emerald-600 font-medium underline">{t("velcenter.categories.formIconBrowse")}</span>
-                    </label>
-                    {uploading && (
-                      <div className="flex items-center gap-2 text-sm text-slate-600">
-                        <Loader2 className="size-4 animate-spin text-emerald-600" />
-                        <span>{t("velcenter.categories.formIconUploading")}</span>
-                      </div>
-                    )}
-                    {uploadError && (
-                      <p className="text-sm text-red-600">{uploadError}</p>
-                    )}
-                    <p className="text-[11px] text-slate-400 text-center">{t("velcenter.categories.formIconUploadHint")}</p>
                   </div>
+                )}
+                <div className="space-y-3">
+                  <label className="flex flex-col items-center justify-center gap-3 w-full h-32 border-2 border-dashed border-slate-200 rounded-[12px] cursor-pointer hover:border-emerald-300 hover:bg-emerald-50 transition-colors">
+                    <span className="flex items-center gap-2 text-sm text-slate-500">
+                      <Upload className="size-4" />
+                      {t("velcenter.categories.formIconDragDrop")}
+                    </span>
+                    <input
+                      type="file"
+                      accept="image/png,image/svg+xml"
+                      onChange={handleIconUpload}
+                      className="sr-only"
+                      id="icon-upload"
+                      ref={fileInputRef}
+                      disabled={uploading}
+                    />
+                    <span className="text-sm text-emerald-600 font-medium underline">{t("velcenter.categories.formIconBrowse")}</span>
+                  </label>
+                  {uploading && (
+                    <div className="flex items-center gap-2 text-sm text-slate-600">
+                      <Loader2 className="size-4 animate-spin text-emerald-600" />
+                      <span>{t("velcenter.categories.formIconUploading")}</span>
+                    </div>
+                  )}
+                  {uploadError && (
+                    <p className="text-sm text-red-600">{uploadError}</p>
+                  )}
                 </div>
-              )}
+              </div>
             </div>
             <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="grid min-w-0 gap-2">
@@ -974,20 +785,12 @@ function CategoryRow({
         {/* Name + slug + icon */}
         <div className="min-w-0 flex-1 w-full sm:w-auto">
           <div className="flex items-center gap-1.5 flex-wrap">
-            {category.icon ? (
-              category.icon.startsWith("http") || category.icon.startsWith("data:") ? (
-                <img src={category.icon} alt="" className="size-5 rounded object-cover flex-shrink-0" />
+            {category.image_url ? (
+              category.image_url.startsWith("http") || category.image_url.startsWith("data:") ? (
+                <img src={category.image_url} alt="" className="size-5 rounded object-cover flex-shrink-0" />
               ) : (
                 <span className="size-5 flex items-center justify-center text-emerald-600 flex-shrink-0">
-                  {(() => {
-                    const IconComp = getLucideIcon(category.icon!);
-                    if (IconComp) return <IconComp className="size-4" strokeWidth={2} />;
-                    return (
-                      <span className="inline-flex items-center justify-center w-5 h-5 rounded bg-emerald-100 text-[8px] font-bold text-emerald-700">
-                        {category.icon!.slice(0, 2).toUpperCase()}
-                      </span>
-                    );
-                  })()}
+                  <Image className="size-4" />
                 </span>
               )
             ) : Number(category.sort_order) > 0 && (
