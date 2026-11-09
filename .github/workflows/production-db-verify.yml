@@ -486,6 +486,13 @@ jobs:
       - name: Reconciler behaviour (idempotency, cases A–I)
         run: bun run db:verify
 
+      - name: Build the app the preview-proxy tests serve
+        # Same reason as test.yml: the proxy tests serve a BUILT VelSeller app and
+        # throw "missing …/apps/velseller/dist" from `beforeAll`, which Bun reports
+        # as one unnamed failure for the whole file. This job also builds the apps
+        # later for typecheck/build, so this step only moves that earlier.
+        run: bun run build:velseller
+
       - name: Test suite
         run: bun test backend/tests
 
