@@ -70,6 +70,10 @@ import { purgeUsers } from "./helpers/purge.js";
 
 if (!process.env.JWT_SECRET) process.env.JWT_SECRET = "test-secret-for-unit-tests-only-32chars!!";
 
+
+/** A 30-minute window written by the DB and read by the process drifts by ms. */
+const CLOCK_SKEW_MINUTES = 0.05; // 3 s
+
 const root = join(import.meta.dir, "..", "..");
 const read = (rel: string) => readFileSync(join(root, rel), "utf8");
 
@@ -1078,7 +1082,11 @@ describeDb("payment reservation expiry (requires TEST_DATABASE_URL)", () => {
       expect(typeof expiresAt).toBe("number");
       const remainingMinutes = (expiresAt! - Date.now()) / 60_000;
       expect(remainingMinutes).toBeGreaterThan(29);
-      expect(remainingMinutes).toBeLessThanOrEqual(30);
+      // Upper bound allows for clock skew: the deadline is written with the
+      // DATABASE clock (`now()`) and compared here against the process clock, so a
+      // fresh 30-minute window can read a few hundred milliseconds ABOVE 30. The
+      // contract this pins is "~30 minutes", not "never a millisecond more".
+      expect(remainingMinutes).toBeLessThanOrEqual(30 + CLOCK_SKEW_MINUTES);
       // …and the shared helpers turn exactly this field into the UI state.
       const order = { status: payload.data?.status, paymentExpiresAt: expiresAt };
       expect(paymentReservationPhase(order)).toBe("active");
@@ -1153,7 +1161,8 @@ describeDb("payment reservation expiry (requires TEST_DATABASE_URL)", () => {
       // The deadline is creation + 30:00, not a shorter "risky" window.
       const deltaMinutes = (state.paymentExpiresAt!.getTime() - Date.now()) / 60_000;
       expect(deltaMinutes).toBeGreaterThan(29);
-      expect(deltaMinutes).toBeLessThanOrEqual(30);
+      // See CLOCK_SKEW_MINUTES: DB written, process read.
+      expect(deltaMinutes).toBeLessThanOrEqual(30 + CLOCK_SKEW_MINUTES);
     } finally {
       await purgeUsers([scarce.ownerId, scarce.sellerUserId]);
     }
@@ -1171,7 +1180,8 @@ describeDb("payment reservation expiry (requires TEST_DATABASE_URL)", () => {
       });
       const deltaMinutes = (state.paymentExpiresAt!.getTime() - Date.now()) / 60_000;
       expect(deltaMinutes).toBeGreaterThan(29);
-      expect(deltaMinutes).toBeLessThanOrEqual(30);
+      // See CLOCK_SKEW_MINUTES: DB written, process read.
+      expect(deltaMinutes).toBeLessThanOrEqual(30 + CLOCK_SKEW_MINUTES);
     } finally {
       await purgeUsers([deep.ownerId, deep.sellerUserId]);
     }

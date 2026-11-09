@@ -63,10 +63,18 @@ function rowToShipment(r: any): ShipmentRow {
   };
 }
 
+/** How a reader talks to the database — injectable so the schema-gap fallback can
+ *  be tested without `mock.module` (that mock is process-global and leaked into
+ *  every later DB-gated file). Production callers pass nothing. */
+export type QueryRunner = (sql: string, params?: unknown[]) => Promise<{ rows: any[] }>;
+
 /** The canonical shipment for an order (one per order is enforced in the DB).
  *  Defensive: if the DB has not been reconciled to the new tracking columns,
  *  falls back to the legacy projection so the reader never 500s. */
-export async function getShipmentForOrder(orderId: string): Promise<ShipmentRow | null> {
+export async function getShipmentForOrder(
+  orderId: string,
+  run: QueryRunner = (sql, params) => query(sql, params),
+): Promise<ShipmentRow | null> {
   const EXTENDED = `SELECT id, order_id, carrier, carrier_code, tracking_number, status,
             estimated_delivery_date, original_status, last_checked_at,
             last_error, last_error_at, tracking_confirmed,
@@ -78,10 +86,10 @@ export async function getShipmentForOrder(orderId: string): Promise<ShipmentRow 
 
   let res;
   try {
-    res = await query(EXTENDED, [orderId]);
+    res = await run(EXTENDED, [orderId]);
   } catch (err) {
     if (!isSchemaGapError(err)) throw err;
-    res = await query(LEGACY, [orderId]);
+    res = await run(LEGACY, [orderId]);
   }
   return res.rows[0] ? rowToShipment(res.rows[0]) : null;
 }

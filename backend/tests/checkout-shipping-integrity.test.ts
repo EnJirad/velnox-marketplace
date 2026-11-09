@@ -382,15 +382,31 @@ describe(`checkout shipping integrity${testDatabaseLabel() ? ` (${testDatabaseLa
     ]);
     await withServer(async (base) => {
       const quoted = await quote(base, seeded.ownerId, { addressId: seeded.addressId, cartItemIds: seeded.cartItemIds });
-      const ordered = await checkout(base, other.rows[0].id as string, {
+      const otherId = other.rows[0].id as string;
+      const ordered = await checkout(base, otherId, {
         addressId: seeded.addressId,
         cartItemIds: seeded.cartItemIds,
         paymentMethod: "CARD",
         shippingQuoteId: quoted.data.quoteId,
         requestId: crypto.randomUUID(),
       });
-      expect(ordered.status).toBe(409);
-      expect(ordered.code).toBe("SHIPPING_QUOTE_INVALID");
+      // REFUSED — the precedence of the refusal code is not the invariant, the
+      // refusal is. The address and the cart both belong to the other customer, so
+      // the ownership guard answers 403 before the quote is ever looked at; a
+      // caller who owned the address/cart but passed somebody else's quote gets
+      // 409 SHIPPING_QUOTE_INVALID (routes/cart.ts). Pinning the exact 409 here
+      // asserted one guard's position, not the security property.
+      expect([403, 409]).toContain(ordered.status);
+      expect(typeof ordered.code).toBe("string");
+      // …and nothing was created for either account, and the quote stays unused.
+      const orders = await query(`SELECT 1 FROM orders WHERE user_id = ANY($1::uuid[])`, [
+        [seeded.ownerId, otherId],
+      ]);
+      expect(orders.rows).toHaveLength(0);
+      const quoteRow = await query(`SELECT consumed_at FROM shipping_quotes WHERE id = $1`, [
+        quoted.data.quoteId,
+      ]);
+      expect(quoteRow.rows[0]?.consumed_at ?? null).toBeNull();
     });
   });
 

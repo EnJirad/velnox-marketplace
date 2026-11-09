@@ -315,7 +315,7 @@ describeDb("buy now — quantity, stock, cart and idempotency (requires TEST_DAT
   async function purchaseOf(orderId: string) {
     const { query } = await import("../db/index.js");
     const order = (
-      await query(`SELECT id, user_id, status, total_amount, checkout_group_id FROM orders WHERE id = $1`, [
+      await query(`SELECT id, user_id, status, subtotal, shipping_fee, discount, total_amount, checkout_group_id FROM orders WHERE id = $1`, [
         orderId,
       ])
     ).rows[0];
@@ -371,7 +371,17 @@ describeDb("buy now — quantity, stock, cart and idempotency (requires TEST_DAT
         expect(Number(lines[0]!.quantity)).toBe(quantity);
         expect(Number(lines[0]!.price)).toBeCloseTo(PRICE, 5);
         expect(Number(lines[0]!.subtotal)).toBeCloseTo(PRICE * quantity, 2);
-        expect(Number(order.total_amount)).toBeCloseTo(PRICE * quantity, 2);
+        // The stored total is subtotal − discount + shipping_fee (the shop has no
+        // explicit fee here, so the platform default applies). Comparing the total
+        // to the goods value alone was correct before server-priced shipping
+        // shipped; it now reads the order's OWN columns instead of assuming a
+        // fixed delivery fee.
+        expect(Number(order.subtotal)).toBeCloseTo(PRICE * quantity, 2);
+        expect(Number(order.shipping_fee)).toBeGreaterThan(0);
+        expect(Number(order.total_amount)).toBeCloseTo(
+          Number(order.subtotal) - Number(order.discount) + Number(order.shipping_fee),
+          2,
+        );
 
         // Stock is held for EXACTLY this quantity (checkout reserves, payment
         // settles later — see lib/inventory.ts).

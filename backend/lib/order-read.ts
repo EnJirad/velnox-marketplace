@@ -105,7 +105,19 @@ export async function fetchOrderItemsForOrders(orderIds: string[]): Promise<Reco
  * the whole order still renders and the tracking columns simply come back
  * null. Any other database error is rethrown, never masked as an empty order.
  */
-export async function fetchShipmentsForOrder(orderId: string): Promise<any[]> {
+/**
+ * How a reader talks to the database. Injected so the schema-gap fallback can be
+ * exercised WITHOUT `mock.module` — a process-global module mock installed by one
+ * test file leaked into every DB-gated file that ran after it (Bun runs them all
+ * in one process), which showed up as `client.query is not a function` far away
+ * from the cause. Production callers pass nothing and get the real `query`.
+ */
+export type QueryRunner = (sql: string, params?: unknown[]) => Promise<{ rows: any[] }>;
+
+export async function fetchShipmentsForOrder(
+  orderId: string,
+  run: QueryRunner = (sql, params) => query(sql, params),
+): Promise<any[]> {
   const SHIPMENTS_EXTENDED = `SELECT s.id, s.carrier, s.carrier_code, s.tracking_number, s.status,
             s.estimated_delivery_date, s.original_status, s.last_checked_at,
             s.last_error, s.tracking_confirmed
@@ -119,10 +131,10 @@ export async function fetchShipmentsForOrder(orderId: string): Promise<any[]> {
 
   let sRes;
   try {
-    sRes = await query(SHIPMENTS_EXTENDED, [orderId]);
+    sRes = await run(SHIPMENTS_EXTENDED, [orderId]);
   } catch (err) {
     if (!isSchemaGapError(err)) throw err;
-    sRes = await query(SHIPMENTS_LEGACY, [orderId]);
+    sRes = await run(SHIPMENTS_LEGACY, [orderId]);
   }
   const shipments = sRes.rows.map((r: any) => ({
     id: r.id,
@@ -149,10 +161,10 @@ export async function fetchShipmentsForOrder(orderId: string): Promise<any[]> {
        ORDER BY te.occurred_at ASC`;
     let eventsRes;
     try {
-      eventsRes = await query(EVENTS_EXTENDED, [shipments.map((s) => s.id)]);
+      eventsRes = await run(EVENTS_EXTENDED, [shipments.map((s) => s.id)]);
     } catch (err) {
       if (!isSchemaGapError(err)) throw err;
-      eventsRes = await query(EVENTS_LEGACY, [shipments.map((s) => s.id)]);
+      eventsRes = await run(EVENTS_LEGACY, [shipments.map((s) => s.id)]);
     }
     const byShipment = new Map<string, any[]>();
     for (const e of eventsRes.rows) {

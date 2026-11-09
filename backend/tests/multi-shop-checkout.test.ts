@@ -385,9 +385,16 @@ describeDb("multi-shop checkout (requires TEST_DATABASE_URL)", () => {
       const groupId = res.data?.checkoutGroupId as string;
       const { group, orders } = await purchaseOf(groupId);
       expect(orders.length).toBe(2);
-      // 2×120 + 1×250 — the charge covers the WHOLE purchase, not one shop.
-      expect(Number(group.total_amount)).toBeCloseTo(490, 2);
-      expect(Number(res.data?.total)).toBeCloseTo(490, 2);
+      // The invariant is the NAME of this test: the charge is the SUM OF THE
+      // ORDERS, not one shop's goods. The goods alone are 2×120 + 1×250 = 490 and
+      // each shop adds its own server-priced delivery, so the old hardcoded 490
+      // stopped being the total when shipping moved into the order total. Adding
+      // up the persisted rows still catches a charge that misses a shop.
+      const goodsTotal = 2 * 120 + 1 * 250;
+      const summed = orders.reduce((n, o) => n + Number(o.total_amount), 0);
+      expect(summed).toBeCloseTo(Number(group.total_amount), 2);
+      expect(Number(group.total_amount)).toBeGreaterThanOrEqual(goodsTotal);
+      expect(Number(res.data?.total)).toBeCloseTo(Number(group.total_amount), 2);
     } finally {
       await purgeUsers([seed.ownerId, ...seed.sellerUserIds]);
     }
