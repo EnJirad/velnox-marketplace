@@ -203,19 +203,19 @@ export function IdentityDocumentUploader({
           {required && <span className="ml-0.5 text-rose-500">*</span>}
         </Label>
         {status === "uploading" && (
-          <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-600">
+          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-600">
             <Loader2 className="size-3 animate-spin" />
             {t("identityDoc.uploading")}
           </span>
         )}
         {status === "uploaded" && (
-          <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-600">
+          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600">
             <CheckCircle2 className="size-3" />
             {t("identityDoc.uploaded")}
           </span>
         )}
         {status === "error" && (
-          <span className="inline-flex items-center gap-1 text-[10px] font-medium text-rose-600">
+          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-rose-600">
             <AlertCircle className="size-3" />
             {t("identityDoc.failed")}
           </span>
@@ -275,12 +275,12 @@ export function IdentityDocumentUploader({
             <Upload className="size-5 text-slate-400" />
           )}
           <span className="text-xs font-medium text-slate-600">{t("identityDoc.choose")}</span>
-          <span className="text-[10px] text-slate-400">{t("identityDoc.formats")}</span>
+          <span className="text-[11px] text-slate-400">{t("identityDoc.formats")}</span>
         </button>
       )}
 
-      {hint && !error && <p className="text-[10px] text-slate-400">{hint}</p>}
-      {error && <p className="text-[10px] font-medium text-rose-600">{error}</p>}
+      {hint && !error && <p className="text-[11px] text-slate-400">{hint}</p>}
+      {error && <p className="text-[11px] font-medium text-rose-600">{error}</p>}
 
       <input
         ref={inputRef}

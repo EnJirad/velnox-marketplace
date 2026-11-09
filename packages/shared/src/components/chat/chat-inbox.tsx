@@ -153,7 +153,7 @@ export function ChatConversationRow({
           </span>
           <span className="flex shrink-0 items-center gap-1.5">
             {support && (
-              <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
+              <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-700">
                 Support
               </span>
             )}

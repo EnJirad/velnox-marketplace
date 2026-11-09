@@ -326,7 +326,7 @@ export function MarketingBanners() {
                         }}
                       />
                     </label>
-                    <p className="text-[10px] leading-3.5 text-slate-400">{t("marketing.uploadHint")}</p>
+                    <p className="text-[11px] leading-3.5 text-slate-400">{t("marketing.uploadHint")}</p>
                   </div>
 
                   <div className="grid min-w-0 flex-1 gap-2">
@@ -371,7 +371,7 @@ export function MarketingBanners() {
                         onChange={(event) => update(index, { title: event.target.value })}
                         maxLength={120}
                       />
-                      <p className="text-[10px] text-slate-400">{t("marketing.fieldTitleHint")}</p>
+                      <p className="text-[11px] text-slate-400">{t("marketing.fieldTitleHint")}</p>
                     </div>
                     <div className="grid gap-1">
                       <Label htmlFor={`bn-sub-${index}`}>{t("marketing.fieldSubtitle")}</Label>
@@ -474,10 +474,10 @@ export function MarketingBanners() {
                   {mode === "image+text" && (
                     <div className="flex items-stretch">
                       <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5 px-3 py-2">
-                        <span className="text-[9px] font-semibold uppercase tracking-wide text-[#059669]">{t("marketing.stripEyebrow")}</span>
+                        <span className="text-[11px] font-semibold uppercase tracking-wide text-[#059669]">{t("marketing.stripEyebrow")}</span>
                         {row.title.trim() && <span className="text-xs font-bold text-slate-900">{row.title}</span>}
-                        {row.subtitle.trim() && <span className="line-clamp-1 text-[10px] text-slate-600">{row.subtitle}</span>}
-                        {row.ctaUrl && <span className="text-[10px] font-semibold text-[#059669]">{row.ctaLabel || t("marketing.stripCta")} →</span>}
+                        {row.subtitle.trim() && <span className="line-clamp-1 text-[11px] text-slate-600">{row.subtitle}</span>}
+                        {row.ctaUrl && <span className="text-[11px] font-semibold text-[#059669]">{row.ctaLabel || t("marketing.stripCta")} →</span>}
                       </div>
                       <img src={row.imageUrl!} alt="" className="h-14 w-[34%] object-cover" />
                     </div>
@@ -485,8 +485,8 @@ export function MarketingBanners() {
                   {mode === "text" && (
                     <div className="px-3 py-2">
                       {row.title.trim() && <span className="block text-xs font-bold text-slate-900">{row.title}</span>}
-                      {row.subtitle.trim() && <span className="mt-0.5 block line-clamp-1 text-[10px] text-slate-600">{row.subtitle}</span>}
-                      {row.ctaUrl && <span className="mt-1 inline-flex text-[10px] font-semibold text-[#059669]">{row.ctaLabel || t("marketing.stripCta")} →</span>}
+                      {row.subtitle.trim() && <span className="mt-0.5 block line-clamp-1 text-[11px] text-slate-600">{row.subtitle}</span>}
+                      {row.ctaUrl && <span className="mt-1 inline-flex text-[11px] font-semibold text-[#059669]">{row.ctaLabel || t("marketing.stripCta")} →</span>}
                     </div>
                   )}
                   {mode === "image" && (

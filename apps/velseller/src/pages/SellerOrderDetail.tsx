@@ -572,7 +572,7 @@ export default function SellerOrderDetail() {
                     <p className="font-semibold text-slate-900">
                       {shipment.carrier}
                       {shipment.carrierCode && (
-                        <span className="ml-1.5 rounded-full bg-slate-200 px-1.5 py-0.5 font-mono text-[10px] font-medium text-slate-500">
+                        <span className="ml-1.5 rounded-full bg-slate-200 px-1.5 py-0.5 font-mono text-[11px] font-medium text-slate-500">
                           {shipment.carrierCode}
                         </span>
                       )}

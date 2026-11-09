@@ -118,21 +118,21 @@ function LiveStreamCard({ stream, isLive }: { stream: LiveStream; isLive: boolea
 
         {/* Live badge */}
         {isLive && (
-          <span className="absolute top-2 left-2 flex items-center gap-1 rounded-full bg-red-600 px-2 py-1 text-[10px] font-bold text-white">
+          <span className="absolute top-2 left-2 flex items-center gap-1 rounded-full bg-red-600 px-2 py-1 text-[11px] font-bold text-white">
             <span className="size-1.5 rounded-full bg-white animate-pulse" />
             <span>{t("thaimartUi.liveSection.liveNow")}</span>
           </span>
         )}
 
         {/* Viewer count */}
-        <div className="absolute bottom-2 right-2 flex items-center gap-1 rounded-full bg-black/60 px-2 py-1 text-[10px] font-medium text-white">
+        <div className="absolute bottom-2 right-2 flex items-center gap-1 rounded-full bg-black/60 px-2 py-1 text-[11px] font-medium text-white">
           <Eye className="size-3" />
           <span>{stream.viewerCount.toLocaleString()}</span>
         </div>
 
         {/* Scheduled time for upcoming */}
         {!isLive && stream.scheduledAt && (
-          <div className="absolute bottom-2 left-2 flex items-center gap-1 rounded-full bg-black/60 px-2 py-1 text-[10px] font-medium text-white">
+          <div className="absolute bottom-2 left-2 flex items-center gap-1 rounded-full bg-black/60 px-2 py-1 text-[11px] font-medium text-white">
             <Clock className="size-3" />
             <span>{formatTime(stream.scheduledAt)}</span>
           </div>
@@ -149,7 +149,7 @@ function LiveStreamCard({ stream, isLive }: { stream: LiveStream; isLive: boolea
               className="size-5 rounded-full"
             />
           ) : (
-            <span className="flex size-5 items-center justify-center rounded-full bg-emerald-100 text-[9px] font-bold text-emerald-700">
+            <span className="flex size-5 items-center justify-center rounded-full bg-emerald-100 text-[11px] font-bold text-emerald-700">
               {stream.sellerName.charAt(0).toUpperCase()}
             </span>
           )}

@@ -158,12 +158,12 @@ export default function IncomeReturnsDetail() {
                     const retRate = d.value > 0 ? d.returns / d.value : 0;
                     return (
                       <div key={i} className="flex-1 flex flex-col items-center gap-1 h-full justify-end">
-                        <span className="text-[10px] font-semibold tabular-nums text-slate-900">
+                        <span className="text-[11px] font-semibold tabular-nums text-slate-900">
                           {retRate > 0 ? `${(retRate * 100).toFixed(1)}%` : "0%"}
                         </span>
                         <div className="w-full rounded-t-md bg-amber-500 transition-[width]"
                           style={{ height: `${Math.min(retRate * 100, 100)}%` }} />
-                        <span className="text-[9px] text-slate-400 truncate w-full text-center">{d.label}</span>
+                        <span className="text-[11px] text-slate-400 truncate w-full text-center">{d.label}</span>
                       </div>
                     );
                   })}

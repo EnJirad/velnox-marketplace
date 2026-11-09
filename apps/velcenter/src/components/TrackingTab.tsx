@@ -312,12 +312,12 @@ export default function TrackingTab() {
                     >
                       <TableCell className="font-mono text-xs">
                         {s.orderNumber ?? s.orderId.slice(0, 8)}
-                        {s.shopName ? <span className="ml-1 block text-[10px] text-slate-400">{s.shopName}</span> : null}
+                        {s.shopName ? <span className="ml-1 block text-[11px] text-slate-400">{s.shopName}</span> : null}
                       </TableCell>
                       <TableCell className="text-sm">
                         {s.carrier}
                         {s.carrierCode ? (
-                          <Badge className="ml-1.5 rounded-full bg-slate-100 font-mono text-[10px] text-slate-500">
+                          <Badge className="ml-1.5 rounded-full bg-slate-100 font-mono text-[11px] text-slate-500">
                             {s.carrierCode}
                           </Badge>
                         ) : null}

@@ -417,11 +417,11 @@ export default function AuditLogTab() {
                       <TableRow key={row.id} className="hover:bg-slate-50/60">
                         <TableCell className="pl-4 align-top">
                           <p className="whitespace-nowrap text-xs tabular-nums text-slate-500">{formatWhen(row.createdAt)}</p>
-                          {row.ipAddress && <p className="text-[10px] text-slate-300">{row.ipAddress}</p>}
+                          {row.ipAddress && <p className="text-[11px] text-slate-300">{row.ipAddress}</p>}
                         </TableCell>
                         <TableCell className="align-top"><ActorCell row={row} /></TableCell>
                         <TableCell className="align-top">
-                          <Badge className="rounded-full bg-slate-900 text-[10px] text-white">{actionLabel(row.action)}</Badge>
+                          <Badge className="rounded-full bg-slate-900 text-[11px] text-white">{actionLabel(row.action)}</Badge>
                         </TableCell>
                         <TableCell className="align-top"><TargetCell row={row} /></TableCell>
                         <TableCell className="pr-4 align-top">
@@ -446,10 +446,10 @@ export default function AuditLogTab() {
                             {row.actorName ?? row.actorEmail ?? "ระบบ"}
                           </p>
                         </div>
-                        <Badge className="shrink-0 rounded-full bg-slate-900 text-[10px] text-white">{actionLabel(row.action)}</Badge>
+                        <Badge className="shrink-0 rounded-full bg-slate-900 text-[11px] text-white">{actionLabel(row.action)}</Badge>
                       </div>
                       <div className="mt-2 flex items-center gap-2 text-xs text-slate-500">
-                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-600">{entityLabel(row.entityType)}</span>
+                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">{entityLabel(row.entityType)}</span>
                         <span className="min-w-0 truncate">{row.targetLabel ?? "—"}</span>
                       </div>
                       <div className="mt-2">
@@ -488,7 +488,7 @@ export default function AuditLogTab() {
                             </div>
                           )}
                           {row.details && (
-                            <pre className="max-h-40 overflow-auto rounded-md bg-white px-2 py-1.5 text-[10px] leading-relaxed text-slate-500">
+                            <pre className="max-h-40 overflow-auto rounded-md bg-white px-2 py-1.5 text-[11px] leading-relaxed text-slate-500">
                               {JSON.stringify(row.details, null, 2)}
                             </pre>
                           )}

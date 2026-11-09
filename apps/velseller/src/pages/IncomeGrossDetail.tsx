@@ -130,10 +130,10 @@ export default function IncomeGrossDetail() {
               <div className="mt-6 flex items-end gap-1.5 h-32 sm:h-40" role="img" aria-label={`${periodLabels[period]} revenue chart`}>
                 {periodData.map((d, i) => (
                   <div key={i} className="flex-1 flex flex-col items-center gap-1 h-full justify-end">
-                    <span className="text-[10px] font-semibold tabular-nums text-slate-900">{formatBaht(d.value).replace("฿", "")}</span>
+                    <span className="text-[11px] font-semibold tabular-nums text-slate-900">{formatBaht(d.value).replace("฿", "")}</span>
                     <div className="w-full rounded-t-md bg-emerald-500 transition-[width]"
                       style={{ height: `${(d.value / maxVal) * 100}%` }} />
-                    <span className="text-[9px] text-slate-400 truncate w-full text-center">{d.label}</span>
+                    <span className="text-[11px] text-slate-400 truncate w-full text-center">{d.label}</span>
                   </div>
                 ))}
               </div>
@@ -169,7 +169,7 @@ export default function IncomeGrossDetail() {
                         </div>
                         <div className="text-right shrink-0">
                           <p className="text-sm font-semibold tabular-nums text-slate-900">{formatBaht(item.quantity * item.unitPrice)}</p>
-                          <p className="text-[10px] text-slate-400">ค่าธรรมเนียม -{formatBaht(Math.round(item.quantity * item.unitPrice * (report?.commissionRate ?? 3) / 100))}</p>
+                          <p className="text-[11px] text-slate-400">ค่าธรรมเนียม -{formatBaht(Math.round(item.quantity * item.unitPrice * (report?.commissionRate ?? 3) / 100))}</p>
                         </div>
                       </div>
                     ))}

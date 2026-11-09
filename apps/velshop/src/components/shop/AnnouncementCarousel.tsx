@@ -173,7 +173,7 @@ export function AnnouncementCarousel({
           const body = (
             <>
               {item.eyebrow && (
-                <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-[#059669] sm:text-[11px]">
+                <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-[#059669] sm:text-[11px]">
                   {item.eyebrow}
                 </span>
               )}

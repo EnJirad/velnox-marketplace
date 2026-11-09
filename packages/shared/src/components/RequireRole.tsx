@@ -743,7 +743,7 @@ export function RequireRole({ role, children }: RequireRoleProps) {
                 <Label className="text-xs font-medium text-slate-500">อีเมล (จากบัญชี Google)</Label>
                 <div className="flex h-11 items-center rounded-[10px] border border-slate-200 bg-slate-50 px-3">
                   <span className="text-sm text-slate-600">{user.email}</span>
-                  <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">ยืนยันแล้ว</span>
+                  <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">ยืนยันแล้ว</span>
                 </div>
               </div>
             )}
@@ -890,11 +890,11 @@ export function RequireRole({ role, children }: RequireRoleProps) {
                     {item.doc?.url ? (
                       <img src={item.doc.url} alt={item.label} className="h-24 w-full object-cover" />
                     ) : (
-                      <div className="flex h-24 items-center justify-center text-[10px] text-slate-400">
+                      <div className="flex h-24 items-center justify-center text-[11px] text-slate-400">
                         {t("identityDoc.notUploaded")}
                       </div>
                     )}
-                    <p className="truncate border-t border-slate-100 bg-white px-2 py-1 text-[10px] font-medium text-slate-500">
+                    <p className="truncate border-t border-slate-100 bg-white px-2 py-1 text-[11px] font-medium text-slate-500">
                       {item.label}
                     </p>
                   </div>

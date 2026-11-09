@@ -166,7 +166,7 @@ export function CorporateHome() {
               → รับออเดอร์ ครบถ้วนและรวดเร็วในตัวมันเอง
             </p>
           </div>
-          <div className="relative rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-7 shadow-sm">
+          <div className="relative rounded-2xl border border-emerald-200 bg-emerald-50/60 p-7 shadow-sm">
             <span className="absolute right-5 top-5 rounded-full bg-emerald-600 px-2.5 py-1 text-[11px] font-bold text-white">
               จุดต่างของ Velnox
             </span>

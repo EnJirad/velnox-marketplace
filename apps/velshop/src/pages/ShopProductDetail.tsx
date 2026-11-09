@@ -1293,7 +1293,7 @@ export default function ShopProductDetail() {
                       {thumb.imageUrl ? (
                         <img src={thumb.imageUrl} alt={thumb.label} className="size-full object-cover" />
                       ) : (
-                        <span className="flex size-full items-center justify-center text-[10px] font-medium text-slate-600">{thumb.label}</span>
+                        <span className="flex size-full items-center justify-center text-[11px] font-medium text-slate-600">{thumb.label}</span>
                       )}
                     </span>
                   ))}
@@ -1354,7 +1354,7 @@ export default function ShopProductDetail() {
             {tabs.map((tab) => (
               <button key={tab.key} type="button" onClick={() => setActiveTab(tab.key)} className={`flex-1 px-4 py-3 text-center text-sm font-semibold transition-colors ${activeTab === tab.key ? "border-b-2 border-[#10B981] text-slate-900" : "text-slate-400 hover:text-slate-600"}`}>
                 {tab.label}
-                {tab.key === "reviews" && reviewSummary.total > 0 && <span className="ml-1.5 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-slate-500">{reviewSummary.total}</span>}
+                {tab.key === "reviews" && reviewSummary.total > 0 && <span className="ml-1.5 rounded-full bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-slate-500">{reviewSummary.total}</span>}
               </button>
             ))}
           </div>
@@ -1688,9 +1688,9 @@ export default function ShopProductDetail() {
                         }
                         const isImageGroup = group.displayType === "image";
                         const valStockLabel = !valueInStock ? (
-                          <span className={`${compactSheet ? "text-[9px]" : "text-[10px]"} text-red-400`}>{t("productDetail.stockOut")}</span>
+                          <span className={`${compactSheet ? "text-[11px]" : "text-[11px]"} text-red-400`}>{t("productDetail.stockOut")}</span>
                         ) : valueStock > 0 ? (
-                          <span className={`${compactSheet ? "text-[9px]" : "text-[10px]"} ${valueStock <= 5 ? "text-amber-600" : "text-slate-400"}`}>
+                          <span className={`${compactSheet ? "text-[11px]" : "text-[11px]"} ${valueStock <= 5 ? "text-amber-600" : "text-slate-400"}`}>
                             {valueStock <= 5 ? t("productDetail.stockLeft", { count: valueStock }) : t("productDetail.stockPieces", { count: valueStock })}
                           </span>
                         ) : null;
@@ -1715,11 +1715,11 @@ export default function ShopProductDetail() {
                               {val.imageUrl || optionValueImageMap[val.id] ? (
                                 <img src={val.imageUrl || optionValueImageMap[val.id]} alt="" className={`${compactSheet ? "size-14" : "size-[72px]"} rounded-lg object-contain bg-slate-50`} loading="lazy" />
                               ) : (
-                                <span className={`${compactSheet ? "size-14 text-[10px]" : "size-[72px] text-sm"} flex items-center justify-center rounded-lg bg-slate-100 font-semibold text-slate-500`}>
+                                <span className={`${compactSheet ? "size-14 text-[11px]" : "size-[72px] text-sm"} flex items-center justify-center rounded-lg bg-slate-100 font-semibold text-slate-500`}>
                                   {(val.label || val.value).slice(0, 3)}
                                 </span>
                               )}
-                              <span className={`max-w-full truncate ${compactSheet ? "text-[10px]" : "text-xs"} font-medium ${isSelected ? "text-[#10B981]" : valueInStock ? "text-slate-700" : "text-slate-400 line-through"}`}>
+                              <span className={`max-w-full truncate ${compactSheet ? "text-[11px]" : "text-xs"} font-medium ${isSelected ? "text-[#10B981]" : valueInStock ? "text-slate-700" : "text-slate-400 line-through"}`}>
                                 {val.label || val.value}
                               </span>
                               {valStockLabel}
@@ -1734,7 +1734,7 @@ export default function ShopProductDetail() {
                             type="button"
                             disabled={!valueInStock}
                             onClick={() => handleOptionSelect(group.id, val.id)}
-                            className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 ${compactSheet ? "text-[10px]" : "text-xs"} font-medium transition-colors ${
+                            className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 ${compactSheet ? "text-[11px]" : "text-xs"} font-medium transition-colors ${
                               isSelected
                                 ? "border-[#10B981] bg-[#ECFDF5] text-[#10B981] ring-1 ring-[#10B981]/30"
                                 : valueInStock

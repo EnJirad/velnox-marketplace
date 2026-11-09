@@ -771,7 +771,7 @@ export default function ShopChat() {
                                     <Star className="mt-1 size-3.5 shrink-0 text-emerald-500" aria-hidden="true" />
                                     <span className="min-w-0">
                                       <span className="block whitespace-pre-wrap break-words">{m.body}</span>
-                                      <span className="mt-0.5 block text-[10px] text-slate-400">
+                                      <span className="mt-0.5 block text-[11px] text-slate-400">
                                         {formatLocaleTime(m.createdAt, lang)}
                                       </span>
                                     </span>
@@ -802,7 +802,7 @@ export default function ShopChat() {
                                   {m.body && <p className="whitespace-pre-wrap break-words">{m.body}</p>}
                                   <div
                                     className={cn(
-                                      "mt-1 flex items-center justify-end gap-1 text-[10px] tabular-nums",
+                                      "mt-1 flex items-center justify-end gap-1 text-[11px] tabular-nums",
                                       mine ? "text-emerald-800/60" : "text-slate-400",
                                     )}
                                   >

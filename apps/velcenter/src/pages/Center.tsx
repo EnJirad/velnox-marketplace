@@ -1249,7 +1249,7 @@ export default function Center() {
                 platform figure; the page-derived count is only the fallback.
               */}
               {(marketKpi?.pendingOrders ?? pendingOrders) > 0 && (
-                <span className="rounded-full bg-rose-500 px-1.5 text-[10px] font-bold text-white">
+                <span className="rounded-full bg-rose-500 px-1.5 text-[11px] font-bold text-white">
                   {marketKpi?.pendingOrders ?? pendingOrders}
                 </span>
               )}
@@ -1257,7 +1257,7 @@ export default function Center() {
             <TabsTrigger value="intel" onClick={() => selectTab("intel")} className="gap-1.5 rounded-[10px]">
               <BrainCircuit className="size-4" /> <span className="nav-label">{t("velcenter.nav.intel")}</span>
               {dueCount > 0 && (
-                <span className="rounded-full bg-rose-500 px-1.5 text-[10px] font-bold text-white">
+                <span className="rounded-full bg-rose-500 px-1.5 text-[11px] font-bold text-white">
                   {dueCount}
                 </span>
               )}
@@ -1265,7 +1265,7 @@ export default function Center() {
             <TabsTrigger value="products" onClick={() => selectTab("products")} className="gap-1.5 rounded-[10px]">
               <Package className="size-4" /> <span className="nav-label">{t("velcenter.nav.products")}</span>
               {pendingProducts > 0 && (
-                <span className="rounded-full bg-amber-500 px-1.5 text-[10px] font-bold text-white">
+                <span className="rounded-full bg-amber-500 px-1.5 text-[11px] font-bold text-white">
                   {pendingProducts}
                 </span>
               )}
@@ -1273,7 +1273,7 @@ export default function Center() {
             <TabsTrigger value="sellers" onClick={() => selectTab("sellers")} className="gap-1.5 rounded-[10px]">
               <Store className="size-4" /> <span className="nav-label">{t("velcenter.nav.sellers")}</span>
               {pendingSellers > 0 && (
-                <span className="rounded-full bg-amber-500 px-1.5 text-[10px] font-bold text-white">
+                <span className="rounded-full bg-amber-500 px-1.5 text-[11px] font-bold text-white">
                   {pendingSellers}
                 </span>
               )}
@@ -2020,11 +2020,11 @@ export default function Center() {
                 <TabsList className="w-full justify-start overflow-x-auto rounded-[12px] border border-slate-200 bg-white p-1 sm:w-auto">
                   <TabsTrigger value="staff" className="gap-1.5 rounded-[10px]">
                     <ShieldCheck className="size-4" /> พนักงาน
-                    <span className="rounded-full bg-slate-100 px-1.5 text-[10px] font-bold text-slate-600">{peopleCounts.staff}</span>
+                    <span className="rounded-full bg-slate-100 px-1.5 text-[11px] font-bold text-slate-600">{peopleCounts.staff}</span>
                   </TabsTrigger>
                   <TabsTrigger value="customer" className="gap-1.5 rounded-[10px]">
                     <ShoppingBag className="size-4" /> ลูกค้า
-                    <span className="rounded-full bg-slate-100 px-1.5 text-[10px] font-bold text-slate-600">{peopleCounts.customer}</span>
+                    <span className="rounded-full bg-slate-100 px-1.5 text-[11px] font-bold text-slate-600">{peopleCounts.customer}</span>
                   </TabsTrigger>
                 </TabsList>
 
@@ -2485,7 +2485,7 @@ export default function Center() {
                                 onChange={(e) => setForm((f) => ({ ...f, announcement: e.target.value }))}
                                 placeholder="เช่น สินค้าใหม่เข้าคลังแล้ว!"
                               />
-                              <p className="text-[10px] text-slate-400">
+                              <p className="text-[11px] text-slate-400">
                                 ประกาศนี้แสดงในหน้าร้านค้าแต่ละร้านเท่านั้น — แบนเนอร์หน้าแรกอยู่ที่แท็บ การตลาด
                               </p>
                             </div>
@@ -2664,7 +2664,7 @@ export default function Center() {
                             <p className="text-xs text-slate-400">ประเภทไฟล์ที่อนุญาต</p>
                             <div className="mt-2 flex flex-wrap gap-1">
                               {(settingsMeta?.media?.allowedTypes ?? []).map((type) => (
-                                <Badge key={type} className="rounded-full bg-slate-100 text-[10px] text-slate-600 ring-1 ring-inset ring-slate-600/10">
+                                <Badge key={type} className="rounded-full bg-slate-100 text-[11px] text-slate-600 ring-1 ring-inset ring-slate-600/10">
                                   {type.replace("image/", "")}
                                 </Badge>
                               ))}
@@ -2700,7 +2700,7 @@ export default function Center() {
                                 <li key={perm.code} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5">
                                   <p className="text-sm font-medium text-slate-900">{perm.label}</p>
                                   <p className="mt-0.5 text-xs text-slate-400">{perm.description}</p>
-                                  <p className="mt-1 font-mono text-[10px] text-slate-300">{perm.code}</p>
+                                  <p className="mt-1 font-mono text-[11px] text-slate-300">{perm.code}</p>
                                 </li>
                               ))}
                             </ul>

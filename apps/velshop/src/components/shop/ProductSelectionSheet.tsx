@@ -423,7 +423,7 @@ export function ProductSelectionSheet({
                       {compareAt && compareAt > resolvedPrice && (
                         <span className="text-xs text-slate-400 line-through">{formatBaht(compareAt)}</span>
                       )}
-                      <span className="rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold text-red-600">
+                      <span className="rounded bg-red-50 px-1.5 py-0.5 text-[11px] font-semibold text-red-600">
                         -{Math.round(discountPct ?? ((compareAt! - resolvedPrice) / compareAt!) * 100)}%
                       </span>
                     </div>
@@ -558,7 +558,7 @@ export function ProductSelectionSheet({
                                   {val.imageUrl || optionValueImageMap[val.id] ? (
                                     <img src={val.imageUrl || optionValueImageMap[val.id]} alt="" className="size-full object-contain" loading="lazy" />
                                   ) : (
-                                    <span className="flex size-full items-center justify-center bg-slate-100 text-[10px] font-semibold text-slate-500">
+                                    <span className="flex size-full items-center justify-center bg-slate-100 text-[11px] font-semibold text-slate-500">
                                       {val.label.slice(0, 3)}
                                     </span>
                                   )}
@@ -568,12 +568,12 @@ export function ProductSelectionSheet({
                                     {val.label}
                                   </span>
                                   {valueInStock && valueStock > 0 && (
-                                    <span className={`text-[9px] ${valueStock <= 5 ? "text-amber-600" : "text-slate-400"}`}>
+                                    <span className={`text-[11px] ${valueStock <= 5 ? "text-amber-600" : "text-slate-400"}`}>
                                       {valueStock <= 5 ? t("productDetail.stockLeft", { count: valueStock }) : t("productDetail.stockPieces", { count: valueStock })}
                                     </span>
                                   )}
                                   {!valueInStock && (
-                                    <span className="text-[9px] text-red-400">{t("productDetail.stockOut")}</span>
+                                    <span className="text-[11px] text-red-400">{t("productDetail.stockOut")}</span>
                                   )}
                                 </span>
                               </>
@@ -584,12 +584,12 @@ export function ProductSelectionSheet({
                             <>
                               <span className="truncate text-[11px] font-medium">{val.label}</span>
                               {valueInStock && valueStock > 0 && (
-                                <span className={`text-[9px] ${valueStock <= 5 ? "text-amber-600" : "text-slate-400"}`}>
+                                <span className={`text-[11px] ${valueStock <= 5 ? "text-amber-600" : "text-slate-400"}`}>
                                   {valueStock <= 5 ? t("productDetail.stockLeft", { count: valueStock }) : t("productDetail.stockPieces", { count: valueStock })}
                                 </span>
                               )}
                               {!valueInStock && (
-                                <span className="text-[9px] text-red-400">{t("productDetail.stockOut")}</span>
+                                <span className="text-[11px] text-red-400">{t("productDetail.stockOut")}</span>
                               )}
                             </>
                           );

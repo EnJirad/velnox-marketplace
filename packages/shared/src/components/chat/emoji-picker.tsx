@@ -81,7 +81,7 @@ export function EmojiPicker({
         <div className="max-h-64 overflow-y-auto overscroll-contain">
           {GROUPS.map((group) => (
             <div key={group.label} className="mb-1">
-              <p className="px-1 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+              <p className="px-1 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
                 {group.label}
               </p>
               <div className="grid grid-cols-8 gap-0.5">

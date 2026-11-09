@@ -632,7 +632,7 @@ export default function ChatManagement() {
               <span className="sm:hidden">{meta.short}</span>
               {unread > 0 && (
                 <span
-                  className={`flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold ${
+                  className={`flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[11px] font-bold ${
                     tab === key ? "bg-white text-slate-900" : "bg-[#10B981] text-white"
                   }`}
                 >
@@ -687,7 +687,7 @@ export default function ChatManagement() {
               >
                 ยังไม่อ่าน
                 {counts[tabMeta.countKey] > 0 && (
-                  <span className="rounded-full bg-white/70 px-1.5 text-[10px] font-semibold">
+                  <span className="rounded-full bg-white/70 px-1.5 text-[11px] font-semibold">
                     {counts[tabMeta.countKey]}
                   </span>
                 )}
@@ -796,7 +796,7 @@ export default function ChatManagement() {
                         </span>
                       )}
                       {c.unreadCount > 0 && (
-                        <span className="absolute -right-1 -top-1 flex size-4 min-w-4 items-center justify-center rounded-full bg-[#10B981] px-0.5 text-[10px] font-bold text-white">
+                        <span className="absolute -right-1 -top-1 flex size-4 min-w-4 items-center justify-center rounded-full bg-[#10B981] px-0.5 text-[11px] font-bold text-white">
                           {c.unreadCount > 9 ? "9+" : c.unreadCount}
                         </span>
                       )}
@@ -811,7 +811,7 @@ export default function ChatManagement() {
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center justify-between gap-2">
                         <span className="truncate text-sm font-semibold text-slate-900">{title}</span>
-                        <span className="shrink-0 text-[10px] text-slate-400">
+                        <span className="shrink-0 text-[11px] text-slate-400">
                           {formatRelativeTime(c.lastMessageAt, lang, t)}
                         </span>
                       </span>
@@ -821,7 +821,7 @@ export default function ChatManagement() {
                       <span className="mt-1 flex items-center gap-1.5">
                         {tab === "support" && (
                           <span
-                            className={`rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${
+                            className={`rounded-full px-1.5 py-0.5 text-[11px] font-semibold ${
                               c.supportAudience === "seller"
                                 ? "bg-amber-50 text-amber-700"
                                 : "bg-sky-50 text-sky-700"
@@ -830,11 +830,11 @@ export default function ChatManagement() {
                             {c.supportAudience === "seller" ? "ผู้ขาย" : "ลูกค้า"}
                           </span>
                         )}
-                        <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-semibold ring-1 ring-inset ${status.className}`}>
+                        <span className={`rounded-full px-1.5 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${status.className}`}>
                           {status.label}
                         </span>
                         {c.assignedToName && (
-                          <span className="truncate text-[9px] text-slate-400">{c.assignedToName}</span>
+                          <span className="truncate text-[11px] text-slate-400">{c.assignedToName}</span>
                         )}
                       </span>
                     </span>
@@ -939,7 +939,7 @@ export default function ChatManagement() {
                     <span className="block truncate text-xs font-semibold text-slate-900">
                       {active.product.name ?? "สินค้า"}
                     </span>
-                    <span className="block text-[10px] text-slate-400">บริบทสินค้าของบทสนทนา</span>
+                    <span className="block text-[11px] text-slate-400">บริบทสินค้าของบทสนทนา</span>
                   </span>
                 </div>
               )}
@@ -998,7 +998,7 @@ export default function ChatManagement() {
                                   </div>
                                 )}
                                 {m.body ? <p className="whitespace-pre-line break-words">{m.body}</p> : null}
-                                <p className="mt-1 text-[10px] text-slate-400">
+                                <p className="mt-1 text-[11px] text-slate-400">
                                   {formatLocaleTime(m.createdAt, lang)}
                                 </p>
                               </div>
@@ -1034,7 +1034,7 @@ export default function ChatManagement() {
                               {m.body ? (
                                 <p className="whitespace-pre-line break-words">{m.body}</p>
                               ) : null}
-                              <p className={`mt-1 flex items-center gap-1 text-[10px] ${mine ? "text-emerald-800/60" : "text-slate-400"}`}>
+                              <p className={`mt-1 flex items-center gap-1 text-[11px] ${mine ? "text-emerald-800/60" : "text-slate-400"}`}>
                                 <span>{formatLocaleTime(m.createdAt, lang)}</span>
                                 {/* ✓ = stored by the server; ✓✓ = the other side read it. */}
                                 {mine &&

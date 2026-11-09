@@ -80,7 +80,7 @@ export function ProductCard({ product, onOpen: _onOpen, onAdd: _onAdd, badgeLabe
             keeps just two items. */}
         {displayDiscountPercent != null && displayDiscountPercent > 0 && (
           <span
-            className={`absolute left-1.5 top-1.5 rounded-md bg-red-600/95 px-1.5 py-0.5 font-semibold tabular-nums text-white backdrop-blur-sm ${compact ? "text-[10px]" : "text-[11px]"}`}
+            className={`absolute left-1.5 top-1.5 rounded-md bg-red-600/95 px-1.5 py-0.5 font-semibold tabular-nums text-white backdrop-blur-sm ${compact ? "text-[11px]" : "text-[11px]"}`}
           >
             -{Math.round(displayDiscountPercent)}%
           </span>

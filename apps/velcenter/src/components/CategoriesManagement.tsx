@@ -1007,7 +1007,7 @@ function CategoryDetails({
                     </span>
                     <Badge
                       variant={child.is_active ? "default" : "outline"}
-                      className={`text-[10px] ${child.is_active ? "bg-emerald-100 text-emerald-700" : "text-slate-400"}`}
+                      className={`text-[11px] ${child.is_active ? "bg-emerald-100 text-emerald-700" : "text-slate-400"}`}
                     >
                       {child.is_active ? t("velcenter.categories.detailsActive") : t("velcenter.categories.detailsInactive")}
                     </Badge>

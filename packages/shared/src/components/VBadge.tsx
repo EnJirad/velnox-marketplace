@@ -170,7 +170,7 @@ function VOverlayBadge({
   }, [open, isMobile]);
 
   const sizeClasses = {
-    sm: "h-5 w-6.5 text-[10px]",
+    sm: "h-5 w-6.5 text-[11px]",
     md: "h-6 w-8 text-[11px]",
     lg: "h-7 w-9 text-xs",
   };
@@ -266,8 +266,8 @@ function SellerOnlyBadge({
       className={cn(
         "inline-flex items-center gap-0.5 rounded-lg font-bold",
         "bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/15",
-        size === "sm" && "px-1.5 py-0.5 text-[9px]",
-        size === "md" && "px-2 py-0.5 text-[10px]",
+        size === "sm" && "px-1.5 py-0.5 text-[11px]",
+        size === "md" && "px-2 py-0.5 text-[11px]",
         size === "lg" && "px-2.5 py-1 text-xs",
         className,
       )}

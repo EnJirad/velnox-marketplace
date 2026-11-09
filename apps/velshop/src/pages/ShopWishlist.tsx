@@ -201,7 +201,7 @@ export default function ShopWishlist() {
                       </span>
                     )}
                     {outOfStock && (
-                      <span className="absolute inset-x-0 bottom-0 bg-slate-900/70 px-2 py-1 text-center text-[10px] font-semibold text-white backdrop-blur-sm">
+                      <span className="absolute inset-x-0 bottom-0 bg-slate-900/70 px-2 py-1 text-center text-[11px] font-semibold text-white backdrop-blur-sm">
                         {t("wishlist.outOfStock")}
                       </span>
                     )}
@@ -236,7 +236,7 @@ export default function ShopWishlist() {
                       <p className="text-sm font-bold tabular-nums tracking-tight text-slate-900">
                         {formatBaht(row.price)}
                         {row.unit && (
-                          <span className="ml-0.5 text-[10px] font-normal text-slate-400">/{row.unit}</span>
+                          <span className="ml-0.5 text-[11px] font-normal text-slate-400">/{row.unit}</span>
                         )}
                       </p>
                       <div className="flex items-center gap-1">

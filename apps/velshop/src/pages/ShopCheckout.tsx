@@ -943,7 +943,7 @@ export default function ShopCheckout() {
                   <p className="flex min-w-0 items-center gap-1.5 text-xs font-semibold text-slate-500">
                     <MapPin className="size-3.5 shrink-0 text-[#10B981]" />
                     {t("checkout.compactAddress")}
-                    {selectedAddress?.isDefault && <Badge className="ml-1 rounded-full bg-slate-100 px-1.5 py-0 text-[10px] text-slate-500">{t("checkout.defaultBadge")}</Badge>}
+                    {selectedAddress?.isDefault && <Badge className="ml-1 rounded-full bg-slate-100 px-1.5 py-0 text-[11px] text-slate-500">{t("checkout.defaultBadge")}</Badge>}
                   </p>
                   <span className="flex shrink-0 items-center gap-0.5 text-xs font-medium text-[#10B981]">
                     {t("checkout.changeAddress")}<ChevronDown className="size-3" />
@@ -1043,7 +1043,7 @@ export default function ShopCheckout() {
                   <span className="flex size-4 shrink-0 items-center justify-center rounded-full border-2 border-slate-200" />
                   <span className="flex min-w-0 flex-1 items-center gap-2">
                     <span className="text-sm font-medium">{t(payKey(m.id))}</span>
-                    <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">{t("paymentMethods.comingSoon")}</span>
+                    <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">{t("paymentMethods.comingSoon")}</span>
                   </span>
                 </div>
               ))}
@@ -1147,7 +1147,7 @@ export default function ShopCheckout() {
                     </span>
                     <span>
                       <span className="block text-sm font-semibold text-slate-500">{t(payKey(m.id))}</span>
-                      <span className="mt-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-400">{t("paymentMethods.comingSoon")}</span>
+                      <span className="mt-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-400">{t("paymentMethods.comingSoon")}</span>
                     </span>
                   </div>
                 ))}

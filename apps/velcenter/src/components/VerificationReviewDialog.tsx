@@ -148,7 +148,7 @@ function DocumentCard({ doc, label }: { doc: ReviewDocument; label: string }) {
         {!doc.url || failed ? (
           <div className="flex aspect-[4/3] flex-col items-center justify-center gap-1.5 bg-slate-50 px-3 text-center">
             <ImageOff className="size-5 text-slate-300" />
-            <p className="text-[10px] text-slate-400">{t("review.evidenceFailed")}</p>
+            <p className="text-[11px] text-slate-400">{t("review.evidenceFailed")}</p>
           </div>
         ) : (
           <button type="button" onClick={() => setZoom(true)} className="block w-full">
@@ -161,7 +161,7 @@ function DocumentCard({ doc, label }: { doc: ReviewDocument; label: string }) {
             />
           </button>
         )}
-        <p className="truncate border-t border-slate-100 px-3 py-1.5 text-[10px] text-slate-400" title={doc.filename}>
+        <p className="truncate border-t border-slate-100 px-3 py-1.5 text-[11px] text-slate-400" title={doc.filename}>
           {doc.filename}
         </p>
       </div>
@@ -432,7 +432,7 @@ export function VerificationReviewDialog({
                             {/* action keys are backend-defined verbs */}
                             {t(`review.action${h.action.charAt(0).toUpperCase()}${h.action.slice(1).replace(/_([a-z])/g, (_m, c: string) => c.toUpperCase())}`)}
                           </span>
-                          <span className="shrink-0 text-[10px] text-slate-400">
+                          <span className="shrink-0 text-[11px] text-slate-400">
                             {new Date(h.created_at).toLocaleDateString()}
                           </span>
                         </div>
@@ -441,7 +441,7 @@ export function VerificationReviewDialog({
                         )}
                         {h.reason && <p className="mt-0.5 text-[11px] text-slate-500">{h.reason}</p>}
                         {h.reviewer_name && (
-                          <p className="mt-0.5 text-[10px] text-slate-400">— {h.reviewer_name}</p>
+                          <p className="mt-0.5 text-[11px] text-slate-400">— {h.reviewer_name}</p>
                         )}
                       </li>
                     ))}
@@ -472,7 +472,7 @@ export function VerificationReviewDialog({
                         />
                       ))}
                     </div>
-                    <p className="mt-2 text-[10px] text-slate-400">{t("review.signedExpiry")}</p>
+                    <p className="mt-2 text-[11px] text-slate-400">{t("review.signedExpiry")}</p>
                   </>
                 )}
               </section>
@@ -481,12 +481,12 @@ export function VerificationReviewDialog({
                 <section>
                   <div className="mb-2 flex items-center justify-between">
                     <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-400">{t("review.checklist")}</h4>
-                    <span className="text-[10px] tabular-nums text-slate-400">{checklistCount}/{checklistTotal}</span>
+                    <span className="text-[11px] tabular-nums text-slate-400">{checklistCount}/{checklistTotal}</span>
                   </div>
                   <div className="space-y-3">
                     {checklistGroups.map((group) => (
                       <div key={group.title}>
-                        <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">{group.title}</p>
+                        <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">{group.title}</p>
                         <div className="space-y-1.5">
                           {group.keys.map((key) => (
                             <label
@@ -506,7 +506,7 @@ export function VerificationReviewDialog({
                       </div>
                     ))}
                   </div>
-                  <p className="mt-2 text-[10px] text-slate-400">
+                  <p className="mt-2 text-[11px] text-slate-400">
                     {t("review.checklist")} — {t("review.decision")}
                   </p>
                 </section>
@@ -577,7 +577,7 @@ export function VerificationReviewDialog({
                         <div className="mt-2 space-y-3">
                           {(["identity", "application", "eligibility"] as const).map((group) => (
                             <div key={group}>
-                              <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                              <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
                                 {group === "identity" ? t("review.checklistIdentity") : group === "application" ? t("review.checklistApplication") : t("review.filterAll")}
                               </p>
                               <div className="flex flex-wrap gap-1.5">

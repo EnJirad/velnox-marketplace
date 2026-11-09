@@ -26,7 +26,7 @@ export function AppHeader() {
   const unread = chatUnread != null && chatUnread > 0 ? chatUnread : null;
   const chatBadge =
     unread == null ? null : (
-      <span className="ml-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#10B981] px-1 text-[10px] font-bold leading-none text-white">
+      <span className="ml-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#10B981] px-1 text-[11px] font-bold leading-none text-white">
         {unread > 99 ? "99+" : unread}
       </span>
     );
@@ -79,7 +79,7 @@ export function AppHeader() {
           >
             <MessageCircle className="size-5" />
             {unread != null && (
-              <span className="absolute right-0 top-0 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#10B981] px-1 text-[10px] font-bold leading-none text-white">
+              <span className="absolute right-0 top-0 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#10B981] px-1 text-[11px] font-bold leading-none text-white">
                 {unread > 99 ? "99+" : unread}
               </span>
             )}

@@ -124,7 +124,7 @@ const STATUS_LABELS: Record<string, { label: string; color: string }> = {
 function StatusBadge({ status }: { status: string }) {
   const meta = STATUS_LABELS[status] ?? { label: status, color: "bg-slate-100 text-slate-600 ring-slate-600/10" };
   return (
-    <Badge className={`shrink-0 gap-1 rounded-full text-[10px] font-medium ring-1 ring-inset ${meta.color}`}>
+    <Badge className={`shrink-0 gap-1 rounded-full text-[11px] font-medium ring-1 ring-inset ${meta.color}`}>
       {meta.label}
     </Badge>
   );
@@ -174,7 +174,7 @@ function Section({
       {icon}
       <span className="truncate">{title}</span>
       {typeof count === "number" && (
-        <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500">
+        <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-500">
           {count}
         </span>
       )}
@@ -397,10 +397,10 @@ function ModerationHistoryList({ history }: { history: ProductDetail["moderation
         <li key={h.id} className="rounded-xl border border-slate-200 bg-white px-3 py-2">
           <div className="flex items-center justify-between gap-3">
             <span className="min-w-0 truncate text-xs font-medium text-slate-700">{h.action}</span>
-            <span className="shrink-0 text-[10px] text-slate-400">{new Date(h.created_at).toLocaleDateString()}</span>
+            <span className="shrink-0 text-[11px] text-slate-400">{new Date(h.created_at).toLocaleDateString()}</span>
           </div>
           {h.reason && <p className="mt-0.5 break-words text-[11px] text-slate-500">{h.reason}</p>}
-          {h.moderator_name && <p className="mt-0.5 text-[10px] text-slate-400">— {h.moderator_name}</p>}
+          {h.moderator_name && <p className="mt-0.5 text-[11px] text-slate-400">— {h.moderator_name}</p>}
         </li>
       ))}
     </ol>
@@ -414,11 +414,11 @@ function OptionGroupsList({ groups }: { groups: ProductDetail["optionGroups"] })
         <div key={group.id} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5">
           <div className="flex flex-wrap items-center gap-2">
             <p className="min-w-0 truncate text-sm font-medium text-slate-900">{group.name}</p>
-            <Badge className="rounded-full bg-slate-100 text-[10px] text-slate-600 ring-1 ring-inset ring-slate-600/10">
+            <Badge className="rounded-full bg-slate-100 text-[11px] text-slate-600 ring-1 ring-inset ring-slate-600/10">
               {group.display_type}
             </Badge>
             {group.required && (
-              <Badge className="rounded-full bg-amber-50 text-[10px] text-amber-700 ring-1 ring-inset ring-amber-600/15">
+              <Badge className="rounded-full bg-amber-50 text-[11px] text-amber-700 ring-1 ring-inset ring-amber-600/15">
                 จำเป็น
               </Badge>
             )}
@@ -426,7 +426,7 @@ function OptionGroupsList({ groups }: { groups: ProductDetail["optionGroups"] })
           {group.values.length > 0 ? (
             <div className="mt-2 flex flex-wrap gap-1">
               {group.values.map((v) => (
-                <Badge key={v.id} className="rounded-full bg-slate-50 text-[10px] text-slate-600 ring-1 ring-inset ring-slate-200">
+                <Badge key={v.id} className="rounded-full bg-slate-50 text-[11px] text-slate-600 ring-1 ring-inset ring-slate-200">
                   {v.label || v.value}
                 </Badge>
               ))}
@@ -466,11 +466,11 @@ function VariantList({ variants }: { variants: ProductDetail["variants"] }) {
                         <img key={img.id} src={img.url} alt={img.alt || v.name} className="size-8 rounded-md border border-white object-cover" />
                       ))}
                       {v.images.length > 3 && (
-                        <span className="flex size-8 items-center justify-center rounded-md bg-slate-100 text-[10px] text-slate-500">+{v.images.length - 3}</span>
+                        <span className="flex size-8 items-center justify-center rounded-md bg-slate-100 text-[11px] text-slate-500">+{v.images.length - 3}</span>
                       )}
                     </div>
                   ) : (
-                    <span className="text-[10px] text-slate-300">ไม่มีรูป</span>
+                    <span className="text-[11px] text-slate-300">ไม่มีรูป</span>
                   )}
                 </td>
                 <td className="px-3 py-2">
@@ -497,7 +497,7 @@ function VariantList({ variants }: { variants: ProductDetail["variants"] }) {
               {v.images && v.images.length > 0 ? (
                 <img src={v.images[0].url} alt={v.images[0].alt || v.name} className="size-12 shrink-0 rounded-lg object-cover" />
               ) : (
-                <div className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-[10px] text-slate-400">ไม่มีรูป</div>
+                <div className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-[11px] text-slate-400">ไม่มีรูป</div>
               )}
               <div className="min-w-0 flex-1">
                 <div className="flex items-start justify-between gap-2">
@@ -523,7 +523,7 @@ function VariantList({ variants }: { variants: ProductDetail["variants"] }) {
             {Object.keys(v.options ?? {}).length > 0 && (
               <div className="mt-2 flex flex-wrap gap-1">
                 {Object.entries(v.options).map(([k, val]) => (
-                  <Badge key={k} className="rounded-full bg-slate-50 text-[10px] text-slate-600 ring-1 ring-inset ring-slate-200">
+                  <Badge key={k} className="rounded-full bg-slate-50 text-[11px] text-slate-600 ring-1 ring-inset ring-slate-200">
                     {k}: {val}
                   </Badge>
                 ))}
@@ -786,7 +786,7 @@ export default function ProductModerationQueue() {
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                  <Badge className="rounded-full bg-amber-100 text-[10px] text-amber-700 ring-1 ring-inset ring-amber-600/15">
+                  <Badge className="rounded-full bg-amber-100 text-[11px] text-amber-700 ring-1 ring-inset ring-amber-600/15">
                     {group.products.length} สินค้า
                   </Badge>
                   {expandedShops.has(group.shopId) ? <ChevronDown className="size-4 text-slate-400" /> : <ChevronRight className="size-4 text-slate-400" />}

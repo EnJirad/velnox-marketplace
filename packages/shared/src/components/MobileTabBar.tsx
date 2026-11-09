@@ -87,7 +87,7 @@ export function MobileTabBar({
               >
                 <Icon className="size-[22px]" strokeWidth={active ? 2.4 : 2} />
                 {item.badge != null && item.badge > 0 && (
-                  <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#10B981] px-1 text-[10px] font-bold leading-none text-white">
+                  <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#10B981] px-1 text-[11px] font-bold leading-none text-white">
                     {item.badge > 99 ? "99+" : item.badge}
                   </span>
                 )}

@@ -458,7 +458,7 @@ function IconCell({
       <span className="line-clamp-2 w-full break-words text-center text-[11px] leading-tight text-slate-600">
         {item.name}
       </span>
-      <span className="w-full truncate text-center text-[10px] text-slate-400">{item.prefix}</span>
+      <span className="w-full truncate text-center text-[11px] text-slate-400">{item.prefix}</span>
     </button>
   );
 }

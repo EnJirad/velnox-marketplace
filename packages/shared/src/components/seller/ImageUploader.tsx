@@ -168,7 +168,7 @@ export function ImageUploader({ product, onChange }: ImageUploaderProps) {
           >
             <ImagePlus className="size-3.5" />
             รูปสินค้า
-            <span className="ml-0.5 text-[10px] text-slate-400">{galleryImages.length}</span>
+            <span className="ml-0.5 text-[11px] text-slate-400">{galleryImages.length}</span>
           </button>
           <button
             type="button"
@@ -181,7 +181,7 @@ export function ImageUploader({ product, onChange }: ImageUploaderProps) {
           >
             <FileImage className="size-3.5" />
             รูปรายละเอียด
-            <span className="ml-0.5 text-[10px] text-slate-400">{detailImages.length}</span>
+            <span className="ml-0.5 text-[11px] text-slate-400">{detailImages.length}</span>
           </button>
         </div>
         <Badge className="gap-1 rounded-full bg-[#ECFDF5] text-emerald-700 ring-1 ring-inset ring-emerald-600/15 hover:bg-[#ECFDF5]">
@@ -219,7 +219,7 @@ export function ImageUploader({ product, onChange }: ImageUploaderProps) {
                   />
                 </div>
                 {isPrimary && (
-                  <span className="absolute left-1.5 top-1.5 flex items-center gap-1 rounded-full bg-[#10B981] px-2 py-0.5 text-[10px] font-semibold text-white">
+                  <span className="absolute left-1.5 top-1.5 flex items-center gap-1 rounded-full bg-[#10B981] px-2 py-0.5 text-[11px] font-semibold text-white">
                     <Star className="size-2.5 fill-current" />
                     หลัก
                   </span>

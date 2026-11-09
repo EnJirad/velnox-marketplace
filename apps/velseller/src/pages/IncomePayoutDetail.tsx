@@ -172,7 +172,7 @@ export default function IncomePayoutDetail() {
                         const retH = (d.returns / (maxVal || 1)) * 100;
                         return (
                           <div key={i} className="flex-1 flex flex-col items-center gap-1 h-full justify-end">
-                            <span className="text-[10px] font-semibold tabular-nums text-emerald-700">
+                            <span className="text-[11px] font-semibold tabular-nums text-emerald-700">
                               {formatBaht(d.payout)}
                             </span>
                             <div className="w-full flex flex-col-reverse rounded-t-md overflow-hidden" style={{ height: `${grossH}%` }}>
@@ -183,7 +183,7 @@ export default function IncomePayoutDetail() {
                               <div className="w-full bg-slate-400 transition-all"
                                 style={{ height: `${commH}%` }} />
                             </div>
-                            <span className="text-[9px] text-slate-400 truncate w-full text-center">{d.label}</span>
+                            <span className="text-[11px] text-slate-400 truncate w-full text-center">{d.label}</span>
                           </div>
                         );
                       })}

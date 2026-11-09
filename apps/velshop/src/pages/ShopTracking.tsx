@@ -211,7 +211,7 @@ export default function ShopTracking() {
                               <p className="flex items-center gap-1.5 text-sm font-semibold text-slate-900">
                                 {s.carrier}
                                 {s.carrierCode && (
-                                  <span className="rounded-full bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] font-medium text-slate-500">
+                                  <span className="rounded-full bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] font-medium text-slate-500">
                                     {s.carrierCode}
                                   </span>
                                 )}

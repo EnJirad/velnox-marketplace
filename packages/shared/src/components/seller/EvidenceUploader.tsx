@@ -273,13 +273,13 @@ export function EvidenceUploader({
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium text-slate-700">{label}</span>
           {uploadedCount > 0 && (
-            <Badge className="gap-1 rounded-full bg-emerald-50 text-emerald-600 ring-1 ring-inset ring-emerald-500/20 text-[10px]">
+            <Badge className="gap-1 rounded-full bg-emerald-50 text-emerald-600 ring-1 ring-inset ring-emerald-500/20 text-[11px]">
               <CheckCircle2 className="size-2.5" />
               {uploadedCount}
             </Badge>
           )}
           {errorCount > 0 && (
-            <Badge className="gap-1 rounded-full bg-red-50 text-red-600 ring-1 ring-inset ring-red-500/20 text-[10px]">
+            <Badge className="gap-1 rounded-full bg-red-50 text-red-600 ring-1 ring-inset ring-red-500/20 text-[11px]">
               <AlertCircle className="size-2.5" />
               {errorCount}
             </Badge>
@@ -330,7 +330,7 @@ export function EvidenceUploader({
                   <p className="truncate text-xs font-medium text-slate-700">
                     {getFileName(ef)}
                   </p>
-                  <p className="text-[10px] text-slate-400">
+                  <p className="text-[11px] text-slate-400">
                     {(getFileSize(ef) / 1024 / 1024).toFixed(1)} MB
                     {ef.status === "uploading" && " · กำลังอัปโหลด..."}
                     {ef.status === "uploaded" && " · อัปโหลดสำเร็จ"}
@@ -351,7 +351,7 @@ export function EvidenceUploader({
                       type="button"
                       variant="ghost"
                       size="sm"
-                      className="h-6 px-2 text-[10px] text-[#10B981]"
+                      className="h-6 px-2 text-[11px] text-[#10B981]"
                       onClick={() => void handleRetry(ef)}
                     >
                       ลองอีกครั้ง
@@ -397,7 +397,7 @@ export function EvidenceUploader({
               <p className="text-xs font-medium text-slate-600">
                 คลิกหรือลากไฟล์มาวาง
               </p>
-              <p className="text-[10px] text-slate-400">
+              <p className="text-[11px] text-slate-400">
                 JPG · PNG · WebP · PDF (สูงสุด 10 MB/ไฟล์ · {files.length}/{maxFiles})
               </p>
             </>

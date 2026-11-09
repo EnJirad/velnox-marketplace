@@ -509,7 +509,7 @@ export default function ShopProducts() {
                       <SlidersHorizontal className="size-4" />
                       {t("products.filters")}
                       {activeFilterCount > 0 && (
-                        <span className="flex size-5 items-center justify-center rounded-full bg-[#10B981] text-[10px] font-bold text-white">
+                        <span className="flex size-5 items-center justify-center rounded-full bg-[#10B981] text-[11px] font-bold text-white">
                           {activeFilterCount}
                         </span>
                       )}
@@ -521,7 +521,7 @@ export default function ShopProducts() {
                         <Filter className="size-4 text-[#10B981]" />
                         {t("products.filterTitle")}
                         {activeFilterCount > 0 && (
-                          <span className="ml-1 flex size-5 items-center justify-center rounded-full bg-[#10B981] text-[10px] font-bold text-white">
+                          <span className="ml-1 flex size-5 items-center justify-center rounded-full bg-[#10B981] text-[11px] font-bold text-white">
                             {activeFilterCount}
                           </span>
                         )}

@@ -401,11 +401,11 @@ export default function ShopCart() {
               <p className="truncate text-lg font-bold tabular-nums tracking-tight text-slate-900">
                 {formatBaht(summary.total)}
               </p>
-              <p className="truncate text-[10px] text-slate-400">
+              <p className="truncate text-[11px] text-slate-400">
                 {t("cart.subtotal")} {formatBaht(summary.subtotal)} · {t("cart.discount")}{" "}
                 {formatBaht(summary.discount)} · {t("cart.shipping")} {formatBaht(summary.shipping)}
               </p>
-              <span className="mt-0.5 flex items-center gap-1 text-[10px] font-medium text-[#10B981]">
+              <span className="mt-0.5 flex items-center gap-1 text-[11px] font-medium text-[#10B981]">
                 {t("cartPage.orderSummary")}
                 <ChevronUp className="size-3" />
               </span>
