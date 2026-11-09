@@ -2997,6 +2997,10 @@ END $$;
 
 -- ============================================================================
 -- PART 3 - indexes
+-- Member ID uniqueness: the roster number is what a person types to sign in, so
+-- two people can never share one (added with the auto-generated Member ID).
+CREATE UNIQUE INDEX IF NOT EXISTS uq_employees_employee_id
+  ON employees (employee_id) WHERE employee_id IS NOT NULL;
 -- ============================================================================
 -- These run AFTER the column pass on purpose. On an old database the table
 -- already exists while the column an index is built on does not, and an index

@@ -252,25 +252,34 @@ async function listCompanyConversations(tab: CompanyTab, viewerId: string): Prom
   return res.rows;
 }
 
-/** Unread MESSAGE counts for the three VelCenter chat tabs. */
+/**
+ * Unread MESSAGE counts for the VelCenter chat tabs.
+ *
+ * These numbers are the tab badges, so they MUST count exactly the rows the tab
+ * will show. The previous version counted messages by `sender_role` while the LIST
+ * counted messages `sender_id <> viewer`: on the real data one conversation reads
+ * 9 by the badge and 15 in its row, and any message from another staff member made
+ * the two disagree. Both now use ONE predicate — messages in that tab's
+ * conversations that this viewer has not read — so a non-zero badge always has a
+ * row behind it.
+ */
 async function companyUnreadCounts(
   viewerId: string,
 ): Promise<{ customers: number; sellers: number; internal: number; support: number }> {
+  const unreadIn = (typePredicate: string) => `
+    (SELECT COUNT(*)::int
+       FROM chat_messages m
+       JOIN conversations c ON c.id = m.conversation_id
+       LEFT JOIN shops sh ON sh.id = c.shop_id
+      WHERE (${typePredicate})
+        AND m.sender_id <> $1
+        AND m.read_at IS NULL)`;
+
   const res = await query(
     `SELECT
-       (SELECT COUNT(*)::int FROM chat_messages m
-          JOIN conversations c ON c.id = m.conversation_id
-          LEFT JOIN shops sh ON sh.id = c.shop_id
-         WHERE (c.type = 'CUSTOMER_COMPANY' OR (c.type = 'CUSTOMER_SELLER' AND sh.slug = $2))
-           AND m.sender_role = 'customer' AND m.read_at IS NULL) AS customers,
-       (SELECT COUNT(*)::int FROM chat_messages m
-          JOIN conversations c ON c.id = m.conversation_id
-         WHERE c.type = 'SELLER_COMPANY'
-           AND m.sender_role = 'seller' AND m.read_at IS NULL) AS sellers,
-       (SELECT COUNT(*)::int FROM chat_messages m
-          JOIN conversations c ON c.id = m.conversation_id
-         WHERE c.type = 'COMPANY_INTERNAL'
-           AND m.sender_role = 'company' AND m.sender_id <> $1 AND m.read_at IS NULL) AS internal`,
+       ${unreadIn(`c.type = 'CUSTOMER_COMPANY' OR (c.type = 'CUSTOMER_SELLER' AND sh.slug = $2)`)} AS customers,
+       ${unreadIn(`c.type = 'SELLER_COMPANY'`)} AS sellers,
+       ${unreadIn(`c.type = 'COMPANY_INTERNAL'`)} AS internal`,
     [viewerId, SUPPORT_SHOP_SLUG],
   );
   const row = res.rows[0] ?? {};

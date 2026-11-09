@@ -121,7 +121,7 @@ export default function EmployeeManager({ readOnly = false }: { readOnly?: boole
   const [newPermissions, setNewPermissions] = useState<string[]>([]);
 
   // One-time temp credential (create or reset) — shown exactly once
-  const [tempCredential, setTempCredential] = useState<{ password: string; email: string } | null>(null);
+  const [tempCredential, setTempCredential] = useState<{ password: string; email: string; employeeId?: string | null } | null>(null);
 
   // Reset-password dialog. The owner asked for a real flow: pressing "รีเซ็ตรหัส"
   // opens a form pre-filled with a generated `vel` + 6 digits password, asks for
@@ -260,7 +260,7 @@ export default function EmployeeManager({ readOnly = false }: { readOnly?: boole
       } catch {
         toast.success("รีเซ็ตรหัสผ่านแล้ว — กรุณาคัดลอกด้วยตนเอง");
       }
-      setTempCredential({ password, email: result?.email ?? resetTarget.email ?? "" });
+      setTempCredential({ password, email: result?.email ?? resetTarget.email ?? "", employeeId: result?.employeeId ?? resetTarget.employeeId ?? null });
       setResetTarget(null);
       setResetPw("");
       setResetPw2("");
@@ -781,6 +781,25 @@ export default function EmployeeManager({ readOnly = false }: { readOnly?: boole
               บริษัทเก็บเฉพาะ hash และไม่สามารถดูรหัสนี้ได้อีกหลังจากปิดหน้าต่าง
             </DialogDescription>
           </DialogHeader>
+          {tempCredential?.employeeId && (
+            <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5">
+              <span className="text-xs font-medium text-slate-500">รหัสพนักงาน</span>
+              <code className="flex-1 select-all font-mono text-base font-bold tracking-wider text-slate-900">
+                {tempCredential.employeeId}
+              </code>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-8 shrink-0 text-slate-600 hover:bg-slate-200/70"
+                onClick={() => {
+                  void navigator.clipboard?.writeText(String(tempCredential.employeeId));
+                  toast.success("คัดลอกรหัสพนักงานแล้ว");
+                }}
+              >
+                <Copy className="size-4" />
+              </Button>
+            </div>
+          )}
           <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
             <LockKeyhole className="size-4 shrink-0 text-amber-600" />
             <code className="flex-1 select-all font-mono text-lg font-bold tracking-wider text-amber-900">

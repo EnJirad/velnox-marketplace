@@ -11,7 +11,7 @@ import { Label } from "@velnox/shared/components/ui/label";
 import { Separator } from "@velnox/shared/components/ui/separator";
 
 import { Logo } from "@velnox/shared/components/Logo";
-import { SITE_URLS, apiUrl } from "@velnox/shared/lib/sites";
+import { SITE_URLS, apiBaseUrl, apiUrl } from "@velnox/shared/lib/sites";
 import { useLanguage } from "@velnox/shared/lib/i18n";
 import { useAuth } from "@velnox/shared/hooks/use-auth";
 import {
@@ -191,7 +191,7 @@ function Auth() {
     setError(null);
     try {
       sessionStorage.setItem(GOOGLE_AUTH_START_KEY, String(Date.now()));
-      const apiBase = apiUrl;
+      const apiBase = apiBaseUrl;
       const backendReturnTo = returnTo || "/";
       window.location.href = `${apiBase}/auth/google?returnTo=${encodeURIComponent(backendReturnTo)}`;
     } catch (error) {
@@ -218,7 +218,7 @@ function Auth() {
       if (turnstileToken !== "bypass") {
         body.turnstileToken = turnstileToken;
       }
-      const res = await fetch(`${apiUrl}/auth/password-login`, {
+      const res = await fetch(`${apiBaseUrl}/auth/password-login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -255,7 +255,7 @@ function Auth() {
       if (turnstileToken !== "bypass") {
         body.turnstileToken = turnstileToken;
       }
-      const res = await fetch(`${apiUrl}/auth/password-register`, {
+      const res = await fetch(`${apiBaseUrl}/auth/password-register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -281,7 +281,7 @@ function Auth() {
     setMemberLoading(true);
     setMemberError(null);
     try {
-      const res = await fetch(`${apiUrl}/auth/member-login`, {
+      const res = await fetch(`${apiBaseUrl}/auth/member-login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",

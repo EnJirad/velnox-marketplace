@@ -152,13 +152,11 @@ export function ChatComposer({
         )}
       </div>
 
-      <form
-        className="flex items-end gap-1 px-2 py-2 sm:gap-2 sm:px-3 sm:py-3"
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (canSend) onSend();
-        }}
-      >
+      {/* NOT a <form>: a form gives Enter an implicit submit path in some
+          browsers and inside embedded WebViews, which turned "Enter = new line"
+          into "Enter = send". A plain container plus an explicit send button
+          makes the button the ONLY way to send, on every device. */}
+      <div className="flex items-end gap-1 px-2 py-2 sm:gap-2 sm:px-3 sm:py-3">
         <input
           ref={fileRef}
           type="file"
@@ -239,7 +237,7 @@ export function ChatComposer({
         >
           {sending ? <Loader2 className="size-5 animate-spin text-slate-400" /> : <Send className="size-5" />}
         </button>
-      </form>
+      </div>
     </div>
   );
 }

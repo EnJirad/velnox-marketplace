@@ -1313,18 +1313,59 @@ export function setupCenterRoutes(app: Express): void {
         return;
       }
 
-      const passwordHash = await hashPassword(rawPassword);
+      const passwordHash = await hashPassword(finalPassword);
       const ins = await query(
         `INSERT INTO users (email, name, role, department, status, password_hash, must_change_password)
          VALUES ($1, $2, $3, $4, 'active', $5, TRUE) RETURNING id`,
         [email, name, role, department, passwordHash],
       );
       const userId = ins.rows[0].id as string;
-      await query(
-        `INSERT INTO employees (user_id, role, employee_id, permissions)
-         VALUES ($1, $2, $3, $4)`,
-        [userId, role === "admin" ? "admin" : "staff", employeeId, JSON.stringify(permissions)],
-      );
+      // ── Member ID ─────────────────────────────────────────────────────────
+      // Standard practice for an internal staff roster is a SHORT SEQUENTIAL
+      // number (0001, 0002, …), not a random token: it is what a person can read
+      // over the phone and type on a shop floor. A caller may still supply their
+      // own value; when they do not, the next free 4-digit number is assigned.
+      const nextMemberId = async (): Promise<string> => {
+        const r = await query(
+          `SELECT COALESCE(MAX(employee_id::int), 0) + 1 AS next
+             FROM employees
+            WHERE employee_id ~ '^[0-9]{1,9}$'`,
+        );
+        return String(r.rows[0]?.next ?? 1).padStart(4, "0");
+      };
+      let memberId = employeeId ?? (await nextMemberId());
+      let inserted = false;
+      let lastError: any = null;
+      for (let attempt = 0; attempt < 5 && !inserted; attempt += 1) {
+        try {
+          await query(
+            `INSERT INTO employees (user_id, role, employee_id, permissions)
+             VALUES ($1, $2, $3, $4)`,
+            [userId, role === "admin" ? "admin" : "staff", memberId, JSON.stringify(permissions)],
+          );
+          inserted = true;
+        } catch (err: any) {
+          lastError = err;
+          // 23505 = someone took this Member ID between the read and the write.
+          if (err?.code !== "23505") throw err;
+          if (employeeId) break; // caller-chosen: report it, never silently change it
+          memberId = await nextMemberId();
+        }
+      }
+      if (!inserted) {
+        await query("DELETE FROM users WHERE id = $1", [userId]);
+        const duplicate = employeeId && lastError?.code === "23505";
+        res.status(409).json({
+          success: false,
+          error: {
+            code: duplicate ? "EMPLOYEE_ID_EXISTS" : "EMPLOYEE_ID_UNAVAILABLE",
+            message: duplicate
+              ? `รหัสพนักงาน "${memberId}" ถูกใช้แล้ว`
+              : "ไม่สามารถออกรหัสพนักงานได้ กรุณาลองใหม่",
+          },
+        });
+        return;
+      }
       await writeAuditLog(req.user!.userId, "EMPLOYEE_CREATE", "employee", userId, { email, role, department }, auditClientIp(req));
       try { broadcast(CHANNELS.NOTIFICATION_CREATED, "employee:created", { userId, role }); } catch { /* best-effort */ }
 
@@ -1334,6 +1375,7 @@ export function setupCenterRoutes(app: Express): void {
           email,
           name,
           tempPassword: generatedPassword, // shown once to admin, never stored in logs
+          employeeId: memberId,
           mustChangePassword: true,
           userId,
         },
@@ -1436,7 +1478,19 @@ export function setupCenterRoutes(app: Express): void {
       invalidateCachedProfile(targetUserId);
       console.log(`[center] employee password reset: ${targetUserId} by ${req.user!.userId}`);
       await writeAuditLog(req.user!.userId, "EMPLOYEE_PASSWORD_RESET", "employee", targetUserId, {}, auditClientIp(req));
-      res.json({ success: true, data: { userId: targetUserId, tempPassword: rawPassword } });
+      const empRow = await query(
+        `SELECT e.employee_id, u.email FROM employees e JOIN users u ON u.id = e.user_id WHERE e.user_id = $1`,
+        [targetUserId],
+      );
+      res.json({
+        success: true,
+        data: {
+          userId: targetUserId,
+          tempPassword: rawPassword,
+          employeeId: empRow.rows[0]?.employee_id ?? null,
+          email: empRow.rows[0]?.email ?? null,
+        },
+      });
     } catch (err) {
       console.error("[center] employee password reset error:", err);
       res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to reset password" } });
