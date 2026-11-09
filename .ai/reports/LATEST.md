@@ -1,6 +1,43 @@
-# LATEST — 2026-11-09 · DB-gated test suite: root cause ของ CI แดง 263 เคส
+# LATEST — 2026-11-09 · CI เขียวทั้งสอง workflow (264 เคสแดง → 0)
 
-**Branch:** `main` · **Status:** แก้ต้นเหตุแล้ว — ตรวจในเครื่องได้จริง (1810 pass) · push + รอ CI ยืนยัน
+**Branch:** `main` · **HEAD:** `99ab164` · **Status:** ✅ **CI GREEN** — `Tests` success และ `Production DB Verify` success
+
+## ผลลัพธ์สุดท้าย (ยืนยันจาก GitHub Actions)
+
+| Workflow | ก่อน | หลัง |
+|---|---|---|
+| `Tests` | failure (typecheck ตก → test ถูก skip) | ✅ **success** (`1782 pass / 9 skip / 0 fail`) |
+| `Production DB Verify` | failure (reconciler CANON เก่า + test suite) | ✅ **success** (schema/identity + reconciler A–I + build) |
+
+## ลำดับการแก้ที่ทำให้เขียว (3 รอบ push)
+
+1. `bd091b7` **ซ่อม typecheck backend** — `auth.ts` import `crypto` ซ้ำ + Turnstile response เป็น `unknown` → job *Tests* เคยตกที่นี่และ **skip test suite ทั้งหมด** (นี่คือเหตุที่ไม่มีใครเห็น 263 เคสแดง)
+2. `2cb30e5` **แก้ 263 เคสที่ต้นเหตุเดียว** — `backend/tests/order-read-schema-fallback.test.ts` ลง `mock.module("../db/index.js")` แบบ process-global, Bun ถอนไม่ได้ (พิสูจน์ด้วย probe) → ทุกไฟล์ที่รันตามหลังได้ `withTransaction` ที่ส่ง `{}` ⇒ `client.query is not a function` + HTTP 400/422/500/403 พรวด. เปลี่ยนเป็น DI (`run` param ใน `order-read.ts` / `shipment-repo.ts`) และแก้ expectation ที่ค้าง (total รวมค่าส่ง, clock skew 3s, ลำดับ guard ของ quote, group total = ผลรวม order)
+3. `281ff1e` + `99ab164` **build `velseller` ก่อน test suite** ในทั้ง `test.yml` และ `production-db-verify.yml` — proxy tests เสิร์ฟแอปที่ build แล้ว ถ้าไม่มี `apps/velseller/dist` จะโยนจาก `beforeAll` และ Bun รายงานเป็น 1 unnamed failure
+
+ก่อนหน้านั้น: `8c695d0` แก้ค่า `CANON` ใน `db/verify-reconciler.sh` (63|241|265|661 → 67|255|285|716) ซึ่งเป็นเหตุที่ reconciler cases A–I แดงทั้งที่ไฟล์ SQL ถูก
+
+## วิธีตรวจในเครื่อง (ทำแล้วจริง รอบนี้)
+
+DB-gated suite รันในเครื่องได้ด้วย **Neon branch ชั่วคราว + TCP tunnel ไป 127.0.0.1** (guard ปฏิเสธ host `*.neon.tech` โดยเจตนา และ `initdb` ติด ICU 78 vs 79):
+
+1. `create_branch` → `create_postgres_role` → `run_sql "CREATE ROLE … PASSWORD …"` → `GRANT ALL PRIVILEGES ON DATABASE neondb TO …`
+2. `CREATE DATABASE <db> OWNER <role>` แล้วรัน `db/run-sqleditor.sql` ผ่าน `pg` client (ได้ 67 tables)
+3. tunnel `Bun.listen` 127.0.0.1:55432 → pooler endpoint; ต่อด้วย `?uselibpqcompat=true&sslmode=require&options=endpoint%3D<endpoint-id>`
+4. `bun test ./backend/tests --timeout 90000` (remote DB ช้ากว่า container มาก — 5s ทำให้ false fail)
+5. **ลบ branch + role + ไฟล์ credential ท้องถิ่นทิ้ง** (ทำแล้ว: เหลือแค่ `production` branch)
+
+ผลในเครื่องก่อน push: **1810 pass / 2 fail / 9 skip** → 2 fail เป็น artifact ของเครื่อง (`db-identity` hardcode ชื่อ db `velnox_test`) และตัวที่แก้ทีหลัง
+
+## บทเรียนถาวร
+
+**ห้ามใช้ `mock.module` ใน repo นี้.** Bun ทำ mock เป็น process-global และ `mock.restore()` ไม่ถอนให้ (1.4.4) → ไฟล์อื่นพังไกลจากต้นเหตุ. ถ้าต้องจำลอง I/O ให้เพิ่มพารามิเตอร์ inject (pattern อยู่ที่ `order-read.ts` / `shipment-repo.ts`)
+
+## ยังค้าง
+
+- `db-identity.test.ts` hardcode `expect(identity.database).toBe("velnox_test")` — ควรเทียบกับ DB ที่ตั้งไว้ ไม่ใช่ชื่อตายตัว (ไม่บล็อก CI)
+- seed ข้อมูล production (owner decision) · Stripe live (owner action)
+
 
 ## สรุปสั้น
 

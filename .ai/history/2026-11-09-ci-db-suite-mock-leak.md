@@ -43,3 +43,11 @@ CI `Tests` แดงที่ *Run the test suite* 263 เคส (หลัง�
 Neon branch ชั่วคราว + TCP tunnel 127.0.0.1 (เพราะ guard ปฏิเสธ host `*.neon.tech` โดยเจตนา และ `initdb` ติด ICU)
 ใช้ `--timeout 90000` (remote DB ช้ากว่า container มาก; 5s ทำให้ false fail) แล้วลบ branch ทิ้ง
 รายละเอียดขั้นตอนครบอยู่ใน `.ai/reports/LATEST.md` §วิธีรัน
+
+## ปิดงาน (ยืนยันจาก CI)
+
+- `Tests` → **success** บน `99ab164` (1782 pass / 9 skip / 0 fail)
+- `Production DB Verify` → **success** บน `99ab164` (schema/identity + reconciler A–I + typecheck + build)
+- เพิ่มเติมที่ทำให้เขียวครบ: build `velseller` ก่อน test suite ใน `test.yml` และ `production-db-verify.yml`
+  (proxy tests โยน "missing apps/velseller/dist" จาก `beforeAll` → Bun รายงานเป็น 1 unnamed failure)
+- ลบ Neon branch/role ชั่วคราวและไฟล์ credential ท้องถิ่นแล้ว (เหลือเฉพาะ branch `production`)

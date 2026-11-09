@@ -1,10 +1,15 @@
 # Velnox AI Handoff — Current State
 
-**Last verified:** 2026-11-09 · **Branch:** `main` · **HEAD:** `73fff9c` + CI/MVP-readiness work (session 2026-11-09, ดู `.ai/reports/LATEST.md`)
+**Last verified:** 2026-11-09 · **Branch:** `main` · **HEAD:** `99ab164` — **CI GREEN** (`Tests` + `Production DB Verify` success)
 
 ## 1. Current Project State
 
-**WORKING — test suite เขียวแล้ว** — 4/4 apps typecheck, backend typecheck, `bun test ./backend/tests` = 1415 pass / 0 fail / 425 skip, i18n parity 2235×3, `build:apps` 4/4, `git diff --check` clean. CI สองจุดที่เคยแดงถูกซ่อมที่ต้นเหตุ: (1) `backend/routes/auth.ts` duplicate `import crypto` + Turnstile typing ทำให้ job *Tests* ตกที่ typecheck, (2) `db/verify-reconciler.sh` ค่า `CANON` ค้างที่ `63|241|265|661` ทั้งที่ schema จริง `67|255|285|716` ทำให้ job *Production DB Verify* red. Storage/lifecycle tests ไม่ผูกกับ secret ในเครื่องแล้ว (skip เมื่อไม่มี store). DB-gated suites ยัง skip ในเครื่อง (ไม่มี disposable PostgreSQL) — รันจริงบน CI เท่านั้น.
+**WORKING — CI เขียวครบทั้งสอง workflow** — 4/4 apps typecheck, backend typecheck, test suite บน CI = **1782 pass / 9 skip / 0 fail**, i18n parity 2235×3, `build:apps` 4/4, `git diff --check` clean. การซ่อมรอบ 2026-11-09 (รายละเอียด `.ai/reports/LATEST.md`):
+- typecheck backend (`auth.ts` duplicate import + Turnstile typing) เคยทำให้ job *Tests* skip test suite ทั้งหมด
+- **263 DB-gated tests: root cause เดียว** — `mock.module` leak จาก `order-read-schema-fallback.test.ts` (Bun ถอน mock ไม่ได้) → แก้ด้วย DI และ **ห้ามใช้ `mock.module` ใน repo นี้**
+- proxy tests ต้องการ `apps/velseller/dist` → เพิ่ม step build ในทั้ง 2 workflow
+- `CANON` ใน `db/verify-reconciler.sh` อัปเดตเป็น `67|255|285|716` (ค่าที่วัดได้จริงบน disposable PostgreSQL)
+
 
 ### Active Tasks
 - **CI เขียว + MVP storefront polish (2026-11-09)** — ✅ DONE, verified, commit+pushed. ซ่อม CI 2 จุดที่ต้นเหตุ (auth.ts typing, CANON ใน verify-reconciler.sh) + ปิดงานค้าง Phase 2: tablet nav ของ velseller กลับมา (`until="lg"`), แถวตาราง seller orders เลิก full reload, `formatBaht` แสดงเศษสตางค์ครบ 2 หลัก, การ์ดสินค้าเลิกแสดงปุ่มตาย `0 0 0`. Test ค้าง 5 ไฟล์อัปเดตตาม behavior จริง (ไม่ใช่กลบ). รายละเอียด: `.ai/reports/LATEST.md`
@@ -28,7 +33,7 @@
 4. **Stripe live payments are NOT enabled** — sandbox/test keys only. Real money needs live keys + `STRIPE_MODE=live` + `STRIPE_ALLOW_LIVE=true` in Render (see `.ai/context/payment.md`). **Owner deferred live-card testing until device can test it — do not test until owner asks.**
 5. **Impeccable engine BLOCKED** — `impeccable --version` fails (`unexpected e_type: 2`); UI review falls back to `VELNOX_DESIGN_THEME.md` + craft-floor.
 6. **ข้อมูล production บางมาก (ตัวกั้น MVP ที่แท้จริง)** — 2026-11-09: `sellers` 2 (approved 2), `shops` 2, `products` 2 (published 1 · suspended 1), `categories` 96, `orders` 8, `users` 4. หน้าแรกจึงมีสินค้าเดียว. การ seed production เป็นการเขียนข้อมูลจริง — รอ owner สั่ง (จำนวน/หมวด/แหล่งรูป)
-7. **263 DB-gated tests ตกบน CI — แก้ที่ต้นเหตุแล้ว (2026-11-09)** — ต้นเหตุจริงคือ **`mock.module` leak**: `order-read-schema-fallback.test.ts` ลง `mock.module("../db/index.js")` แบบ process-global แล้วถอนไม่ได้บน Bun 1.4.4 → ทุกไฟล์ที่รันตามหลังได้ `withTransaction` ที่ส่ง `{}` (อาการ: `client.query is not a function` + HTTP 400/422/500/403 พรวด). แก้ด้วยการลบ mock และเพิ่ม DI (`run` param) ใน `order-read.ts` / `shipment-repo.ts`. **ห้ามใช้ `mock.module` ใน repo นี้** เพิ่ม expectation ที่ค้าง (total รวมค่าส่ง, ชื่อ db, clock skew, ลำดับ guard ของ quote). ตรวจในเครื่องบน DB จริง: **1810 pass / 2 fail / 9 skip** (2 fail = artifact ของเครื่อง). วิธีรัน DB suite ในเครื่อง (Neon branch ชั่วคราว + tunnel 127.0.0.1 + `--timeout 90000`) อยู่ใน `.ai/reports/LATEST.md`
+7. **CI แดงจาก DB suite — แก้แล้ว (2026-11-09, CI เขียว)** — root cause เดียว: **`mock.module` leak** (`order-read-schema-fallback.test.ts` ลง mock ของ `../db/index.js` แบบ process-global, Bun 1.4.4 ถอนไม่ได้) ทำให้ทุกไฟล์ที่รันตามหลังได้ `withTransaction` ที่ส่ง `{}` ⇒ `client.query is not a function` + HTTP 400/422/500/403 พรวด (263 เคส). แก้เป็น DI (`run` param) + แก้ expectation ที่ค้าง (total รวมค่าส่ง, clock skew 3s, ลำดับ guard ของ quote, group total). เพิ่ม build `velseller` ก่อน test ใน 2 workflow. **ห้ามใช้ `mock.module`** — ถ้าต้องจำลอง I/O ให้ inject. วิธีรัน DB suite ในเครื่อง (Neon branch ชั่วคราว + tunnel 127.0.0.1 + `--timeout 90000`, แล้วลบ branch) อยู่ใน `.ai/reports/LATEST.md`
 8. **`.ai-office/DISCOVERY.md`** — ไฟล์หลงจาก session ก่อน (นอก `.ai/`) ยังไม่ commit ไม่ได้ลบ; ควรย้ายเข้า `.ai/history/` หรือลบ
 
 ### Important Recent Decisions
