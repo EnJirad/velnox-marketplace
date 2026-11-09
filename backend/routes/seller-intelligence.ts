@@ -26,6 +26,8 @@ import {
   reorderConfidence,
   round2,
   SELLER_COMMISSION_RATE,
+  isOrderIncomeEligible,
+  isReturnCounted,
   SELLER_RETURN_COVERAGE,
   validateGoalInput,
 } from "../lib/seller-stats.js";
@@ -264,15 +266,14 @@ export function setupSellerIntelligenceRoutes(app: Express): void {
       const itemBreakdown: any[] = [];
 
       for (const item of items) {
-        // Commission eligibility: only successfully delivered items
-        // An item is commission-eligible if its order is completed/delivered AND it was shipped
-        const isOrderDelivered = ["completed", "delivered"].includes(item.orderStatus);
-        const isShipped = item.shipmentId && ["shipped", "delivered", "out_for_delivery", "picked_up", "in_transit"].includes(item.shipmentStatus);
-        const isCommissionEligible = isOrderDelivered && isShipped;
-        
-        // Return eligibility: only items that were shipped AND have confirmed return
-        const isReturnConfirmed = item.returnId && ["received", "restocked", "completed"].includes(item.returnStatus);
-        const isReturnEligible = isShipped && isReturnConfirmed;
+        // THE ORDER IS THE AUTHORITY (lib/seller-stats.ts explains why): a
+        // completed/delivered order is money the seller earned even when no
+        // shipment row was ever recorded. Requiring a shipment silently zeroed
+        // the whole income page for every order placed without a carrier.
+        const isCommissionEligible = isOrderIncomeEligible(item.orderStatus);
+        // A confirmed return counts on its own lifecycle — it does not depend on
+        // the shipment row that the eligibility bug above also required.
+        const isReturnEligible = isReturnCounted(item.returnStatus);
 
         const itemCommission = isCommissionEligible ? round2(item.subtotal * SELLER_COMMISSION_RATE) : 0;
         const itemReturnAmount = isReturnEligible ? round2(item.subtotal) : 0;
@@ -312,16 +313,16 @@ export function setupSellerIntelligenceRoutes(app: Express): void {
       const dayBuckets = new Map<string, { date: string; gross: number; grossCount: number; returns: number; returnCount: number }>();
       for (const item of items) {
         if (!item.orderCreatedAt) continue;
-        const isOrderDelivered = ["completed", "delivered"].includes(item.orderStatus);
-        const isShipped = item.shipmentId && ["shipped", "delivered", "out_for_delivery", "picked_up", "in_transit"].includes(item.shipmentStatus);
-        const isReturnConfirmed = item.returnId && ["received", "restocked", "completed"].includes(item.returnStatus);
-        const isReturnEligible = isShipped && isReturnConfirmed;
-        
+        // Same eligibility as the KPI loop above — a chart that disagrees with
+        // the totals above it is worse than no chart.
+        const isOrderDelivered = isOrderIncomeEligible(item.orderStatus);
+        const isReturnEligible = isReturnCounted(item.returnStatus);
+
         if (!isOrderDelivered && !isReturnEligible) continue;
-        
+
         const day = new Date(item.orderCreatedAt).toISOString().slice(0, 10);
         const b = dayBuckets.get(day) ?? { date: day, gross: 0, grossCount: 0, returns: 0, returnCount: 0 };
-        if (isOrderDelivered && isShipped) {
+        if (isOrderDelivered) {
           b.gross += item.subtotal;
           b.grossCount += item.quantity;
         }
@@ -342,21 +343,46 @@ export function setupSellerIntelligenceRoutes(app: Express): void {
         }))
         .sort((a, b) => a.date.localeCompare(b.date));
 
-      // Recent transactions (seller's portion only), newest first.
-      const recentOrderIds = [...new Set(items.map(i => i.orderId))].slice(0, 50);
+      // Recent transactions (seller's portion only), NEWEST first. `items` is
+      // ordered by order date ASC, so a plain slice(0, 50) handed the page the 50
+      // OLDEST orders while the heading said "recent".
+      const orderRecency = new Map<string, number>();
+      for (const i of items) {
+        const t = i.orderCreatedAt ? new Date(i.orderCreatedAt).getTime() : 0;
+        if (t > (orderRecency.get(i.orderId) ?? 0)) orderRecency.set(i.orderId, t);
+      }
+      const recentOrderIds = [...new Set(items.map((i) => i.orderId))]
+        .sort((a, b) => (orderRecency.get(b) ?? 0) - (orderRecency.get(a) ?? 0))
+        .slice(0, 50);
       const itemsByOrder = await fetchSellerItemsForOrders(recentOrderIds, sellerId);
+
+      // Real order headers: the row above the transactions list showed a UUID in
+      // the order-number column and ฿0 as the total (both were placeholders).
+      const orderHeaderRes = await query(
+        `SELECT id, order_number, total_amount FROM orders WHERE id = ANY($1::uuid[])`,
+        [recentOrderIds],
+      );
+      const orderHeaders = new Map<string, { orderNumber: string | null; total: number }>();
+      for (const row of orderHeaderRes.rows) {
+        orderHeaders.set(String(row.id), {
+          orderNumber: row.order_number ?? null,
+          total: parseFloat(row.total_amount) || 0,
+        });
+      }
 
       const customerIds = [...new Set(items.map((i: any) => i.orderId).filter(Boolean))];
       // We need to fetch customer names from orders
       const customerRes = await query(
-        `SELECT u.id, u.name 
+        `SELECT o.id AS order_id, u.name
          FROM users u
          JOIN orders o ON o.user_id = u.id
-         WHERE o.id = ANY($1)`,
+         WHERE o.id = ANY($1::uuid[])`,
         [recentOrderIds],
       );
+      // Keyed by ORDER id: the previous version keyed by user id and then looked
+      // the customer up by order id, so every transaction showed "—".
       const customers = new Map<string, { name: string | null }>();
-      for (const u of customerRes.rows) customers.set(u.id, { name: u.name });
+      for (const u of customerRes.rows) customers.set(String(u.order_id), { name: u.name });
 
       const transactions = recentOrderIds
         .map((orderId: string) => {
@@ -368,11 +394,11 @@ export function setupSellerIntelligenceRoutes(app: Express): void {
           return {
             order: {
               id: orderData.orderId,
-              orderNumber: orderData.orderId,
+              orderNumber: orderHeaders.get(orderData.orderId)?.orderNumber ?? orderData.orderId,
               status: orderData.orderStatus,
               createdAt: orderData.orderCreatedAt.getTime(),
               customerName: customers.get(orderData.orderId)?.name ?? null,
-              total: 0, // Will be filled if needed
+              total: orderHeaders.get(orderData.orderId)?.total ?? 0,
             },
             items: orderItems,
             subtotal,

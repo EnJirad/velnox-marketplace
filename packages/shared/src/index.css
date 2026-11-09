@@ -146,7 +146,6 @@
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    overscroll-behavior-y: none;
   }
   /* Headlines break at word boundaries, never mid-word, and avoid orphans. */
   h1, h2, h3 {
@@ -207,13 +206,15 @@
   line-height: 1.55;
 }
 
-/* ─── Web-app zoom policy ───────────────────────────────────────────────
- * Page zoom: DISABLED (touch-action on body prevents pinch-to-zoom)
- * Map zoom:  ENABLED (Leaflet captures multi-touch on .leaflet-container)
- * Double-tap: disabled on page via manipulation, preserved on map
+/* ─── Touch policy ─────────────────────────────────────────────────────
+ * `manipulation` = pan + pinch allowed, double-tap zoom suppressed. The
+ * previous `pan-x pan-y` also blocked pinch-zoom (an accessibility loss) and on
+ * some Android WebView builds a touch drag failed to start a scroll at all —
+ * which is exactly the "the page will not scroll" report. Map zoom is
+ * unaffected: Leaflet sets its own `touch-action: none` on its container below.
  * ────────────────────────────────────────────────────────────────────── */
 body {
-  touch-action: pan-x pan-y;
+  touch-action: manipulation;
 }
 
 .leaflet-container {

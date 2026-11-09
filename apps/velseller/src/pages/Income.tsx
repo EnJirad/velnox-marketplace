@@ -186,16 +186,30 @@ export default function Income() {
                     <p className="mt-1 text-xs text-slate-400">ข้อมูลจะปรากฏเมื่อมีคำสั่งซื้อที่เสร็จสิ้นจริง</p>
                   </div>
                 ) : (
-                <div className="flex items-end gap-1.5 h-32 sm:h-40" role="img" aria-label={`${periodLabels[period]} revenue chart`}>
+                <div className="flex h-40 items-stretch gap-1.5 sm:h-48" role="img" aria-label={`${periodLabels[period]} revenue chart`}>
                   {periodData.map((d, i) => (
-                    <div key={i} className="flex-1 flex flex-col items-center gap-1 h-full justify-end">
-                      <span className="text-[11px] font-semibold tabular-nums text-slate-900">
+                    <div key={i} className="flex h-full min-w-0 flex-1 flex-col items-center">
+                      {/* Value on top, bar in the middle, label at the bottom.
+                          The bar area is its own box with a DEFINITE height, so a
+                          percentage bar has something to be a percentage OF: the
+                          rows are `base` + `bar` (flex-1) + `label`. Previously the
+                          value label sat above the bar inside the same full-height
+                          column, so the bar's 100% could exceed the space left and
+                          the column simply clipped — a tall period showed no bar.
+                          A 6px floor keeps a small day visible instead of a
+                          hairline. */}
+                      <span className="mb-1 text-[11px] font-semibold tabular-nums text-slate-900">
                         {formatBaht(d.value).replace("฿", "")}
                       </span>
-                      <div className="w-full rounded-t-md bg-emerald-500 transition-[width]"
-                        style={{ height: `${(d.value / maxVal) * 100}%` }}
-                      />
-                      <span className="text-[11px] text-slate-400 truncate w-full text-center">{d.label}</span>
+                      <div className="flex w-full flex-1 items-end" style={{ minHeight: 0 }}>
+                        <div
+                          className="w-full rounded-t-md bg-emerald-500 transition-[height] duration-300 ease-out"
+                          style={{
+                            height: `${Math.max((d.value / maxVal) * 100, d.value > 0 ? 6 : 0)}%`,
+                          }}
+                        />
+                      </div>
+                      <span className="mt-1 w-full truncate text-center text-[11px] text-slate-400">{d.label}</span>
                     </div>
                   ))}
                 </div>

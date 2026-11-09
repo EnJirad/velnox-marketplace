@@ -17,12 +17,62 @@ import {
   computeIncomeReport,
   computePurchaseStats,
   estimatedNextPurchase,
+  isOrderIncomeEligible,
+  isReturnCounted,
   reorderConfidence,
   round2,
   validateGoalInput,
 } from "../lib/seller-stats.js";
 import { purgeUsers } from "./helpers/purge.js";
 import { hasTestDatabase } from "./helpers/test-db.js";
+
+// ─── Income eligibility (pure, always runs) ────────────────────────────────
+// The production defect this pins: income required a `shipments` row in a
+// shipped state, so 3 completed orders (฿1,677.20) with no shipment record
+// produced a ฿0 income page and an empty chart. A completed order is the
+// seller's money whether or not a carrier was ever recorded.
+
+describe("income eligibility", () => {
+  test("a completed or delivered order earns income with no shipment at all", () => {
+    expect(isOrderIncomeEligible("completed")).toBe(true);
+    expect(isOrderIncomeEligible("delivered")).toBe(true);
+  });
+
+  test("an order that has not finished does not", () => {
+    for (const status of ["pending", "pending_payment", "paid", "packing", "shipped", "cancelled", "expired", "failed", "refunded"]) {
+      expect(isOrderIncomeEligible(status)).toBe(false);
+    }
+    expect(isOrderIncomeEligible(null)).toBe(false);
+    expect(isOrderIncomeEligible(undefined)).toBe(false);
+  });
+
+  test("only a final return state counts against the seller", () => {
+    for (const status of ["received", "restocked", "completed"]) {
+      expect(isReturnCounted(status)).toBe(true);
+    }
+    for (const status of ["requested", "approved", "shipped", "rejected", "cancelled", null, undefined]) {
+      expect(isReturnCounted(status)).toBe(false);
+    }
+  });
+
+  test("a confirmed return is counted even when no shipment row exists", () => {
+    // The old rule ANDed the return with a shipped shipment, so a confirmed
+    // return on an order recorded without a carrier was invisible.
+    const returnCounted = isReturnCounted("received");
+    const orderEarns = isOrderIncomeEligible("completed");
+    expect(returnCounted).toBe(true);
+    expect(orderEarns).toBe(true);
+  });
+
+  test("the report applies 3% commission to a real production total", () => {
+    // The three completed orders in production: 838.60 + 419.30 + 419.30
+    const gross = 838.6 + 419.3 + 419.3;
+    const r = computeIncomeReport(gross, 4, 0, 0);
+    expect(r.gross).toBe(1677.2);
+    expect(r.commission).toBe(50.32); // 3% of 1677.20
+    expect(r.payout).toBe(1626.88);
+  });
+});
 
 // ─── Income math (pure, always runs) ───────────────────────────────────────
 

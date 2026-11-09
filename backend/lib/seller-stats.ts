@@ -7,6 +7,30 @@
 export const SELLER_COMMISSION_RATE = 0.03; // 3% per item
 export const SELLER_RETURN_COVERAGE = 0.1; // commission covers ≤10% returns
 
+/**
+ * Order statuses that mean the seller has KEPT the money.
+ *
+ * Income used to require BOTH a delivered/completed order AND a `shipments` row
+ * in a shipped state. Production proved that wrong: 3 completed orders worth
+ * ฿1,677.20 had zero `shipment_items` rows (orders completed without the seller
+ * ever recording a carrier — COD, local delivery, and everything placed before
+ * shipping was wired), so the seller's income page reported ฿0 forever and the
+ * chart had no bars. The order's own status is the authority for
+ * "did this sale happen"; a shipment is evidence, not a precondition.
+ */
+export const DELIVERED_ORDER_STATUSES = ["completed", "delivered"] as const;
+
+/** Return states that are final enough to count against the seller. */
+export const COUNTED_RETURN_STATUSES = ["received", "restocked", "completed"] as const;
+
+export function isOrderIncomeEligible(orderStatus: string | null | undefined): boolean {
+  return !!orderStatus && (DELIVERED_ORDER_STATUSES as readonly string[]).includes(orderStatus);
+}
+
+export function isReturnCounted(returnStatus: string | null | undefined): boolean {
+  return !!returnStatus && (COUNTED_RETURN_STATUSES as readonly string[]).includes(returnStatus);
+}
+
 export interface IncomeReport {
   gross: number;
   grossCount: number;
