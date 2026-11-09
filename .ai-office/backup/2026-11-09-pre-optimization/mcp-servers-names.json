@@ -1,0 +1,32 @@
+[
+ {
+  "name": "render",
+  "type": "http",
+  "url_host": "mcp.render.com"
+ },
+ {
+  "name": "vercel",
+  "type": "http",
+  "url_host": "mcp.vercel.com"
+ },
+ {
+  "name": "neon",
+  "type": "http",
+  "url_host": "mcp.neon.tech"
+ },
+ {
+  "name": "github",
+  "type": "http",
+  "url_host": "api.githubcopilot.com"
+ },
+ {
+  "name": "cloudflare",
+  "type": "http",
+  "url_host": "mcp.cloudflare.com"
+ },
+ {
+  "name": "stripe-sandbox",
+  "type": "http",
+  "url_host": "mcp.stripe.com"
+ }
+]

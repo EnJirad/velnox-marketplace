@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "description": "เพดานต้นทุนและกติกาควบคุมการเผาเงิน",
+
+  "reference_budget_usd": 2.00,
+  "daily_target_usd": 0.28,
+  "warn_at_percent": 80,
+  "hard_stop_at_percent": 100,
+
+  "measured_baseline": {
+    "date": "2026-11-09",
+    "actual_usd": 1.980108,
+    "target_usd": 0.28,
+    "over_target_multiple": 7.07,
+    "main_cause": "deepseek-v4-pro ใช้ 26 requests กิน 90.8% ของเงิน"
+  },
+
+  "projected_after_optimization": {
+    "method": "ย้าย workload ของ pro (26 req) ไป flash ด้วยราคา flash",
+    "flash_workload_usd": 0.181785,
+    "pro_workload_on_flash_usd": 0.401162,
+    "projected_total_usd": 0.582947,
+    "reduction_percent": 70.6,
+    "still_over_target": true,
+    "note": "ยังเกิน target $0.28 อยู่ 2.08 เท่า — ต้องลด token ต่อ request เพิ่มหรือลดจำนวน request"
+  },
+
+  "retry_limits": {
+    "implementation_retries_per_task": 2,
+    "qa_rounds_per_task": 2,
+    "qa_rounds_requiring_approval": 3,
+    "transient_network_retries": 3,
+    "identical_request_retries": 0,
+    "note": "ห้าม retry คำขอที่เหมือนเดิมทุกไบต์เกิน 0 ครั้ง — ต้องเปลี่ยน strategy ก่อน"
+  },
+
+  "hard_stop_rules": [
+    "เกิน 100% ของ daily target → หยุดงานใหม่ที่ไม่จำเป็น",
+    "ห้ามหยุดกลางงานที่ unsafe-to-stop (migration, git push ที่กำลังทำ)",
+    "แจ้งผู้ใช้เมื่อถึง warn threshold 80%",
+    "ห้ามเติม credit อัตโนมัติ",
+    "ห้ามแก้ billing setting"
+  ],
+
+  "attribution": {
+    "per_task": true,
+    "per_agent": true,
+    "per_model": true,
+    "source": "logs/usage.jsonl (แปลงจาก provider CSV + tool usage)",
+    "unavailable_metrics": "ถ้า provider ไม่มี metric นั้น ให้เขียน 'unavailable' ห้ามเดา"
+  }
+}

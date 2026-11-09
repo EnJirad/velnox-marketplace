@@ -1,0 +1,9 @@
+# Runtime artifacts — ไม่ version control
+# state/lock/heartbeat/queue/logs เปลี่ยนทุกครั้งที่ทำงาน
+runtime/
+queue/
+logs/
+
+# backup มี snapshot ของ config ณ วันหนึ่ง — เก็บไว้ได้ถ้าต้องการประวัติ
+# ถ้าไม่ต้องการ ให้ลบเครื่องหมาย # ข้างหน้า
+# backup/

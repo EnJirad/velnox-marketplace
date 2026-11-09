@@ -1,0 +1,86 @@
+{
+ "257a34c7-7feb-444e-89a3-5c646bf1414d.json": {
+  "provider_name": "Tenixe",
+  "provider_type": "OPENAI_COMPAT",
+  "model": "deepseek-v4-flash",
+  "fallback_primary": "deepseek-v4-flash",
+  "allowModelFallback": false,
+  "maxContext": 250000,
+  "maxOutput": 32768,
+  "maxIterations": 0,
+  "mode": "ACT",
+  "completed": true
+ },
+ "96cb01d2-10ec-4b5c-84e4-bcf9cad2b006.json": {
+  "provider_name": "DeepSeek-Api",
+  "provider_type": "OPENAI_COMPAT",
+  "model": "deepseek-flash",
+  "fallback_primary": "deepseek-flash",
+  "allowModelFallback": true,
+  "maxContext": 2000000,
+  "maxOutput": 32768,
+  "maxIterations": 0,
+  "mode": "ACT",
+  "completed": false
+ },
+ "42160da8-cae1-4b47-89eb-7cb82f472c71.json": {
+  "provider_name": "Tenixe",
+  "provider_type": "OPENAI_COMPAT",
+  "model": "deepseek-v4-flash",
+  "fallback_primary": "deepseek-v4-flash",
+  "allowModelFallback": true,
+  "maxContext": 2000000,
+  "maxOutput": 32768,
+  "maxIterations": 0,
+  "mode": "PLAN",
+  "completed": false
+ },
+ "c4567907-3dea-430d-af3d-9787b36731c1.json": {
+  "provider_name": "Aiunlimit",
+  "provider_type": "OPENAI_COMPAT",
+  "model": "DeepSeek-V4-Flash-0731",
+  "fallback_primary": "DeepSeek-V4-Flash-0731",
+  "allowModelFallback": true,
+  "maxContext": 2000000,
+  "maxOutput": 32768,
+  "maxIterations": 0,
+  "mode": "ACT",
+  "completed": true
+ },
+ "889b322e-51d3-43eb-ae45-e07ba2422997.json": {
+  "provider_name": "Tenixe",
+  "provider_type": "OPENAI_COMPAT",
+  "model": "deepseek-v4-flash",
+  "fallback_primary": "deepseek-v4-flash",
+  "allowModelFallback": true,
+  "maxContext": 2000000,
+  "maxOutput": 32768,
+  "maxIterations": 0,
+  "mode": "ACT",
+  "completed": true
+ },
+ "c76a8c73-ef72-4b11-9381-0777732d659e.json": {
+  "provider_name": "Aiunlimit",
+  "provider_type": "OPENAI_COMPAT",
+  "model": "DeepSeek-V4-Flash-0731",
+  "fallback_primary": "DeepSeek-V4-Flash-0731",
+  "allowModelFallback": true,
+  "maxContext": 2000000,
+  "maxOutput": 32768,
+  "maxIterations": 0,
+  "mode": "ACT",
+  "completed": true
+ },
+ "af4f1972-71cb-44e5-b87c-8ee66acf6f00.json": {
+  "provider_name": "DeepSeek-Api",
+  "provider_type": "OPENAI_COMPAT",
+  "model": "deepseek-flash",
+  "fallback_primary": "deepseek-flash",
+  "allowModelFallback": true,
+  "maxContext": 2000000,
+  "maxOutput": 32768,
+  "maxIterations": 0,
+  "mode": "ACT",
+  "completed": false
+ }
+}

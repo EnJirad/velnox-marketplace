@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "description": "Tool profile ต่อ role — Harness ไม่ให้ agent filter MCP tool ได้ จึงบังคับที่ระดับ prompt",
+
+  "constraint_verified_2026_11_09": {
+    "mcp_tools_connected": 473,
+    "builtin_tools": 79,
+    "total_tools": 552,
+    "provider_limit_mentioned": 128,
+    "agent_can_filter_tools": false,
+    "reason": "หน้า MCP ใน Settings เป็น needs_user — agent เปลี่ยนไม่ได้",
+    "mitigation": "ใช้ prompt-level restriction + ขอให้ผู้ใช้ปิด server ที่ไม่ใช้"
+  },
+
+  "mcp_servers": {
+    "vercel": { "tools": 246, "when_needed": "เฉพาะงาน deploy / env var / domain", "default": "ปิด" },
+    "neon": { "tools": 139, "when_needed": "เฉพาะงาน database / schema", "default": "ปิด" },
+    "github": { "tools": 46, "when_needed": "PR / issue / search code", "default": "เปิด" },
+    "render": { "tools": 28, "when_needed": "เฉพาะงาน backend deploy", "default": "ปิด" },
+    "stripe-sandbox": { "tools": 10, "when_needed": "เฉพาะงาน payment", "default": "ปิด" },
+    "cloudflare": { "tools": 4, "when_needed": "เฉพาะงาน R2 / CDN", "default": "ปิด" }
+  },
+
+  "profiles": {
+    "planner": {
+      "allowed": [
+        "read_file", "list_dir", "grep", "search_files",
+        "codegraph_explore", "codegraph_node",
+        "git_status", "git_log", "git_diff", "git_show", "file_info"
+      ],
+      "denied": [
+        "write_file", "edit_file", "apply_patch", "multi_edit", "move_file", "delete_file",
+        "shell", "shell_background", "git_commit", "git_push", "pkg_install"
+      ],
+      "denied_mcp": ["vercel", "neon", "render", "cloudflare", "stripe-sandbox"],
+      "approx_tools": 11
+    },
+
+    "research": {
+      "allowed": [
+        "read_file", "list_dir", "grep", "search_files",
+        "codegraph_explore", "codegraph_node", "codegraph_impact",
+        "git_status", "git_log", "git_diff", "git_show", "file_info",
+        "web_search", "web_fetch", "http_request", "read_logcat",
+        "mcp__github__search_code", "mcp__github__issue_read", "mcp__github__search_issues"
+      ],
+      "denied": [
+        "write_file", "edit_file", "apply_patch", "multi_edit", "move_file", "delete_file",
+        "git_commit", "git_push", "pkg_install", "shell_background"
+      ],
+      "denied_mcp": ["vercel", "neon", "render", "cloudflare", "stripe-sandbox"],
+      "approx_tools": 19
+    },
+
+    "developer": {
+      "allowed": [
+        "read_file", "list_dir", "grep", "search_files",
+        "codegraph_explore", "codegraph_node",
+        "write_file", "edit_file", "apply_patch", "multi_edit", "move_file", "create_dir", "delete_file",
+        "shell", "shell_background", "bg_list", "bg_kill",
+        "git_status", "git_diff", "git_log", "git_show", "git_commit",
+        "pkg_search", "pkg_install", "pkg_list",
+        "file_info", "file_history"
+      ],
+      "denied": ["git_push", "ask_user"],
+      "conditional_mcp": {
+        "github": "อ่านได้ / เขียนต้องอนุมัติ",
+        "neon": "เฉพาะงาน DB ที่ได้รับอนุญาต — SELECT ก่อนเสมอ",
+        "stripe-sandbox": "เฉพาะ payment task"
+      },
+      "denied_mcp": ["vercel", "render", "cloudflare"],
+      "approx_tools": 28
+    },
+
+    "qa": {
+      "allowed": [
+        "read_file", "list_dir", "grep", "search_files", "codegraph_explore",
+        "git_diff", "git_show", "git_status", "git_log",
+        "shell", "read_logcat", "file_info",
+        "mcp__github__pull_request_read", "mcp__github__get_commit"
+      ],
+      "denied": [
+        "write_file", "edit_file", "apply_patch", "multi_edit", "move_file", "delete_file",
+        "git_commit", "git_push", "pkg_install", "ask_user"
+      ],
+      "conditional_mcp": { "neon": "SELECT เท่านั้น" },
+      "denied_mcp": ["vercel", "render", "cloudflare", "stripe-sandbox"],
+      "approx_tools": 14
+    }
+  },
+
+  "safety_margin": {
+    "target_max_total": 140,
+    "current_total": 552,
+    "achievable_by_agent": false,
+    "achievable_by_user": "ปิด vercel + neon + render + stripe + cloudflare → 46 MCP + 79 builtin = 125 < 128"
+  },
+
+  "rules": [
+    "นับ tool ก่อนทุก request ที่คาดว่าจะใหญ่",
+    "รักษาระยะห่างจาก 128 ไม่น้อยกว่า 3",
+    "ถ้า profile ใหญ่เกิน ให้ตัดตามความเกี่ยวข้องกับ task",
+    "ห้ามลบ capability ที่จำเป็นโดยไม่มีทางเลือกที่อนุมัติแล้ว"
+  ]
+}

@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "description": "นโยบาย model — flash เป็น default, pro เฉพาะเมื่ออนุมัติ",
+
+  "default_model": "deepseek-flash",
+
+  "slots": {
+    "main": "deepseek-flash",
+    "planning": "deepseek-flash",
+    "subagent": "deepseek-flash",
+    "research": "deepseek-flash",
+    "qa": "deepseek-flash"
+  },
+
+  "known_models": {
+    "deepseek-flash": {
+      "catalog_name": "DeepSeek V4.1 Flash 1017",
+      "cost_per_million": { "input": 0.15, "cache_read": 0.003, "output": 0.6 },
+      "context": 1048576,
+      "verified_from": "models-dev.json (files/models-dev.json → deepseek.models)"
+    },
+    "deepseek-v4-flash": {
+      "catalog_name": "DeepSeek V4 Flash",
+      "cost_per_million": { "input": 0.15, "cache_read": 0.003, "output": 0.6 },
+      "context": 1048576,
+      "verified_from": "models-dev.json"
+    },
+    "deepseek-v4-flash-vision-exp": {
+      "catalog_name": "DeepSeek V4 Flash Vision Exp",
+      "cost_per_million": { "input": 0.15, "cache_read": 0.003, "output": 0.6 },
+      "context": 1048576,
+      "verified_from": "models-dev.json",
+      "note": "experimental — ห้ามใช้เป็น default"
+    },
+    "deepseek-v4-pro": {
+      "catalog_name": "DeepSeek V4 Pro",
+      "cost_per_million": { "input": 0.66, "cache_read": 0.022, "output": 1.98 },
+      "context": 1048576,
+      "verified_from": "models-dev.json",
+      "cost_vs_flash": "4.4x input, 7.3x cache_read, 3.3x output"
+    }
+  },
+
+  "pro_escalation": {
+    "allowed": true,
+    "default_is_pro": false,
+    "requires_user_approval": true,
+    "gates_all_must_pass": [
+      "flash ล้มเหลว >= 2 ครั้งกับปัญหาเดียวกัน",
+      "พิสูจน์ได้ว่างานต้องใช้ reasoning ที่ flash ทำไม่ได้ (อธิบายเป็นรูปธรรม)",
+      "คาดว่าจะได้ผลลัพธ์ที่ดีขึ้นจริง ไม่ใช่แค่ 'อาจจะดีกว่า'",
+      "ยืนยันราคาและ availability ของ pro แล้ว",
+      "ได้รับอนุมัติจากผู้ใช้หรือ policy ที่อนุมัติไว้แล้ว"
+    ],
+    "explanation_required_before_escalation": [
+      "ทำไม flash ไม่พอ",
+      "pro จะแก้อะไร",
+      "ค่าใช้จ่ายเพิ่มโดยประมาณ"
+    ],
+    "research_may_declare": "AI 02 Research เขียน 'PRO MODEL NEEDED?: YES' พร้อมเหตุผลได้ แต่ไม่มีสิทธิ์เรียก pro เอง"
+  },
+
+  "measured_baseline_2026_11_09": {
+    "source": "/sdcard/Download/cost-2026-10-11_2026-11-09.csv + amount-*.csv",
+    "note": "ชื่อไฟล์บอก 10-11 ถึง 11-09 แต่เนื้อหามีวันเดียว คือ 2026-11-09",
+    "deepseek-flash": { "requests": 111, "cache_hit_tokens": 34913536, "cache_miss_tokens": 413358, "output_tokens": 25068, "cost_usd": 0.181785, "cache_hit_rate_pct": 98.83 },
+    "deepseek-v4-pro": { "requests": 26, "cache_hit_tokens": 4720000, "cache_miss_tokens": 2529557, "output_tokens": 12614, "cost_usd": 1.798323, "cache_hit_rate_pct": 65.11 },
+    "total_cost_usd": 1.980108,
+    "pro_share_of_cost_pct": 90.8,
+    "pro_share_of_requests_pct": 19.0
+  },
+
+  "forbidden": [
+    "ตั้ง pro เป็น default ของ slot ใด ๆ",
+    "escalate ไป pro อัตโนมัติหลัง fail ทุกครั้ง",
+    "สมมติว่า model alias ตัวหนึ่งคืออีกตัวโดยไม่ยืนยันจาก provider"
+  ]
+}

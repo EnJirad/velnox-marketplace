@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "description": "กติกาเลือก agent ตามระดับงาน — ห้าม invoke ทุก agent ทุกงาน",
+  "levels": {
+    "small": {
+      "label": "งานเล็ก",
+      "examples": ["แก้ข้อความ", "ปรับ CSS", "แก้สี/ระยะ", "bug fix เดี่ยวเล็ก"],
+      "workflow": ["AI03", "VERIFY"],
+      "agents": { "planner": false, "research": false, "developer": true, "qa": false },
+      "qa_when": "เฉพาะเมื่อแตะ logic — ถ้าเป็น text/CSS ไม่ต้อง QA",
+      "max_retries": 1
+    },
+    "bugfix": {
+      "label": "แก้บั๊กทั่วไป",
+      "examples": ["บั๊กที่สาเหตุชัด", "แก้ regression ที่รู้ต้นเหตุ"],
+      "workflow": ["AI03", "AI04"],
+      "agents": { "planner": false, "research": false, "developer": true, "qa": true },
+      "escalate_to_research_when": "สาเหตุไม่ชัดหลังอ่านโค้ด 2 ไฟล์",
+      "max_retries": 2
+    },
+    "feature": {
+      "label": "ฟีเจอร์ใหม่",
+      "examples": ["เพิ่มหน้า", "เพิ่ม endpoint", "เพิ่ม component", "multi-file change"],
+      "workflow": ["AI01", "AI03", "AI04"],
+      "agents": { "planner": true, "research": false, "developer": true, "qa": true },
+      "escalate_to_research_when": "พึ่ง external dependency หรือ architecture ซับซ้อน",
+      "max_retries": 2
+    },
+    "architecture": {
+      "label": "เปลี่ยนสถาปัตยกรรม",
+      "examples": ["restructure module", "เปลี่ยน data flow", "เพิ่ม subsystem"],
+      "workflow": ["AI01", "AI02", "CONSOLIDATE", "AI03", "AI04"],
+      "agents": { "planner": true, "research": true, "developer": true, "qa": true },
+      "requires_consolidated_brief": true,
+      "max_retries": 2
+    },
+    "migration": {
+      "label": "แก้ database schema",
+      "examples": ["เพิ่ม column", "เพิ่ม table", "แก้ index"],
+      "workflow": ["AI01", "SCHEMA_INSPECT", "AI03", "MIGRATION_VERIFY", "AI04"],
+      "agents": { "planner": true, "research": true, "developer": true, "qa": true },
+      "mandatory": ["db/schema.sql AND db/run-sqleditor.sql", "ห้ามรันกับ production"],
+      "max_retries": 2
+    },
+    "debug": {
+      "label": "หาสาเหตุยาก",
+      "examples": ["บั๊กที่ไม่รู้ต้นเหตุ", "พฤติกรรมผิดที่ reproduce ไม่ได้", "error ลึกลับ"],
+      "workflow": ["AI02", "ROOT_CAUSE", "AI03", "AI04"],
+      "agents": { "planner": false, "research": true, "developer": true, "qa": true },
+      "max_retries": 2
+    }
+  },
+  "classification_hints": {
+    "small_keywords": ["typo", "ข้อความ", "label", "สี", "color", "spacing", "padding", "margin", "icon", "font", "copy"],
+    "bugfix_keywords": ["บั๊ก", "bug", "แก้บั๊ก", "ผิดพลาด", "พัง", "ไม่ทำงาน", "error", "exception", "regression", "กดไม่ได้", "ค้าง"],
+    "debug_keywords": ["ไม่รู้สาเหตุ", "เป็นบางครั้ง", "intermittent", "flaky", "ทำไม", "root cause", "สาเหตุ"],
+    "migration_keywords": ["schema", "migration", "column", "table", "index", "ALTER", "CREATE TABLE"],
+    "architecture_keywords": ["restructure", "สถาปัตยกรรม", "refactor ทั้งระบบ", "data flow", "subsystem"]
+  },
+  "rules": [
+    "Coordinator (AI 01) ต้องระบุเหตุผลทุกครั้งที่ invoke agent เพิ่ม",
+    "ห้าม invoke Planner + Research + QA พร้อมกันในงานเดียวโดยไม่มีเหตุผล",
+    "ถ้า task ผ่าน small ได้ ให้ถือเป็น small (ถูกที่สุด)"
+  ]
+}
