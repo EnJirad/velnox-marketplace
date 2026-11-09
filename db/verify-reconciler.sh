@@ -137,11 +137,26 @@ echo "Reconciler proof against $(psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d 
 # but not count; `sender_id` lost its NOT NULL (a system row has no sender),
 # which is a nullability change, not a column.
 #
+# Wholesale + business verification (Phase 2 Part 2, 2026-11-0x) grew it by
+# exactly 4 tables (wholesale_tiers, business_verifications,
+# business_verification_history, shipping_quotes), and `shops.status` /
+# `shops.commission_rate` were added alongside. Server-priced shipping
+# (2026-11-05) added `shipping_quotes` in the same window.
+#
+# Multi-carrier tracking (2026-11-08) was additive COLUMNS ONLY on existing
+# tables (`shipments.carrier_status` and friends, `tracking_events` columns) —
+# no new table — which is why the table count stayed at 67 after that work while
+# the column/index/constraint counts moved.
+#
 # NOTE: the figure below is MEASURED by this script on a disposable PostgreSQL
 # (the workflow now runs it): a fresh, thrice-rerun db/run-sqleditor.sql.
-# Measured 2026-10-31 by CI run 41181150692 after the durable-client-id change:
-# 63 tables | 241 indexes | 265 constraints | 661 columns.
-CANON="63|241|265|661"
+# Measured 2026-11-09 by CI (disposable PostgreSQL, 3 consecutive runs with
+# identical counts — the idempotency proof):
+# 67 tables | 255 indexes | 285 constraints | 716 columns.
+# The previous figure was 63|241|265|661 (measured 2026-10-31, CI run
+# 41181150692); this constant is not a target to aim at but a measurement, so it
+# must be re-measured — never guessed — whenever the canonical schema grows.
+CANON="67|255|285|716"
 counts() { t "$1" "select (select count(*) from information_schema.tables where table_schema='public')||'|'||(select count(*) from pg_indexes where schemaname='public')||'|'||(select count(*) from pg_constraint c join pg_namespace n on n.oid=c.connamespace where n.nspname='public')||'|'||(select count(*) from information_schema.columns where table_schema='public')"; }
 
 # ── A. Fresh schema ────────────────────────────────────────────────────────

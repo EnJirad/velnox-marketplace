@@ -115,8 +115,11 @@ describe("Storefront rendering (BAN-02/03/09/10, BAN-08)", () => {
     expect(homeSrc).toContain('<CategoryStrip');
     // Single Featured Rail present
     expect(homeSrc).toContain('<HorizontalRail');
-    // Product Grid present
-    expect(homeSrc).toContain('grid grid-cols-2');
+    // Product Grid present — since the Phase 2 overhaul the home page renders the
+    // SHARED ProductGrid (server-paginated), not a hand-written `grid grid-cols-2`.
+    // Assert the component, which is the behaviour; the utility classes inside it
+    // are its business, not the home page's.
+    expect(homeSrc).toContain('<ProductGrid');
     expect(stripSrc).not.toMatch(/placeholder\.com|picsum\.photos/);
   });
 

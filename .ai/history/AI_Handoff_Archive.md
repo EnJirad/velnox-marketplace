@@ -418,3 +418,9 @@ owner withheld commit/push permission.
 | File | Entry | Covers |
 |---|---|---|
 | [`archive/AI_HANDOFF_2026-11-02_FULL.md`](./archive/AI_HANDOFF_2026-11-02_FULL.md) | Complete AI_HANDOFF.md as it stood before compact migration | All sections §1–§158, full history, verification notes, environment facts. Preserved verbatim. New canonical handoff is compact (`.ai/AI_HANDOFF.md`). |
+
+### 2026-11-09 — CI เขียว + MVP readiness (storefront polish)
+
+| File | Entry | Covers |
+|---|---|---|
+| [`2026-11-09-ci-green-and-mvp-readiness.md`](./2026-11-09-ci-green-and-mvp-readiness.md) | CI เขียว + ปิดงานค้าง Phase 2 UI | Root cause ของ CI แดง 2 งาน (`auth.ts` duplicate import / `CANON` ค้างใน `db/verify-reconciler.sh`), bug จริง 4 จุด (tablet nav, SPA full reload ในตาราง seller orders, `formatBaht`, ปุ่มตายบนการ์ดสินค้า), test ค้าง 5 ไฟล์, ข้อมูล production ที่นับจริง (products 2), ผลตรวจ 1415 pass / 0 fail |

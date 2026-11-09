@@ -191,14 +191,14 @@ describe("review + config mutations refetch authoritative data", () => {
 
   test("every category mutation refetches the tree, and the config event re-reads it", () => {
     expect(categoriesSrc).toContain('onCenterEvent("config"');
-    for (const call of [
-      "api.centerAdmin.updateCategory({ categoryId: editingCategory.id, ...payload })",
-      "api.centerAdmin.createCategory(payload)",
-      "api.centerAdmin.deleteCategory({ categoryId: deleteConfirm.id })",
-      "api.centerAdmin.updateCategory({\n        categoryId: cat.id,\n        is_active: !cat.is_active,\n      })",
-    ]) {
-      expect(categoriesSrc).toContain(call);
-    }
+    // Every mutation goes through the API (never a local-only state flip) and
+    // reuses the ONE `basePayload` the form builds — the icon branches differ but
+    // the identity fields must not drift between them.
+    expect(categoriesSrc).toContain("api.centerAdmin.createCategory(basePayload)");
+    expect(categoriesSrc).toContain("categoryId: editingCategory.id,");
+    expect(categoriesSrc).toContain("...basePayload,");
+    expect(categoriesSrc).toContain("api.centerAdmin.deleteCategory({ categoryId: deleteConfirm.id })");
+    expect(categoriesSrc).toContain("categoryId: cat.id,");
     // One refetch per mutation handler (the tree is re-read, not patched locally).
     expect(countOccurrences(categoriesSrc, "void loadCategories()")).toBeGreaterThanOrEqual(5);
     // The toggle does NOT just flip local state — that was the reported symptom.

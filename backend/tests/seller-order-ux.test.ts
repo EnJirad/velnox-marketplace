@@ -193,8 +193,13 @@ describe("seller orders — list, filters and i18n", () => {
     const links = list.match(/to=\{`\/seller\/orders\/\$\{order\.id\}`\}/g) ?? [];
     // One on the desktop table row, one on the mobile card.
     expect(links.length).toBe(2);
+    // Neither is a full-page navigation: `window.location` would reload the SPA and
+    // drop the list's paging/filter state (the desktop row used to do exactly that).
+    expect(list).not.toContain("window.location");
     // Desktop table + mobile cards both exist (one layout per width, not one squeezed).
-    expect(list).toContain("hidden overflow-x-auto");
+    // The wrapper's exact utility chain is styling; what matters is that the desktop
+    // surface is hidden until `lg` and the card list takes over below it.
+    expect(list).toMatch(/hidden[^"]*lg:block/);
     expect(list).toContain("lg:hidden");
   });
 

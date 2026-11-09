@@ -10,7 +10,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
-import { statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { createProxyServer, authorizeRequest, safeEqual } from "../../.ai/office/scripts/dev-session-proxy.mjs";
 
 const root = join(import.meta.dir, "..", "..");
@@ -307,8 +307,22 @@ describe("storage and lifecycle", () => {
   });
 
   test("the cookie store must be 0600", () => {
-    const mode = statSync(join(root, ".ai", "secrets", "browser-cookies.json")).mode & 0o777;
-    expect(mode).toBe(0o600);
+    // The store is a LOCAL session secret: it does not exist on CI, in a fresh
+    // clone, or on any machine that never ran the dev proxy. Reading it
+    // unconditionally made this suite red for everyone who had not, which is a
+    // broken gate, not a finding. The invariant is therefore checked twice:
+    //  1. the WRITER, always — the only code that creates the file must create it
+    //     private (mode 0600 + an explicit chmod for umask/file-system drift);
+    //  2. the actual file, when the operator has one — the real permission bits.
+    const writer = readFileSync(join(root, ".ai", "office", "scripts", "cookies.mjs"), "utf8");
+    expect(writer).toContain("mode: 0o600");
+    expect(writer).toContain("chmodSync(abs, 0o600)");
+
+    const store = join(root, ".ai", "secrets", "browser-cookies.json");
+    if (existsSync(store)) {
+      const mode = statSync(store).mode & 0o777;
+      expect(mode).toBe(0o600);
+    }
   });
 
   test("stopping the proxy closes the port", async () => {

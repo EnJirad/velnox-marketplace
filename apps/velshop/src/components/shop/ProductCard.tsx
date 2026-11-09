@@ -131,33 +131,30 @@ export function ProductCard({ product, onOpen: _onOpen, onAdd: _onAdd, badgeLabe
           </p>
         )}
 
-        {/* Social Actions */}
-        {!compact && (
-          <div className="mt-2 flex items-center gap-1.5 pt-2 border-t border-slate-100">
-            <button
-              type="button"
-              className="flex items-center gap-1 rounded-full px-2 py-1 text-slate-400 hover:bg-slate-100 hover:text-rose-600 transition-colors text-[11px]"
-              aria-label={t("product.like")}
-            >
-              <Heart className="size-3.5" />
-              <span className="font-medium tabular-nums">{likeCount > 999 ? "999+" : likeCount}</span>
-            </button>
-            <button
-              type="button"
-              className="flex items-center gap-1 rounded-full px-2 py-1 text-slate-400 hover:bg-slate-100 hover:text-emerald-600 transition-colors text-[11px]"
-              aria-label={t("product.save")}
-            >
-              <Bookmark className="size-3.5" />
-              <span className="font-medium tabular-nums">{saveCount > 999 ? "999+" : saveCount}</span>
-            </button>
-            <button
-              type="button"
-              className="flex items-center gap-1 rounded-full px-2 py-1 text-slate-400 hover:bg-slate-100 hover:text-[#10B981] transition-colors text-[11px]"
-              aria-label={t("product.share")}
-            >
-              <Share2 className="size-3.5" />
-              <span className="font-medium tabular-nums">{shareCount > 999 ? "999+" : shareCount}</span>
-            </button>
+        {/* Engagement stats — read-only, and only when there is a number to read.
+            These used to be three <button>s with no handler showing 0 · 0 · 0 on
+            every card: dead controls that looked interactive. Nothing likes, saves
+            or shares server-side yet, so nothing here pretends to be clickable. */}
+        {!compact && (likeCount > 0 || saveCount > 0 || shareCount > 0) && (
+          <div className="mt-2 flex items-center gap-1.5 border-t border-slate-100 pt-2 text-[11px] text-slate-400">
+            {likeCount > 0 && (
+              <span className="flex items-center gap-1 px-1 py-1" title={t("product.like")}>
+                <Heart className="size-3.5" />
+                <span className="font-medium tabular-nums">{likeCount > 999 ? "999+" : likeCount}</span>
+              </span>
+            )}
+            {saveCount > 0 && (
+              <span className="flex items-center gap-1 px-1 py-1" title={t("product.save")}>
+                <Bookmark className="size-3.5" />
+                <span className="font-medium tabular-nums">{saveCount > 999 ? "999+" : saveCount}</span>
+              </span>
+            )}
+            {shareCount > 0 && (
+              <span className="flex items-center gap-1 px-1 py-1" title={t("product.share")}>
+                <Share2 className="size-3.5" />
+                <span className="font-medium tabular-nums">{shareCount > 999 ? "999+" : shareCount}</span>
+              </span>
+            )}
           </div>
         )}
 

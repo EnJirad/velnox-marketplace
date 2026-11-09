@@ -49,7 +49,6 @@ const googleClientSecret = (): string => process.env.GOOGLE_CLIENT_SECRET ?? "";
 const googleRedirectUri = (): string => process.env.GOOGLE_REDIRECT_URI ?? "";
 const jwtSecret = (): string => process.env.JWT_SECRET ?? "";
 const SESSION_COOKIE = "velnox_session";
-import crypto from "crypto";
 
 // ─── Per-user profile cache (5s TTL) ───────────────────────────────────────
 // Prevents the same slow Neon query from being hit multiple times within a
@@ -393,7 +392,7 @@ export function setupGoogleAuth(app: Express): void {
             remoteip: req.ip || "",
           }),
         });
-        const verifyData = await verifyRes.json();
+        const verifyData = (await verifyRes.json()) as { success?: boolean; "error-codes"?: string[] };
         if (!verifyData.success) {
           console.warn("[auth] Turnstile verification failed:", verifyData["error-codes"]);
           res.status(400).json({ success: false, error: { code: "TURNSTILE_FAILED", message: "Bot verification failed. Please try again." } });
@@ -489,7 +488,7 @@ export function setupGoogleAuth(app: Express): void {
             remoteip: req.ip || "",
           }),
         });
-        const verifyData = await verifyRes.json();
+        const verifyData = (await verifyRes.json()) as { success?: boolean; "error-codes"?: string[] };
         if (!verifyData.success) {
           console.warn("[auth] Turnstile verification failed:", verifyData["error-codes"]);
           res.status(400).json({ success: false, error: { code: "TURNSTILE_FAILED", message: "Bot verification failed. Please try again." } });

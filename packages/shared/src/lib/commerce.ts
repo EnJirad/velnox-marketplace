@@ -1042,9 +1042,19 @@ export function orderCustomerCancelability(
 // formatters — accept both ISO strings (backend-derived values) and Unix ms
 // numbers (Neon timestamptz serialized to ms).
 // ---------------------------------------------------------------------------
+/**
+ * Money, as a customer reads it.
+ *
+ * Whole amounts stay whole (`฿599`) — trailing `.00` on every price is noise on a
+ * product card. A fractional amount is written to BOTH satang (`฿419.30`), never
+ * truncated to `฿419.3`: a price missing its last digit reads as a formatting
+ * bug, and 30%-off math produces exactly those amounts (599 × 0.7).
+ */
 export function formatBaht(value: number): string {
-  return `฿${value.toLocaleString("th-TH", {
-    minimumFractionDigits: 0,
+  const safe = Number.isFinite(value) ? value : 0;
+  const whole = Math.abs(safe % 1) < 1e-9;
+  return `฿${safe.toLocaleString("th-TH", {
+    minimumFractionDigits: whole ? 0 : 2,
     maximumFractionDigits: 2,
   })}`;
 }

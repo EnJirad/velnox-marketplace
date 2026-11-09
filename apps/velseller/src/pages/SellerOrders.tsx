@@ -75,7 +75,18 @@ export default function SellerOrders() {
 
   const statusFilters: (StatusFilter)[] = ["all", ...FILTERABLE_STATUSES];
   const itemCountOf = (o: StoreOrder) => o.itemCount ?? (o.items ?? []).reduce((s, i) => s + i.quantity, 0);
-  const activeOrderCount = useMemo(() => orders.filter(o => !["completed", "cancelled", "delivered"].includes(o.status)).length, [orders]);
+  // Derived counter for the "active" pill. A reduce, not a filter of the
+  // rendered list: the SERVER owns which orders are on screen (status + paging),
+  // and a client-side filter here would re-introduce the bug where the pill
+  // counted a slice instead of the real set.
+  const activeOrderCount = useMemo(
+    () =>
+      orders.reduce(
+        (n, o) => (["completed", "cancelled", "delivered"].includes(o.status) ? n : n + 1),
+        0,
+      ),
+    [orders],
+  );
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
@@ -190,9 +201,18 @@ export default function SellerOrders() {
                   </TableHeader>
                   <TableBody>
                     {orders.map((order) => (
-                      <TableRow key={order.id} className="group cursor-pointer hover:bg-slate-50" onClick={() => window.location.href = `/seller/orders/${order.id}`}>
+                      <TableRow key={order.id} className="group relative cursor-pointer hover:bg-slate-50">
                         <TableCell className="pl-5">
-                          <p className="font-semibold tabular-nums text-slate-900 group-hover:text-emerald-700 transition-colors">{shortOrderNumber(order.orderNumber)}</p>
+                          {/* A real router link, not a full-page navigation: keyboard-navigable,
+                              middle-clickable, and no reload that drops the list's paging/filter
+                              state. The ::after overlay makes the whole row the hit area without
+                              nesting a <Link> inside <tr>. */}
+                          <Link
+                            to={`/seller/orders/${order.id}`}
+                            className="font-semibold tabular-nums text-slate-900 transition-colors after:absolute after:inset-0 group-hover:text-emerald-700"
+                          >
+                            {shortOrderNumber(order.orderNumber)}
+                          </Link>
                         </TableCell>
                         <TableCell>
                           <p className="text-sm text-slate-700">{order.customerName || "—"}</p>

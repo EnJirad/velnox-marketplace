@@ -7,7 +7,7 @@
  * what it PRINTS, not what it returns.
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { validateWriteMode } from "../../.ai/office/scripts/dev-session-proxy.mjs";
 
@@ -168,30 +168,48 @@ const runCookies = (args) => {
   };
 };
 
-const storeText = readFileSync(join(root, ".ai", "secrets", "browser-cookies.json"), "utf8");
-const anyToken = Object.values(JSON.parse(storeText).accounts).map((a) => Object.values(a.cookies)[0])[0];
+// The store is a LOCAL session secret: absent on CI, in a fresh clone, and on any
+// machine that never ran the dev proxy. Reading it at module scope made this file
+// fail to even load (an unhandled ENOENT between tests), which reported a broken
+// gate instead of a real finding. Read it softly and let the tests that need a
+// real token SKIP, the same way the DB-gated suites skip without a database.
+const STORE = join(root, ".ai", "secrets", "browser-cookies.json");
+const hasStore = existsSync(STORE);
+const anyToken = (() => {
+  if (!hasStore) return "";
+  try {
+    const accounts = Object.values(JSON.parse(readFileSync(STORE, "utf8")).accounts ?? {});
+    return Object.values(accounts[0]?.cookies ?? {})[0] ?? "";
+  } catch {
+    return "";
+  }
+})();
+
+// Only a real session value proves "nothing leaked"; without one, skip rather than
+// assert against an empty string and call that a pass.
+const needsStore = test.skipIf(!hasStore || !anyToken);
 
 describe("cookies.mjs never prints a session value", () => {
-  test("listing leaks neither the cookie name value nor a JWT", () => {
+  needsStore("listing leaks neither the cookie name value nor a JWT", () => {
     const { out } = runCookies([]);
     expect(out).not.toContain(anyToken);
     expect(out).not.toMatch(/eyJ[A-Za-z0-9_-]{10,}/);
   });
 
-  test("--status leaks nothing", () => {
+  needsStore("--status leaks nothing", () => {
     const { out } = runCookies(["--status"]);
     expect(out).not.toContain(anyToken);
     expect(out).toMatch(/git-ignored: yes/);
   });
 
-  test("a bare account argument refuses instead of printing the cookie", () => {
+  needsStore("a bare account argument refuses instead of printing the cookie", () => {
     const { out, err, code } = runCookies(["owner"]);
     expect(code).not.toBe(0);
     expect(out + err).not.toContain(anyToken);
     expect(out + err).toContain("raw cookie output is disabled");
   });
 
-  test("--header and --curl are gone", () => {
+  needsStore("--header and --curl are gone", () => {
     for (const flag of ["--header", "--curl"]) {
       const { out, err, code } = runCookies(["owner", flag]);
       expect(code).not.toBe(0);
@@ -199,20 +217,20 @@ describe("cookies.mjs never prints a session value", () => {
     }
   });
 
-  test("an unknown account error carries no secret", () => {
+  needsStore("an unknown account error carries no secret", () => {
     const { err, code } = runCookies(["nobody"]);
     expect(code).not.toBe(0);
     expect(err).not.toContain(anyToken);
   });
 
-  test("--check prints identity only, never the cookie", () => {
+  needsStore("--check prints identity only, never the cookie", () => {
     const { out, code } = runCookies(["owner", "--check"]);
     expect(code).toBe(0);
     expect(out).not.toContain(anyToken);
     expect(out).toContain('"role"');
   });
 
-  test("raw export refuses without explicit human authorisation", () => {
+  needsStore("raw export refuses without explicit human authorisation", () => {
     const { err, code } = runCookies(["owner", "--export-file", join(root, ".harness", "leak.txt")]);
     expect(code).not.toBe(0);
     expect(err).toContain("human-only");
