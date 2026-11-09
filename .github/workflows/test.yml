@@ -124,6 +124,15 @@ jobs:
             exit 1
           fi
 
+      - name: Build the app the preview-proxy tests serve
+        # `backend/tests/proxy-security.test.ts` and `proxy-write-mode.test.ts`
+        # exercise the local preview proxy, which serves a BUILT VelSeller app
+        # (`apps/velseller/dist`). Without this step `createProxyServer()` throws
+        # "missing …/apps/velseller/dist — build the app first" from `beforeAll`,
+        # which Bun reports as one unnamed failure for the whole file — the last
+        # red test in the run before this step existed.
+        run: bun run build:velseller
+
       - name: Run the test suite
         run: bun test backend/tests
 
