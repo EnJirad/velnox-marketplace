@@ -309,7 +309,12 @@ export default function SellerChat() {
         const upTo = items.length > 0 ? items[items.length - 1]!.createdAt : null;
         if (upTo != null) {
           void markConversationRead({ conversationId: conv.id, upTo })
-            .then(() => notifyChatUnreadChanged("seller"))
+            .then(() => {
+              notifyChatUnreadChanged("seller");
+              // Server is the authority on what is still unread: without this the
+              // row can linger in the "unread" tab after it was read.
+              void loadConversations();
+            })
             .catch((err) => console.error("Mark conversation read failed:", err));
         }
       } catch (err) {
@@ -617,7 +622,7 @@ export default function SellerChat() {
                       <ChatConversationRow
                         key={c.id}
                         name={company ? t("chat.supportTitle") : c.participantName ?? t("sellerChat.customerFallback")}
-                        avatarUrl={company ? null : c.participantAvatar}
+                        avatarUrl={company ? "/logo.svg" : c.participantAvatar}
                         preview={c.lastMessage ?? (c.lastMessageAt ? "📷" : "—")}
                         timeLabel={formatRelativeTime(c.lastMessageAt ?? c.updatedAt, lang, t)}
                         unread={c.unreadCount}
@@ -656,7 +661,7 @@ export default function SellerChat() {
                 <>
                   <ChatThreadHeader
                     name={activeName}
-                    avatarUrl={isCompanyThread ? null : active.participantAvatar}
+                    avatarUrl={isCompanyThread ? "/logo.svg" : active.participantAvatar}
                     online={activeOnline}
                     status={activeStatus}
                     onBack={closeActive}

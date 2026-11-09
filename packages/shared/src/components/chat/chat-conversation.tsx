@@ -78,8 +78,11 @@ export function ChatBubble({
         className={cn(
           "min-w-0 max-w-[80%] px-3 py-2 text-[14px] leading-6 sm:max-w-[68%]",
           "rounded-2xl",
+          // Soft brand tint, not a saturated brand block: 4 messages of solid
+          // emerald-600 is a wall of green. Dark text on a pale emerald surface
+          // keeps contrast high while staying calm.
           mine
-            ? "bg-emerald-600 text-white"
+            ? "border border-emerald-200/70 bg-emerald-50 text-slate-900"
             : "border border-slate-200/80 bg-white text-slate-800",
           // Only the last bubble of a run gets the "tail" corner, which is what
           // makes a burst read as one message.
@@ -101,7 +104,7 @@ export function ChatBubble({
         <div
           className={cn(
             "mt-0.5 flex items-center justify-end gap-1 text-[11px] tabular-nums",
-            mine ? "text-white/70" : "text-slate-400",
+            mine ? "text-emerald-800/60" : "text-slate-400",
           )}
         >
           <span>{labels.formatTime(message.createdAt)}</span>

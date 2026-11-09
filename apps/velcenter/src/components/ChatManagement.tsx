@@ -246,11 +246,15 @@ export default function ChatManagement() {
       try {
         await readAction({ conversationId, ...(upTo === undefined ? {} : { upTo }) });
         notifyChatUnreadChanged("center");
+        // The server's unread counters are the source of truth for the badges and
+        // the "unread" filter — re-read them instead of trusting local state.
+        void loadList(tabRef.current);
+        void loadCounts();
       } catch (err) {
         console.error("Mark company chat read failed:", err);
       }
     },
-    [readAction],
+    [readAction, loadList, loadCounts],
   );
 
   const openConversation = useCallback(
@@ -797,7 +801,7 @@ export default function ChatManagement() {
                       )}
                       {c.unreadCount > 0 && (
                         <span className="absolute -right-1 -top-1 flex size-4 min-w-4 items-center justify-center rounded-full bg-[#10B981] px-0.5 text-[11px] font-bold text-white">
-                          {c.unreadCount > 9 ? "9+" : c.unreadCount}
+                          {c.unreadCount > 99 ? "99+" : c.unreadCount}
                         </span>
                       )}
                       {/* Presence dot only when the server proved the state. */}

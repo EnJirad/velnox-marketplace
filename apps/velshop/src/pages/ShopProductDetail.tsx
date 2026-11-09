@@ -1147,19 +1147,10 @@ export default function ShopProductDetail() {
                       </button>
                     </>
                   )}
-                  {validGallery.length > 1 && (
-                    <div className="pointer-events-none absolute inset-x-0 bottom-2 flex justify-center sm:hidden">
-                      <span className="flex items-center gap-1.5 rounded-full bg-black/55 px-2.5 py-1 backdrop-blur">
-                        {validGallery.map((_, i) => (
-                          <span
-                            key={i}
-                            className={"size-1.5 rounded-full transition-colors " + (i === activeValidIndex ? "bg-white" : "bg-white/45")}
-                            aria-hidden
-                          />
-                        ))}
-                      </span>
-                    </div>
-                  )}
+                  {/* One indicator set only: the dots ON the image were a second,
+                      duplicate control (the tappable dot row below the image and
+                      the 3/9 counter stay). Two sets made the gallery look busy
+                      and the overlay ate the photo. */}
                   {validGallery.length > 1 && (
                     <span className="pointer-events-none absolute bottom-2 right-2 hidden rounded-full bg-black/55 px-2 py-0.5 text-[11px] font-medium tabular-nums text-white backdrop-blur sm:inline-flex">
                       {activeValidIndex + 1} / {validGallery.length}

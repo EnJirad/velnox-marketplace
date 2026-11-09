@@ -298,7 +298,13 @@ export default function ShopChat() {
         const upTo = items.length > 0 ? items[items.length - 1]!.createdAt : null;
         if (upTo != null) {
           void markConversationRead({ conversationId: conv.id, upTo })
-            .then(() => notifyChatUnreadChanged("customer"))
+            .then(() => {
+              notifyChatUnreadChanged("customer");
+              // The local zero above is optimistic; the SERVER decides what is
+              // still unread. Without this refetch a conversation could stay in
+              // the "unread" tab after it had been read.
+              void loadConversations();
+            })
             .catch((err) => console.error("Mark conversation read failed:", err));
         }
       } catch (err) {
@@ -624,7 +630,7 @@ export default function ShopChat() {
                     <ChatConversationRow
                       key={c.id}
                       name={c.isSupport ? t("chat.supportTitle") : c.shopName}
-                      avatarUrl={c.isSupport ? null : c.shopLogo}
+                      avatarUrl={c.isSupport ? "/logo.svg" : c.shopLogo}
                       preview={c.lastMessage ?? (c.lastMessageAt ? "📷" : "—")}
                       timeLabel={formatRelativeTime(c.lastMessageAt ?? c.updatedAt, lang, t)}
                       unread={c.unreadCount}

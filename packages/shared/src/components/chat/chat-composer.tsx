@@ -6,8 +6,11 @@
  * from the existing REST contract.
  *
  * Behaviour kept identical on every surface:
- *   • Enter sends, Shift+Enter starts a new line (desktop convention); the
- *     textarea grows up to ~5 lines instead of scrolling a single line.
+ *   • SEND IS A BUTTON, on every device. Enter is a newline (as the platform
+ *     owner asked): a typo can no longer fire a message, and a Thai/Myanmar
+ *     IME's Enter-to-commit never races a send. The textarea grows up to ~5
+ *     lines and then scrolls WITHOUT a visible scrollbar — the wheel and a
+ *     finger drag scroll it, like Messenger.
  *   • Send is disabled while a send is in flight — the page also guards, this is
  *     the visible half of "no double tap creates two rows".
  *   • An image can be attached with `+`, previewed, removed before sending, and
@@ -93,7 +96,7 @@ export function ChatComposer({
     const el = inputRef.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
   }, [value]);
 
   const canSend = !disabled && !sending && (value.trim().length > 0 || !!pendingImage);
@@ -194,14 +197,8 @@ export function ChatComposer({
               else onStopTyping?.();
             }}
             onBlur={() => onStopTyping?.()}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-                event.preventDefault();
-                if (canSend) onSend();
-              }
-            }}
             className={cn(
-              "block w-full resize-none rounded-3xl border border-transparent bg-slate-100 px-4 py-3 text-sm leading-5 text-slate-900",
+              "block w-full resize-none scrollbar-hide rounded-3xl border border-transparent bg-slate-100 px-4 py-3 text-sm leading-5 text-slate-900",
               "outline-none transition-colors placeholder:text-slate-400",
               "focus:border-emerald-500/40 focus:bg-white focus:ring-2 focus:ring-emerald-500/20",
               "disabled:opacity-60",

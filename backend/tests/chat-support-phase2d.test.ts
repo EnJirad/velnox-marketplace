@@ -267,9 +267,13 @@ describe("the badge is server-derived, event-driven and never a fake zero", () =
     for (const page of [SHOP_CHAT, SELLER_CHAT]) {
       const src = read(page);
       // `notify` sits INSIDE the success continuation of the read request —
-      // the badge is refreshed only after the server confirmed the read.
-      expect(src.split(".then(() => notifyChatUnreadChanged(").length - 1).toBe(2);
-      expect(src).toContain('notifyChatUnreadChanged(');
+      // the badge is refreshed only after the server confirmed the read, and the
+      // conversation list is re-read beside it so "unread" cannot go stale.
+      // Either continuation shape counts: `.then(() => notify(...))` or a block
+      // that notifies and then re-reads the list.
+      const successContinuations = src.match(/\.then\(\(\) => \{?\s*notifyChatUnreadChanged\(/g) ?? [];
+      expect(successContinuations.length).toBe(2);
+      expect(src).toContain("void loadConversations();");
     }
     expect(read(SHOP_CHAT)).toContain('notifyChatUnreadChanged("customer")');
     expect(read(SELLER_CHAT)).toContain('notifyChatUnreadChanged("seller")');

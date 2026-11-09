@@ -123,6 +123,14 @@ export default function EmployeeManager({ readOnly = false }: { readOnly?: boole
   // One-time temp credential (create or reset) — shown exactly once
   const [tempCredential, setTempCredential] = useState<{ password: string; email: string } | null>(null);
 
+  // Reset-password dialog. The owner asked for a real flow: pressing "รีเซ็ตรหัส"
+  // opens a form pre-filled with a generated `vel` + 6 digits password, asks for
+  // it twice, and copies the confirmed value to the clipboard.
+  const [resetTarget, setResetTarget] = useState<EmployeeRow | null>(null);
+  const [resetPw, setResetPw] = useState("");
+  const [resetPw2, setResetPw2] = useState("");
+  const [resetting, setResetting] = useState(false);
+
   // Permission editor
   const [permEditor, setPermEditor] = useState<{
     userId: string;
@@ -209,19 +217,59 @@ export default function EmployeeManager({ readOnly = false }: { readOnly?: boole
     }
   };
 
-  const handleReset = async (employee: EmployeeRow) => {
-    if (!window.confirm(`รีเซ็ตรหัสผ่านของ ${employee.name ?? employee.email ?? "พนักงาน"}?`)) return;
-    setBusy(employee.userId);
+  /** `vel` + 6 digits = 8 characters, the shape the owner asked for. */
+  const generateTempPassword = () => {
+    let digits = "";
+    for (let i = 0; i < 6; i += 1) digits += Math.floor(Math.random() * 10);
+    return `vel${digits}`;
+  };
+
+  const openReset = (employee: EmployeeRow) => {
+    const generated = generateTempPassword();
+    setResetTarget(employee);
+    setResetPw(generated);
+    setResetPw2(generated);
+  };
+
+  const closeReset = () => {
+    if (resetting) return;
+    setResetTarget(null);
+    setResetPw("");
+    setResetPw2("");
+  };
+
+  const confirmReset = async () => {
+    if (!resetTarget) return;
+    if (resetPw.length < 8) {
+      toast.error("รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร");
+      return;
+    }
+    if (resetPw !== resetPw2) {
+      toast.error("รหัสผ่านทั้งสองช่องไม่ตรงกัน");
+      return;
+    }
+    setResetting(true);
     try {
-      const result = await resetEmployeePasswordAction({ userId: employee.userId });
-      setTempCredential({ password: result.tempPassword, email: result.email });
-      toast.success("รีเซ็ตรหัสผ่านแล้ว — พนักงานต้องตั้งรหัสใหม่เมื่อล็อกอินครั้งหน้า");
+      const result = await resetEmployeePasswordAction({ userId: resetTarget.userId, password: resetPw });
+      const password = result?.tempPassword ?? resetPw;
+      // The value the owner has to hand over: copy it the moment it is confirmed,
+      // and still show it once in case the clipboard permission was denied.
+      try {
+        await navigator.clipboard?.writeText(password);
+        toast.success("รีเซ็ตรหัสผ่านแล้ว — คัดลอกรหัสใหม่ให้แล้ว");
+      } catch {
+        toast.success("รีเซ็ตรหัสผ่านแล้ว — กรุณาคัดลอกด้วยตนเอง");
+      }
+      setTempCredential({ password, email: result?.email ?? resetTarget.email ?? "" });
+      setResetTarget(null);
+      setResetPw("");
+      setResetPw2("");
       void load();
     } catch (error) {
       console.error("Reset password error:", error);
       toast.error(error instanceof Error ? error.message : "รีเซ็ตรหัสผ่านไม่สำเร็จ");
     } finally {
-      setBusy(null);
+      setResetting(false);
     }
   };
 
@@ -404,7 +452,7 @@ export default function EmployeeManager({ readOnly = false }: { readOnly?: boole
                                 variant="outline"
                                 size="sm"
                                 className="gap-1.5 border-slate-200 text-slate-600"
-                                onClick={() => handleReset(e)}
+                                onClick={() => openReset(e)}
                                 disabled={busy === e.userId}
                               >
                                 <KeyRound className="size-3.5" />
@@ -490,7 +538,7 @@ export default function EmployeeManager({ readOnly = false }: { readOnly?: boole
                           variant="outline"
                           size="sm"
                           className="gap-1.5 border-slate-200 text-slate-600"
-                          onClick={() => handleReset(e)}
+                          onClick={() => openReset(e)}
                           disabled={busy === e.userId}
                         >
                           <KeyRound className="size-3.5" />
@@ -650,6 +698,77 @@ export default function EmployeeManager({ readOnly = false }: { readOnly?: boole
       </Dialog>
 
       {/* ---------- One-time temp credential dialog ---------- */}
+      <Dialog open={resetTarget !== null} onOpenChange={(open) => !open && closeReset()}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <KeyRound className="size-4 text-amber-600" />
+              ตั้งรหัสผ่านใหม่
+            </DialogTitle>
+            <DialogDescription>
+              สำหรับ {resetTarget?.name ?? resetTarget?.email ?? "พนักงาน"} — ระบบสร้างรหัสให้แล้ว
+              (vel + เลข 6 หลัก) ใช้ได้เลยหรือแก้เป็นรหัสที่ต้องการก็ได้ ต้องกรอก 2 ช่องให้ตรงกัน
+              และรหัสจะถูกคัดลอกให้เมื่อยืนยัน
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="reset-pw">รหัสผ่านใหม่</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  id="reset-pw"
+                  value={resetPw}
+                  onChange={(event) => setResetPw(event.target.value)}
+                  autoComplete="new-password"
+                  className="font-mono"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0 gap-1.5"
+                  onClick={() => {
+                    const next = generateTempPassword();
+                    setResetPw(next);
+                    setResetPw2(next);
+                  }}
+                >
+                  <RefreshCw className="size-3.5" />
+                  สุ่มใหม่
+                </Button>
+              </div>
+              <p className="text-xs text-slate-500">อย่างน้อย 8 ตัวอักษร · ค่าเริ่มต้นคือ vel + เลข 6 หลัก</p>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="reset-pw2">ยืนยันรหัสผ่านใหม่</Label>
+              <Input
+                id="reset-pw2"
+                value={resetPw2}
+                onChange={(event) => setResetPw2(event.target.value)}
+                autoComplete="new-password"
+                className="font-mono"
+              />
+              {resetPw2.length > 0 && resetPw2 !== resetPw && (
+                <p className="text-xs font-medium text-rose-600">รหัสผ่านทั้งสองช่องไม่ตรงกัน</p>
+              )}
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={closeReset} disabled={resetting}>
+              ยกเลิก
+            </Button>
+            <Button
+              className="gap-1.5 bg-slate-900 text-white hover:bg-slate-800"
+              onClick={() => void confirmReset()}
+              disabled={resetting || resetPw.length < 8 || resetPw !== resetPw2}
+            >
+              {resetting ? <RefreshCw className="size-4 animate-spin" /> : <Copy className="size-4" />}
+              ยืนยันและคัดลอกรหัส
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={tempCredential !== null} onOpenChange={(open) => !open && setTempCredential(null)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>

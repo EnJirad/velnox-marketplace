@@ -249,7 +249,7 @@ describe("the staff read grant is reachable end to end", () => {
     expect(employeeManagerSrc).toContain("export default function EmployeeManager({ readOnly = false }");
     expect(centerPage).toContain("<EmployeeManager readOnly />");
     expect(centerPage).toContain("<EmployeeManager readOnly={!isOwner} />");
-    for (const control of ["setShowCreate", "handleReset", "openPermEditor", "handleToggleActive"]) {
+    for (const control of ["setShowCreate", "openReset", "confirmReset", "openPermEditor", "handleToggleActive"]) {
       expect(employeeManagerSrc).toContain(`${control}`);
     }
     expect(employeeManagerSrc).toContain("{!readOnly && (");
