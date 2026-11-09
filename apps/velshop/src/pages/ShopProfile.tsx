@@ -258,7 +258,7 @@ export default function ShopProfile() {
         ) : isAuthenticated ? (
           <>
             {/* Identity header — cover · avatar · name/email/status */}
-            <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+            <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-soft">
               <div className="relative h-36 bg-gradient-to-r from-[#0f766e] via-[#10B981] to-[#34d399] sm:h-44">
                 <CoverImage
                   src={coverSrc}

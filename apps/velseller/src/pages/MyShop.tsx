@@ -307,7 +307,7 @@ export default function MyShop() {
       <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
         <AppHeader />
         <main className="mx-auto w-full max-w-xl px-4 py-12 sm:px-6">
-          <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-[0_12px_30px_rgba(15,23,42,0.06)]">
+          <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-float">
             <span
               className={`mx-auto flex size-14 items-center justify-center rounded-2xl ${
                 pending ? "bg-amber-50" : "bg-rose-50"

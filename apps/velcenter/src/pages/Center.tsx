@@ -1539,7 +1539,7 @@ export default function Center() {
                   return (
                     <div
                       key={order.id}
-                      className="rounded-xl border border-slate-200 bg-white p-4 transition-all duration-200 active:scale-[0.99]"
+                      className="rounded-xl border border-slate-200 bg-white p-4 transition-[transform,border-color,box-shadow,background-color] duration-200 active:scale-[0.99]"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
@@ -1734,7 +1734,7 @@ export default function Center() {
                   return (
                     <div
                       key={product._id}
-                      className="rounded-xl border border-slate-200 bg-white p-4 transition-all duration-200 active:scale-[0.99]"
+                      className="rounded-xl border border-slate-200 bg-white p-4 transition-[transform,border-color,box-shadow,background-color] duration-200 active:scale-[0.99]"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex min-w-0 items-center gap-3">
@@ -2153,7 +2153,7 @@ export default function Center() {
                   return (
                     <div
                       key={u._id}
-                      className="rounded-xl border border-slate-200 bg-white p-4 transition-all duration-200 active:scale-[0.99]"
+                      className="rounded-xl border border-slate-200 bg-white p-4 transition-[transform,border-color,box-shadow,background-color] duration-200 active:scale-[0.99]"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">

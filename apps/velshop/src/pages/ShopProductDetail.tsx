@@ -193,7 +193,7 @@ function RatingDistribution({ summary, t }: { summary: ReviewSummary; t: (k: str
               <span className="w-3 text-right tabular-nums text-slate-400">{star}</span>
               <Star className="size-3 fill-amber-400 text-amber-400" />
               <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
-                <div className="h-full rounded-full bg-amber-400 transition-all" style={{ width: `${pct}%` }} />
+                <div className="h-full rounded-full bg-amber-400 transition-[width]" style={{ width: `${pct}%` }} />
               </div>
               <span className="w-9 text-right tabular-nums text-slate-400">{Math.round(pct)}%</span>
             </div>
@@ -1189,7 +1189,7 @@ export default function ShopProductDetail() {
                     aria-selected={i === activeValidIndex}
                     aria-label={t("productDetail.imageAlt", { n: i + 1 })}
                     onClick={() => goToImage(i)}
-                    className={"h-1.5 rounded-full transition-all " + (i === activeValidIndex ? "w-5 bg-[#10B981]" : "w-1.5 bg-slate-200 hover:bg-slate-300")}
+                    className={"h-1.5 rounded-full transition-[width,background-color] duration-300 " + (i === activeValidIndex ? "w-5 bg-[#10B981]" : "w-1.5 bg-slate-200 hover:bg-slate-300")}
                   />
                 ))}
               </div>

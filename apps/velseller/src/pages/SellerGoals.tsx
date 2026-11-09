@@ -437,7 +437,7 @@ function SummaryStat({
           aria-label={label}
         >
           <div
-            className="h-full rounded-full bg-[#10B981] transition-all duration-500"
+            className="h-full rounded-full bg-[#10B981] transition-[width] duration-500"
             style={{ width: `${Math.min(progress, 100)}%` }}
           />
         </div>

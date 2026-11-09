@@ -228,7 +228,7 @@ export function SellerNotificationBell() {
             panel cannot start off-screen (its old `absolute right-0` position
             clipped ~36 px at 320/375 px). Tablet/desktop: anchored popover.
           */
-          className="fixed inset-x-3 top-[calc(4.5rem+env(safe-area-inset-top))] z-[60] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_20px_50px_rgba(15,23,42,0.14)] sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-[min(380px,calc(100vw-1.5rem))]"
+          className="fixed inset-x-3 top-[calc(4.5rem+env(safe-area-inset-top))] z-[60] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-overlay sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-[min(380px,calc(100vw-1.5rem))]"
         >
           <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
             <p className="flex items-center gap-1.5 text-sm font-bold text-slate-900">

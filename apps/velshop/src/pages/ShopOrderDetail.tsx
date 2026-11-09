@@ -632,7 +632,7 @@ export default function ShopOrderDetail() {
                     >
                       <div className={`h-2 overflow-hidden rounded-full ${toneStyle.track}`}>
                         <div
-                          className={`h-full rounded-full transition-all duration-1000 ease-linear ${toneStyle.fill}`}
+                          className={`h-full rounded-full transition-[width] duration-1000 ease-linear ${toneStyle.fill}`}
                           style={{ width: `${Math.max(1, Math.round(reservationProgress * 100))}%` }}
                         />
                       </div>

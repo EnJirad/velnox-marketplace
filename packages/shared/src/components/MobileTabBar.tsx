@@ -61,7 +61,7 @@ export function MobileTabBar({
         until === "lg" ? "lg:hidden" : "md:hidden",
       )}
     >
-      <div className="pointer-events-auto flex h-16 w-full max-w-md items-stretch rounded-2xl border border-slate-200/80 bg-white/95 shadow-[0_10px_34px_rgba(15,23,42,0.14)] backdrop-blur">
+      <div className="pointer-events-auto flex h-[4.25rem] w-full max-w-md items-stretch rounded-2xl border border-slate-200/80 bg-white/95 shadow-overlay backdrop-blur">
         {items.map((item) => {
           const Icon = item.icon;
           const active = item.activeMatch
@@ -94,7 +94,7 @@ export function MobileTabBar({
               </span>
               <span
                 className={cn(
-                  "text-[10px] leading-none",
+                  "text-[11px] leading-none",
                   active ? "font-semibold" : "font-medium",
                 )}
               >

@@ -180,7 +180,7 @@ export default function ShopWishlist() {
               return (
                 <div
                   key={row.id}
-                  className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white transition-all duration-200 hover:border-slate-300"
+                  className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white transition-[transform,border-color,box-shadow,background-color] duration-200 hover:border-slate-300"
                 >
                   <Link
                     to={`/products/${row.productId}`}

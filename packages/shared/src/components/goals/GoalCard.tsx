@@ -95,7 +95,7 @@ export function GoalCard({ goal, onEdit, onDelete, onRecordProgress }: GoalCardP
   const Icon = meta.icon;
 
   return (
-    <Card className="group flex flex-col gap-4 rounded-xl border-slate-200 bg-white p-5 shadow-none transition-shadow duration-200 hover:shadow-[0_12px_30px_rgba(15,23,42,0.06)]">
+    <Card className="group flex flex-col gap-4 rounded-xl border-slate-200 bg-white p-5 shadow-none transition-shadow duration-200 hover:shadow-float">
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
@@ -181,7 +181,7 @@ export function GoalCard({ goal, onEdit, onDelete, onRecordProgress }: GoalCardP
           aria-label={goal.title}
         >
           <div
-            className={`h-full rounded-full transition-all duration-500 ${
+            className={`h-full rounded-full transition-[width] duration-500 ${
               achieved ? "bg-emerald-500" : "bg-[#10B981]"
             }`}
             style={{ width: `${percent}%` }}

@@ -198,7 +198,7 @@ export function NotificationBell() {
             `absolute right-0` panel started ~80 px off-screen).
             Tablet/desktop (sm+): the anchored popover under the bell.
           */
-          className="fixed inset-x-3 top-[calc(4.5rem+env(safe-area-inset-top))] z-[60] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_20px_50px_rgba(15,23,42,0.14)] sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-[min(360px,calc(100vw-1.5rem))]"
+          className="fixed inset-x-3 top-[calc(4.5rem+env(safe-area-inset-top))] z-[60] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-overlay sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-[min(360px,calc(100vw-1.5rem))]"
         >
           {/* Header */}
           <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">

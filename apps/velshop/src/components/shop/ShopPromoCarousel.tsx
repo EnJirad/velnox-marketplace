@@ -200,7 +200,7 @@ export function ShopPromoCarousel({
               key={index}
               type="button"
               onClick={() => goToSlide(index)}
-              className={`w-2 h-2 rounded-full transition-all ${
+              className={`w-2 h-2 rounded-full transition-[width,background-color] duration-300 ${
                 index === currentIndex
                   ? "bg-emerald-500 w-5"
                   : "bg-slate-300 hover:bg-slate-400"

@@ -312,7 +312,7 @@ export function AnnouncementCarousel({
                 aria-label={t("announce.goTo", { index: i + 1 })}
                 aria-current={i === index}
                 className={cn(
-                  "pointer-events-auto h-1.5 rounded-full transition-all",
+                  "pointer-events-auto h-1.5 rounded-full transition-[width,background-color] duration-300",
                   i === index ? "w-5 bg-[#10B981]" : "w-1.5 bg-[#10B981]/30 hover:bg-[#10B981]/50",
                 )}
               />

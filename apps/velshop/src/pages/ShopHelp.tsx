@@ -130,7 +130,7 @@ export default function ShopHelp() {
 
       <main className="mx-auto w-full max-w-3xl px-4 py-8 sm:px-6 sm:py-10">
         {/* Hero */}
-        <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+        <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-soft">
           <div className="bg-gradient-to-r from-[#0f766e] via-[#10B981] to-[#34d399] px-6 py-8 sm:px-8">
             <p className="flex items-center gap-1.5 text-sm font-medium text-emerald-50">
               <Headphones className="size-4" />

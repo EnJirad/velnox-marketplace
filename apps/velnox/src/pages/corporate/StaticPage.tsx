@@ -35,7 +35,7 @@ function EcosystemCards() {
           href={app.href}
           target="_blank"
           rel="noreferrer"
-          className="group rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition-all hover:-translate-y-0.5 hover:border-emerald-200 hover:shadow-md"
+          className="group rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition-[transform,border-color,box-shadow] hover:-translate-y-0.5 hover:border-emerald-200 hover:shadow-md"
         >
           <div className="flex items-center justify-between">
             <span className="inline-flex size-10 items-center justify-center rounded-xl bg-slate-900 text-white">

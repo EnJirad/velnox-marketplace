@@ -74,6 +74,17 @@ export function ProductCard({ product, onOpen: _onOpen, onAdd: _onAdd, badgeLabe
           );
         })()}
         {/* V Badge removed per design decision — product cards no longer show the seller verification badge */}
+        {/* The discount lives ON the image, not in the price row: three numbers
+            side by side (price, struck-through price, -30%) made the price the
+            noisiest part of the card. Here it reads at a glance and the price row
+            keeps just two items. */}
+        {displayDiscountPercent != null && displayDiscountPercent > 0 && (
+          <span
+            className={`absolute left-1.5 top-1.5 rounded-md bg-red-600/95 px-1.5 py-0.5 font-semibold tabular-nums text-white backdrop-blur-sm ${compact ? "text-[10px]" : "text-[11px]"}`}
+          >
+            -{Math.round(displayDiscountPercent)}%
+          </span>
+        )}
         {onWishlist && (
           <button
             type="button"
@@ -101,22 +112,19 @@ export function ProductCard({ product, onOpen: _onOpen, onAdd: _onAdd, badgeLabe
           {product.name}
         </Link>
 
-        {/* Price */}
-        <div className={`flex items-baseline gap-1.5 ${compact ? "mt-0.5" : "mt-1.5"}`}>
-          <p className={`font-bold tabular-nums tracking-tight text-slate-900 ${compact ? "text-[13px]" : "text-base"}`}>
+        {/* Price — two numbers, never three (the badge moved to the image). */}
+        <div className={`flex items-baseline gap-1.5 ${compact ? "mt-0.5" : "mt-1"}`}>
+          <p className={`font-bold tabular-nums tracking-tight text-slate-900 ${compact ? "text-[13px]" : "text-[15px] sm:text-base"}`}>
             {formatBaht(displayPrice)}
           </p>
           {displayCompareAtPrice && displayCompareAtPrice > displayPrice && (
-            <span className={`tabular-nums text-slate-400 line-through ${compact ? "text-[10px]" : "text-xs"}`}>{formatBaht(displayCompareAtPrice)}</span>
-          )}
-          {displayDiscountPercent != null && displayDiscountPercent > 0 && (
-            <span className={`rounded bg-red-50 px-1 py-0.5 font-semibold text-red-600 ${compact ? "text-[9px]" : "text-[10px]"}`}>-{Math.round(displayDiscountPercent)}%</span>
+            <span className={`tabular-nums text-slate-400 line-through ${compact ? "text-[11px]" : "text-[11px] sm:text-xs"}`}>{formatBaht(displayCompareAtPrice)}</span>
           )}
         </div>
 
         {/* Rating + Sold */}
         {(hasReviews || sold > 0) && (
-          <p className={`mt-0.5 flex flex-wrap items-center gap-x-1 gap-y-0 text-slate-400 ${compact ? "text-[10px]" : "text-[11px]"}`}>
+          <p className={`flex flex-wrap items-center gap-x-1 text-[11px] leading-4 text-slate-400 ${compact ? "mt-0.5" : "mt-1"}`}>
             {hasReviews && (
               <span className="inline-flex items-center gap-0.5 text-slate-700">
                 <Star className="fill-amber-400 text-amber-400" style={{ width: compact ? 9 : 11, height: compact ? 9 : 11 }} />

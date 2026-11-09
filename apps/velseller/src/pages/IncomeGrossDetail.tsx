@@ -131,7 +131,7 @@ export default function IncomeGrossDetail() {
                 {periodData.map((d, i) => (
                   <div key={i} className="flex-1 flex flex-col items-center gap-1 h-full justify-end">
                     <span className="text-[10px] font-semibold tabular-nums text-slate-900">{formatBaht(d.value).replace("฿", "")}</span>
-                    <div className="w-full rounded-t-md bg-gradient-to-t from-emerald-500 to-emerald-300 transition-all"
+                    <div className="w-full rounded-t-md bg-gradient-to-t from-emerald-500 to-emerald-300 transition-[width]"
                       style={{ height: `${(d.value / maxVal) * 100}%` }} />
                     <span className="text-[9px] text-slate-400 truncate w-full text-center">{d.label}</span>
                   </div>

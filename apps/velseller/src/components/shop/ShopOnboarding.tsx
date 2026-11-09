@@ -166,7 +166,7 @@ export function ShopOnboarding({ onOpened }: ShopOnboardingProps) {
 
   return (
     <main className="mx-auto w-full max-w-2xl px-4 py-10 sm:px-6 sm:py-14">
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-[0_12px_30px_rgba(15,23,42,0.06)] sm:p-8">
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-float sm:p-8">
         <span className="flex size-12 items-center justify-center rounded-xl bg-[#ECFDF5]">
           <Store className="size-6 text-[#10B981]" aria-hidden="true" />
         </span>

@@ -399,7 +399,7 @@ export default function MyOrders() {
                 return (
                   <div
                     key={order.id}
-                    className="rounded-xl border border-slate-200 bg-white transition-all duration-200 hover:-translate-y-0.5 hover:border-[#10B981]/40 hover:shadow-[0_12px_30px_rgba(15,23,42,0.06)]"
+                    className="rounded-xl border border-slate-200 bg-white transition-[transform,border-color,box-shadow,background-color] duration-200 hover:-translate-y-0.5 hover:border-[#10B981]/40 hover:shadow-float"
                   >
                     {/*
                       Header: the order number on the LEFT, the status badge TOP RIGHT
@@ -522,7 +522,7 @@ export default function MyOrders() {
                                 >
                                   <div className={`h-1.5 overflow-hidden rounded-full ${RESERVATION_TONE_TRACK[tone]}`}>
                                     <div
-                                      className={`h-full rounded-full transition-all duration-1000 ease-linear ${RESERVATION_TONE_FILL[tone]}`}
+                                      className={`h-full rounded-full transition-[width] duration-1000 ease-linear ${RESERVATION_TONE_FILL[tone]}`}
                                       style={{ width: `${Math.max(1, Math.round(progress * 100))}%` }}
                                     />
                                   </div>

@@ -97,7 +97,7 @@ function GateCard({
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-[#F8FAFC] px-3 py-8 text-center sm:px-4">
       <div
-        className={`w-full rounded-2xl border border-slate-200 bg-white shadow-[0_12px_30px_rgba(15,23,42,0.06)] ${
+        className={`w-full rounded-2xl border border-slate-200 bg-white shadow-float ${
           wide ? "max-w-xl p-5 sm:p-8" : "max-w-md p-6 sm:p-8"
         }`}
       >

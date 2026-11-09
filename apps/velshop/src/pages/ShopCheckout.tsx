@@ -1220,7 +1220,7 @@ export default function ShopCheckout() {
       {/* ═══════════ Mobile fixed bottom CTA ═══════════ */}
       {checkoutCount > 0 && !syncing && !authLoading && (
         <div className="fixed inset-x-0 bottom-[calc(5rem+env(safe-area-inset-bottom))] z-30 px-3 lg:hidden">
-          <div className="mx-auto flex w-full max-w-md items-center justify-between gap-2 rounded-2xl border border-slate-200/80 bg-white/95 p-2.5 shadow-[0_10px_34px_rgba(15,23,42,0.16)] backdrop-blur sm:p-3">
+          <div className="mx-auto flex w-full max-w-md items-center justify-between gap-2 rounded-2xl border border-slate-200/80 bg-white/95 p-2.5 shadow-overlay backdrop-blur sm:p-3">
             <div className="min-w-0 shrink-0">
               <p className="text-[11px] text-slate-400">{t("checkout.total")}</p>
               <p className="text-lg font-bold tabular-nums tracking-tight text-slate-900">{quote ? formatBaht(Number(quote.total)) : "—"}</p>

@@ -97,7 +97,7 @@ export default function ShopCategories() {
               return (
                 <div
                   key={root.id}
-                  className="flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_12px_30px_rgba(15,23,42,0.07)]"
+                  className="flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white transition-[transform,border-color,box-shadow,background-color] duration-200 hover:-translate-y-0.5 hover:shadow-float"
                 >
                   <Link to={to} className="block">
                     <div className="flex h-24 items-center gap-4 bg-gradient-to-r from-[#0f766e] via-[#10B981] to-[#34d399] px-5">
@@ -148,7 +148,7 @@ export default function ShopCategories() {
               );
             })}
           {/* VelShop Verified card */}
-          <div className="flex flex-col overflow-hidden rounded-2xl border border-emerald-200 bg-white transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_12px_30px_rgba(16,185,129,0.1)]">
+          <div className="flex flex-col overflow-hidden rounded-2xl border border-emerald-200 bg-white transition-[transform,border-color,box-shadow,background-color] duration-200 hover:-translate-y-0.5 hover:shadow-float">
             <Link to="/products?verified=true" className="block">
               <div className="flex h-24 items-center gap-4 bg-gradient-to-r from-[#065f46] via-[#059669] to-[#10B981] px-5">
                 <span className="flex size-12 items-center justify-center rounded-[12px] bg-white/20 backdrop-blur">

@@ -111,7 +111,7 @@ export function ComposerImagePreview({
           <div className="space-y-1">
             <p className="text-[11px] text-slate-500">Uploading… {progress}%</p>
             <div className="h-1 w-full overflow-hidden rounded-full bg-slate-100">
-              <div className="h-full rounded-full bg-[#10B981] transition-all" style={{ width: `${progress}%` }} />
+              <div className="h-full rounded-full bg-[#10B981] transition-[width]" style={{ width: `${progress}%` }} />
             </div>
           </div>
         ) : (

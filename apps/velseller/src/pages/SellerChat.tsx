@@ -545,7 +545,7 @@ export default function SellerChat() {
           )}
         </div>
 
-        <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+        <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-soft">
           <div className="flex h-[calc(100dvh-210px)] min-h-[520px] flex-col md:h-[calc(100dvh-250px)] md:grid md:grid-cols-[minmax(0,340px)_1fr]">
             {/* ── Inbox ─────────────────────────────────────────────── */}
             <section
@@ -762,7 +762,7 @@ export default function SellerChat() {
                               <div key={m.id} className={cn("flex", mine ? "justify-end" : "justify-start")}>
                                 <div
                                   className={cn(
-                                    "max-w-[82%] rounded-2xl px-3.5 py-2 text-[14px] leading-6 shadow-[0_1px_2px_rgba(15,23,42,0.04)] sm:max-w-[72%]",
+                                    "max-w-[82%] rounded-2xl px-3.5 py-2 text-[14px] leading-6 shadow-soft sm:max-w-[72%]",
                                     mine
                                       ? "rounded-br-md bg-[#ECFDF5] text-slate-900"
                                       : "rounded-bl-md bg-slate-100 text-slate-800",

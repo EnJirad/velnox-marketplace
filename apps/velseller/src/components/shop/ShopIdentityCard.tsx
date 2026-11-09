@@ -173,7 +173,7 @@ export function ShopIdentityCard({ shop, verificationStatus, onUpdated }: ShopId
   return (
     <section
       aria-labelledby="shop-identity-name"
-      className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_12px_30px_rgba(15,23,42,0.05)]"
+      className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-float"
     >
       {/* Storefront banner: the seller's own cover, else the brand band. */}
       <div className="relative h-24 bg-[#ECFDF5] sm:h-32">

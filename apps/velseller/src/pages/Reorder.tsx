@@ -118,7 +118,7 @@ export default function Reorder() {
     const meta = PRODUCT_CATEGORY_META[s.product.category as keyof typeof PRODUCT_CATEGORY_META] ?? PRODUCT_CATEGORY_META.general;
     const conf = CONFIDENCE_META[s.confidence];
     return (
-      <div className="rounded-xl border border-slate-200 bg-white p-4 transition-all duration-200">
+      <div className="rounded-xl border border-slate-200 bg-white p-4 transition-[transform,border-color,box-shadow,background-color] duration-200">
         <div className="flex items-start gap-3">
           {s.product.primaryImage ? (
             <img

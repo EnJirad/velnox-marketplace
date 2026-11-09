@@ -251,7 +251,7 @@ function ConsentBanner({
       aria-label={t("cookies.title")}
       className="fixed inset-x-0 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-40 px-3 md:bottom-4 md:px-6"
     >
-      <div className="mx-auto flex w-full max-w-3xl flex-col gap-3 rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-[0_10px_34px_rgba(15,23,42,0.12)] backdrop-blur sm:flex-row sm:items-center sm:justify-between">
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-3 rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-overlay backdrop-blur sm:flex-row sm:items-center sm:justify-between">
         <p className="flex items-start gap-2 text-xs leading-5 text-slate-600 sm:max-w-md">
           <Cookie className="mt-0.5 size-4 shrink-0 text-[#10B981]" />
           {t("cookies.banner")}

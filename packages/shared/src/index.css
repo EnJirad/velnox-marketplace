@@ -16,6 +16,12 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+  /* ONE elevation vocabulary. Ad-hoc shadow-[...] values are what made
+     cards, pills and sheets look unrelated; these three are the only
+     heights the UI should use. */
+  --shadow-soft: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.06);
+  --shadow-float: 0 4px 12px -2px rgba(15, 23, 42, 0.08), 0 2px 6px -2px rgba(15, 23, 42, 0.05);
+  --shadow-overlay: 0 12px 40px -8px rgba(15, 23, 42, 0.18), 0 4px 12px -4px rgba(15, 23, 42, 0.10);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -127,12 +133,43 @@
   }
   html {
     overflow-x: hidden;
+    scroll-behavior: smooth;
+    /* Keep the sticky header from covering an anchored section. */
+    scroll-padding-top: 4.5rem;
+    -webkit-text-size-adjust: 100%;
   }
   body {
     @apply bg-background text-foreground;
     -webkit-tap-highlight-color: transparent;
     overflow-x: hidden;
     max-width: 100%;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overscroll-behavior-y: none;
+  }
+  /* Headlines break at word boundaries, never mid-word, and avoid orphans. */
+  h1, h2, h3 {
+    text-wrap: balance;
+  }
+  p, li {
+    text-wrap: pretty;
+  }
+  /* Motion is decoration here: every transition in the product is a colour,
+     opacity or small translate. People who ask the OS for less motion get none
+     of it, and nothing in the UI depends on an animation having finished. */
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
   }
   #root {
     width: 100%;
@@ -189,19 +226,15 @@ body {
 }
 
 /* ─── Global focus-visible styles — consistent keyboard navigation ────────
- * Every interactive element gets a visible emerald focus ring.
- * Components can opt out with `focus-visible:none` if they handle their own.
+ * NOTE (2026-11-09): the previous block wrote `outline: none` and then
+ * `ring: 2px; ring-color: …` — those are Tailwind UTILITY concepts, not CSS
+ * properties, so browsers dropped them. The result was the worst of both
+ * worlds: no native outline AND no replacement ring, i.e. keyboard focus was
+ * invisible everywhere (WCAG 2.4.7). This uses a real outline (which follows
+ * border-radius and needs no extra paint layer) so focus is always visible.
  * ────────────────────────────────────────────────────────────────────── */
 @layer components {
-  :focus-visible {
-    outline: none;
-    ring: 2px;
-    ring-color: var(--ring);
-    ring-offset: 2px;
-    ring-offset-color: var(--background);
-  }
-
-  /* Buttons, links, inputs, selects, tabs, dialogs */
+  :focus-visible,
   button:focus-visible,
   [role="button"]:focus-visible,
   a:focus-visible,
@@ -212,25 +245,20 @@ body {
   [role="dialog"]:focus-visible,
   [role="menuitem"]:focus-visible,
   [role="option"]:focus-visible {
-    outline: none;
-    ring: 2px;
-    ring-color: var(--ring);
-    ring-offset: 2px;
-    ring-offset-color: var(--background);
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
   }
 
   /* Cards and product grids — focus on the wrapper */
   .focus-card:focus-visible,
   .product-card:focus-visible,
   .order-row:focus-visible {
-    ring: 2px;
-    ring-color: var(--ring);
-    ring-offset: 2px;
-    ring-offset-color: var(--background);
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
     border-radius: var(--radius-lg);
   }
 
-  /* Skip link for accessibility */
+/* Skip link for accessibility */
   .skip-link {
     @apply absolute -top-10 left-4 z-50 px-4 py-2 bg-slate-900 text-white rounded-lg transition-transform;
   }

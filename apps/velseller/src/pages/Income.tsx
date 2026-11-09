@@ -147,7 +147,7 @@ export default function Income() {
                 { href: "/seller/income/commission", icon: BadgePercent, label: t("sellerDash.income.kpiFee"), value: `-${formatBaht(commission)}`, sub: t("sellerDash.income.kpiFeeSub"), color: "text-slate-600", bg: "bg-slate-50" },
                 { href: "/seller/income/payout", icon: Wallet, label: t("sellerDash.income.kpiPayout"), value: formatBaht(payout), sub: t("sellerDash.income.kpiPayoutSub"), color: "text-emerald-700", bg: "bg-emerald-50" },
               ].map(({ href, icon: Icon, label, value, sub, color, bg }) => (
-                <Link key={label} to={href} className="group rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 transition-all hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-md">
+                <Link key={label} to={href} className="group rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 transition-[transform,border-color,box-shadow] hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-md">
                   <span className={`flex size-9 items-center justify-center rounded-[10px] ${bg} ${color} mb-3`}>
                     <Icon className="size-4.5" />
                   </span>
@@ -192,7 +192,7 @@ export default function Income() {
                       <span className="text-[10px] font-semibold tabular-nums text-slate-900">
                         {formatBaht(d.value).replace("฿", "")}
                       </span>
-                      <div className="w-full rounded-t-md bg-gradient-to-t from-emerald-500 to-emerald-300 transition-all"
+                      <div className="w-full rounded-t-md bg-gradient-to-t from-emerald-500 to-emerald-300 transition-[width]"
                         style={{ height: `${(d.value / maxVal) * 100}%` }}
                       />
                       <span className="text-[9px] text-slate-400 truncate w-full text-center">{d.label}</span>
@@ -233,7 +233,7 @@ export default function Income() {
                       </span>
                     </div>
                     <div className="h-2.5 rounded-full bg-slate-100 overflow-hidden">
-                      <div className="h-full rounded-full bg-gradient-to-r from-emerald-400 via-amber-400 to-red-500 transition-all"
+                      <div className="h-full rounded-full bg-gradient-to-r from-emerald-400 via-amber-400 to-red-500 transition-[width]"
                         style={{ width: `${Math.min(returnRate * 5 * 100, 100)}%` }} />
                     </div>
                     <div className="flex justify-between text-[11px] text-slate-400 mt-1">

@@ -161,7 +161,7 @@ export default function IncomeReturnsDetail() {
                         <span className="text-[10px] font-semibold tabular-nums text-slate-900">
                           {retRate > 0 ? `${(retRate * 100).toFixed(1)}%` : "0%"}
                         </span>
-                        <div className="w-full rounded-t-md bg-gradient-to-t from-amber-400 to-red-500 transition-all"
+                        <div className="w-full rounded-t-md bg-gradient-to-t from-amber-400 to-red-500 transition-[width]"
                           style={{ height: `${Math.min(retRate * 100, 100)}%` }} />
                         <span className="text-[9px] text-slate-400 truncate w-full text-center">{d.label}</span>
                       </div>
