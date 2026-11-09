@@ -75,7 +75,7 @@ export function HorizontalRail({
 
   return (
     <section className={cn("border-b border-slate-100 bg-white", className)}>
-      <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6">
+      <div className="mx-auto w-full max-w-6xl px-4 py-5 sm:px-6 sm:py-6">
         <SectionHeader
           icon={icon}
           title={title}
@@ -104,7 +104,7 @@ export function HorizontalRail({
             role="list"
             aria-label={ariaLabel}
             onScroll={updateArrows}
-            className="flex snap-x gap-3 overflow-x-auto scroll-smooth pb-2 [scrollbar-width:thin] [-webkit-overflow-scrolling:touch]"
+            className="flex snap-x gap-3 overflow-x-auto scroll-smooth scrollbar-hide pb-2 [-webkit-overflow-scrolling:touch]"
           >
             {children}
           </div>

@@ -64,7 +64,7 @@ export default function ShopCategories() {
       <ShopHeader />
 
       <section className="border-b border-slate-100 bg-white">
-        <div className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6">
+        <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-10">
           <p className="flex items-center gap-1.5 text-sm font-medium text-slate-400">
             <LayoutGrid className="size-4 text-[#10B981]" />
             {t("categories.eyebrow")}
@@ -76,7 +76,7 @@ export default function ShopCategories() {
         </div>
       </section>
 
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-10 sm:px-6">
+      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6 sm:py-10">
         {loading ? (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {Array.from({ length: 6 }).map((_, i) => (

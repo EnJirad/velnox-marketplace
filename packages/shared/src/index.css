@@ -266,3 +266,18 @@ body {
     @apply top-4;
   }
 }
+
+/* ─── scrollbar-hide — a REAL utility ─────────────────────────────────────
+ * CategoryStrip and HorizontalRail were already writing `scrollbar-hide`, but
+ * Tailwind v4 does not ship that utility and nothing here defined it, so the
+ * class was inert: horizontal rails kept a native scrollbar under the cards.
+ * Declared at the top level (an `@utility` may not live inside `@layer`).
+ * ────────────────────────────────────────────────────────────────────── */
+@utility scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}

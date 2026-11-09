@@ -310,7 +310,7 @@ export default function ShopHome() {
 
       {/* Hero — Announcement Carousel (single slot, platform-level messages only) */}
       <section className="bg-white">
-        <div className="mx-auto w-full max-w-6xl px-4 pt-3 sm:px-6 sm:pt-4">
+        <div className="mx-auto w-full max-w-6xl px-4 pt-2.5 sm:px-6 sm:pt-3">
           <AnnouncementCarousel items={announcements} />
         </div>
       </section>
@@ -365,7 +365,7 @@ export default function ShopHome() {
       )}
 
       {/* Product Grid — Server-paginated via ProductGrid component */}
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6">
+      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6 sm:py-8">
         <ProductGrid
           initialProducts={products.slice(0, 8)}
           initialMeta={{ total: products.length, hasMore: products.length > 8 }}
