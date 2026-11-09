@@ -1,47 +1,53 @@
-# LATEST — 2026-11-08 · CRITICAL fix: customer order tracking 500
+# LATEST — 2026-11-09 · Logo rollout + handoff reconcile + production verified
 
-**Branch:** `main` · **HEAD:** `5a8359a` (origin/main, in sync) · **NOT pushed** (no commit made — task rule: ห้าม commit/push โดยไม่ได้รับอนุญาต, ค้าง fix)
+**Branch:** `main` · **HEAD:** `b5819df` (pushed, origin/main in sync)
 
 ## 1. สรุปงาน (Thai)
 
-แก้ bug CRITICAL: ลูกค้าที่ล็อกอินเปิด Order Details → Track Shipment แล้วเห็น
-**"ไม่พบออเดอร์ / Failed to fetch order"** ทั้งที่ออเดอร์มีอยู่จริง
-
-**สาเหตุจริง (VERIFIED จาก schema จริงของ production Neon):** ระบบ tracking
-(commit `96bbb74`) ขยาย query ของ `fetchShipmentsForOrder()` ให้เลือกคอลัมน์ใหม่ 6 ตัว
-บน `shipments` + `carrier_status` บน `tracking_events` **โดยไม่มี fallback** —
-แต่ production ยังไม่ถูก reconcile (ตรวจแล้ว: คอลัมน์ทั้งหมดไม่มีในตารางจริง)
-PostgreSQL ตอบ `42703 undefined_column` → ทั้งหน้า order detail เอา 500
-DB_ERROR → แสดง "ไม่พบออเดอร์" ทั้งที่ออเดอร์มีจริง
-
-**การแก้:** เพิ่ม fallback แบบเฉพาะเจาะจง — เฉพาะ error class `42703` / `42P01`
-(schema gap) เท่านั้นที่จะย้อนกลับไปใช้ projection เดิม (อ่าน order ได้เหมือนเดิม,
-คอลัมน์ใหม่เป็น null) ส่วน error อื่น rethrow เพื่อไม่ซ่อนความล้มเหลวจริง
-ครอบคลุม reader ทุกตำแหน่งที่อ่านคอลัมน์ใหม่ + ปรับการแสดง error ใน ShopTracking
-(แยก 401/403/404/5xx/network + ปุ่ม Retry ไม่แสดง backend error เป็น "ไม่พบออเดอร์")
+1. **โลโก้ Velnox ใหม่ใช้งานครบทุกเว็บ** — นำ `public/logo.svg` (Velnox V-mark สี
+   `#0F172A`) ที่มีอยู่แล้วมาใช้จริง: favicon ของทั้ง 4 แอป (velshop, velseller,
+   velcenter, velnox), `Logo.tsx` (LogoMark แบบ B: กล่องขาว + มาร์คเข้ม), และ
+   `packages/shared/src/assets/logo.svg` (ใช้ใน LogoDropdown)
+2. **แก้ velnox favicon ไม่แสดง** — โครงสร้างเดิม `public/public/` ซ้อน 2 ชั้น
+   ทำให้ไฟล์ไปอยู่ที่ `/public/logo.svg` แต่ `index.html` ชี้ `/logo.svg` → ย้าย
+   ขึ้นชั้นเดียว (commit `b5819df`)
+3. **ตรวจระบบ (audit)** — typecheck 4 แอปผ่าน, schema.sql vs run-sqleditor.sql
+   67 ตารางตรงกัน, Production Neon **verify แล้วว่า reconcile ครบ** (`shipments`
+   18 columns + `tracking_events.carrier_status`), tracking fallback test 5 pass
+4. **อัปเดตเอกสาร** — AI_HANDOFF.md / LATEST.md ถูกปรับเป็นสถานะจริง (งาน
+   tracking ที่ handoff เดิมระบุว่า "NOT pushed / BLOCKED" จริง ๆ เสร็จและถูก
+   push แล้ว จึงล้างความสับสนนี้ออก)
 
 ## 2. สถานะ
 
 | รายการ | สถานะ |
 |---|---|
-| Root cause | **VERIFIED** — production schema ตรวจจริง (shipments 12 col / tracking_events 5 col, ไม่มีคอลัมน์ tracking) |
-| Fix โค้ด | **FIXED** — fallback ทุกจุด + UI classification, test ผ่าน |
-| Migration DB จริง | **BLOCKED** — ต้องรัน `db/run-sqleditor.sql` ใน Neon SQL Editor (owner) |
-| Render logs | **BLOCKED** — ไม่มีสิทธิ์เข้า Render ใน environment นี้ |
+| Favicon/logo ทั้ง 4 เว็บ | ✅ ใช้งานใหม่ (commit `41fe884`, `b5819df`) |
+| velnox favicon URL `/logo.svg` | ✅ แก้โครงสร้าง public/ แล้ว, build แยกทั้ง 4 แอปผ่าน |
+| Typecheck 4 แอป | ✅ ผ่าน |
+| schema.sql ↔ run-sqleditor.sql | ✅ ตาราง 67/67 ตรง |
+| Production Neon tracking columns | ✅ reconcile แล้ว — verify 2026-11-09 ผ่าน Neon MCP |
+| tracking schema-fallback test | ✅ 5 pass (`order-read-schema-fallback.test.ts`) |
+| AI_HANDOFF / LATEST | ✅ อัปเดตสถานะจริง |
+| Stripe live | ⏸ ระงับ — owner สั่งรอให้อุปกรณ์พร้อมทดสอบก่อน |
 
 ## 3. ไฟล์ที่เปลี่ยน (งานนี้)
 
-- **Mod:** `backend/lib/order-read.ts` (fallback shipments+events), `backend/lib/tracking/shipment-repo.ts` (+`isSchemaGapError`, fallback), `backend/lib/tracking/tracking-service.ts` (events fallback), `backend/routes/tracking.ts` (admin search/detail fallback), `apps/velshop/src/pages/ShopTracking.tsx` (classification + Retry), i18n `th/en/my`
-- **Add:** `backend/tests/order-read-schema-fallback.test.ts`
+- **Add (จาก logo task ก่อนหน้า):** ใช้ `public/logo.svg` ใหม่ทุกจุด
+- **Move:** `apps/velnox/public/public/*` → `apps/velnox/public/` (4 ไฟล์)
+- **Mod:** `.ai/AI_HANDOFF.md`, `.ai/reports/LATEST.md`, (plus ไฟล์ logo จาก 2 commit
+  ก่อนหน้าในงานนี้: `Logo.tsx`, manifest ×3, favicon ×4, shared asset)
 
-## 4. Tests
+## 4. Tests / ตรวจสอบ
 
-- `order-read-schema-fallback.test.ts` → **5 pass** (fallback shipments/events/non-schema rethrow/repo/happy-path)
-- tracking batch + order consumers → 129 pass / 54 skip / **2 fail เดิม** (seller-order-ux pre-existing, ยืนยัน baseline แล้ว)
-- backend `tsc` clean (เฉพาะ error เดิม auth.ts) · 4 apps typecheck ✅ · i18n 2235×3 ✅ · `git diff --check` ✅ · velshop build ✅
+- `bun run typecheck` → 4/4 apps ผ่าน ✅
+- `bun test backend/tests/order-read-schema-fallback.test.ts` → 5 pass ✅
+- `git diff --check` → สะอาด ✅
+- Build พร้อม verify `dist/logo.svg` อยู่ root ทั้ง 4 แอป ✅
 
-## 5. ขั้นตอนถัดไป
+## 5. หมายเหตุ / BLOCKED
 
-1. รัน `db/run-sqleditor.sql` กับ production Neon (เพิ่ม 6 column + carrier_status + indexes) — หลังนี้ tracking refresh/adapter จะทำงานเต็มรูปแบบ
-2. ขออนุมัติ commit + push
-3. ตรวจ Render logs จริงของ request ที่ fail (เมื่อมีสิทธิ์)
+- Full test suite ยังมี pre-existing failures (Phase 2 UI overhaul, seller-order-ux,
+  cookie-store 0600) และ DB-gated suites skip ในเครื่อง (ไม่มี PostgreSQL local)
+- Stripe live: **ไม่ทดสอบ** จนกว่า owner จะสั่ง (อุปกรณ์ยังทดสอบจริงไม่ได้)
+- Responsive verify / CDP ยัง BLOCKED บน arm64

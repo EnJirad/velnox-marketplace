@@ -1,98 +1,37 @@
 # Velnox AI Handoff — Current State
 
-**Last verified:** 2026-11-08 · **Branch:** `main` · **HEAD:** `96bbb743` (pushed SHIPPING task) — icon-picker modal work below is UNCOMMITTED (task forbids commit/push without permission)
+**Last verified:** 2026-11-09 · **Branch:** `main` · **HEAD:** `b5819df` (pushed — logo/favicon task)
 
 ## 1. Current Project State
 
-**WORKING** — 4/4 apps typecheck, i18n parity (2215 × 3), all commits pushed to origin/main. NOTE: full `bun test tests` still has pre-existing failures from the in-progress Phase 2 UI overhaul (HomePromoStrip design, seller-order-ux source tests, cookie-store 0600 needs `.ai/secrets/browser-cookies.json`) — confirmed present on the baseline before the tracking work.
+**WORKING** — 4/4 apps typecheck, i18n parity, all commits pushed to origin/main. NOTE: full `bun test tests` still has pre-existing failures from the in-progress Phase 2 UI overhaul (HomePromoStrip design, seller-order-ux source tests, cookie-store 0600 needs `.ai/secrets/browser-cookies.json`) — confirmed present on the baseline before the tracking work. DB-gated suites skip locally (no disposable PostgreSQL).
 
 ### Active Tasks
-- **BUGFIX CRITICAL (2026-11-08): customer order tracking 500 "Failed to fetch order"** — **FIXED, NOT pushed** (rule: no commit without permission). Root cause VERIFIED: production Neon has NOT been reconciled — `shipments` lacks all 6 new tracking columns and `tracking_events` lacks `carrier_status`, while `fetchShipmentsForOrder()` selected them without a fallback → `42703` → 500 on every order detail. Fix: schema-gap-only fallback (42703/42P01) in all readers of the new columns + ShopTracking error classification (401/403/404/5xx/network) with Retry. Tests pass. **BLOCKED:** apply `db/run-sqleditor.sql` to production Neon (owner action, project workflow); Render logs unavailable. Details: `.ai/history/2026-11-08-customer-tracking-500.md`, `.ai/reports/LATEST.md`.
-- **Multi-carrier tracking (integrated)** — **implemented, NOT pushed** (no commit made — task rule forbids commit/push without permission). New `backend/lib/tracking/` (adapter contract + J&T/Flash/SPX/TNT adapters + normalizer + safe-fetch + repo + service with cache/dedup/cooldown), `backend/routes/tracking.ts` (customer/seller/admin), additive DB columns on `shipments` + `tracking_events` (schema.sql + run-sqleditor.sql in sync, reconciler tests pass), frontends extended (ShopTracking refresh UI, seller ship dialog carrier select + refresh, VelCenter Tracking tab), i18n th/en/my at parity. Carrier status: J&T BLOCKED (captcha), Flash BLOCKED (anti-bot), SPX UNSUPPORTED (internal portal API), TNT PARTIAL (public API verified working). Report: `.ai/reports/LATEST.md`. Full docs: `.ai/context/tracking.md`.
+- **BUGFIX CRITICAL (2026-11-08): customer order tracking 500 "Failed to fetch order"** — **RESOLVED** ✅. Root cause VERIFIED: `fetchShipmentsForOrder()` selected new tracking columns without a fallback → `42703` on an unreconciled production schema → 500 on every order detail. Fix: schema-gap-only fallback (42703/42P01) in all readers of the new columns + ShopTracking error classification (401/403/404/5xx/network) with Retry. Committed in `96bbb74` (shipping) + `6ab1ddc` (icons2), pushed. **Production Neon now reconciled & verified 2026-11-09 via Neon MCP** (`wandering-glitter-94857012`): `shipments` has all 18 columns incl. carrier_code/original_status/last_checked_at/last_error/tracking_confirmed, `tracking_events` has `carrier_status`. Tracking fallback test `backend/tests/order-read-schema-fallback.test.ts` → 5 pass.
+- **Multi-carrier tracking (integrated)** — committed + pushed. New `backend/lib/tracking/` (adapter contract + J&T/Flash/SPX/TNT adapters + normalizer + safe-fetch + repo + service with cache/dedup/cooldown), `backend/routes/tracking.ts`, additive DB columns on `shipments` + `tracking_events` (schema.sql + run-sqleditor.sql in sync, 67-tables match verified 2026-11-09), frontends extended (ShopTracking refresh UI, seller ship dialog carrier select + refresh, VelCenter Tracking tab), i18n th/en/my at parity. Carrier status: J&T BLOCKED (captcha), Flash BLOCKED (anti-bot), SPX UNSUPPORTED (internal portal API), TNT PARTIAL (public API verified working). Docs: `.ai/context/tracking.md`.
+- **Logo/favicon rollout (2026-11-09)** — ✅ committed + pushed:
+  - `41fe884` — use new Velnox V-mark (`public/logo.svg`, #0F172A) as favicon across velshop/velseller/velcenter/velnox + shared asset; `Logo.tsx` LogoMark now white box + dark V-mark (design B); fixed manifest icon refs that pointed at missing `logo.png` → `/logo.svg`.
+  - `b5819df` — fixed velnox `public/public/` double-nesting: files moved up one level so the favicon actually serves at `/logo.svg` (index.html already referenced it). All 4 apps build cleanly; `dist/logo.svg` at root of each build.
 - **Phase 2 UI/UX Overhaul** — **Group 1 complete** (shared components + VelShop homepage/products) ✅ VERIFIED
-  - **Group 2 in progress**: Created shared `ProductGrid` component (server-paginated, reusable) ✅
-    - Integrated into `ShopProducts.tsx` — replaces manual grid + pagination logic
-    - Typecheck + build PASS
+  - **Group 2 in progress**: Created shared `ProductGrid` component (server-paginated, reusable) ✅, integrated into `ShopProducts.tsx` ✅
   - Next: GalleryLightbox for Product Detail; integrate ProductGrid into ShopHome rails
-- **Icon library + category details (2026-11-08)** ✅ — full offline Iconify library wired into
-  VelCenter: 5 collections (lucide 2109 · mdi 7638 · tabler 6305 · ph 9161 · fa6-solid 1407 primary
-  icons) via `packages/shared/src/lib/icons/` (scaffolded at `7d06455`, now typecheck-fixed and
-  connected). CategoryIcon resolves `prefix:name` lazily (code-split chunks, offline); curated
-  Lucide fast-path + URLs preserved. Slug preview/copy/refresh removed. Product count badge moved
-  from the tree into a right-side details panel (Sheet; full width on mobile) showing published-
-  product count, status, dates, breadcrumb, children navigation and quick actions.
-  **Update (same day): icon picker is now a responsive modal** (was an overflowing dropdown) —
-  `IconifyIconPicker.tsx` rewritten on Radix Dialog: header title/desc/close/expand, search+clear,
-  collection chips, icon grid with dedicated preview container (no text overlap; `flex-shrink-0`,
-  fixed 48px box, name on its own line), temporary selection applied only on Confirm (cancel/ESC/
-  close discards), expand/collapse preserves query/collection/scroll/temp, pagination kept.
-  UNCOMMITTED (task forbids commit/push without permission). Report: `.ai/reports/LATEST.md`.
-  Browser E2E still BLOCKED (no local DB/R2; expired saved cookies).
+- **Icon library + category details (2026-11-08)** ✅ — full offline Iconify library wired into VelCenter (lucide/mdi/tabler/ph/fa6-solid) via `packages/shared/src/lib/icons/`; CategoryIcon resolves `prefix:name` lazily; category details panel (Sheet) with product count/status/dates/breadcrumb. Icon picker is a responsive Radix Dialog modal (search, collection chips, grid, confirm-only). Committed & pushed (`7d06455`, `5a8359a`, `6ab1ddc`).
 - Seller roadmap Part 2 (Orders / Order Detail re-verification) — **not started**.
-- Shipping P0 (fee + quote) — **implemented and committed**; production schema reconciled
-  2026-11-05 (money table + shop columns now exist in Neon).
-- **35.00 THB flat default per shop** is the owner-approved placeholder until a carrier
-  API exists (`PLATFORM_DEFAULT_FLAT_FEE`); per-shop `shops.shipping_fee` still wins.
-  Browser E2E of the checkout screen and the 15 DB-gated shipping tests are BLOCKED
-  (no disposable PostgreSQL on this device).
+- Shipping P0 (fee + quote) — **implemented and committed**; production schema reconciled 2026-11-05.
+- **35.00 THB flat default per shop** is the owner-approved placeholder until a carrier API exists (`PLATFORM_DEFAULT_FLAT_FEE`); per-shop `shops.shipping_fee` still wins. Checkout E2E + 15 DB-gated shipping tests BLOCKED (no disposable PostgreSQL).
 
 ### Important Unresolved Issues
-1. **No local PostgreSQL** — `initdb` hangs at "selecting default max_connections"
-[showing lines 1..25 of 120]
-   (Android), so every `TEST_DATABASE_URL`-gated suite skips here, including the new
-   `checkout-shipping-integrity.test.ts` and any local end-to-end purchase journey.
+1. **No local PostgreSQL** — `initdb` hangs on Android, so every `TEST_DATABASE_URL`-gated suite skips here. Escape hatch: GitHub Actions `test.yml` runs them on CI (push to origin = server-side verification).
 2. **Responsive verification BLOCKED** — CDP cannot install on android/arm64.
-3. **Production DB access is indirect** — no `psql` connection string for agents, but
-   production can be READ through the Neon MCP (`wandering-glitter-94857012`) and
-   WRITTEN only through the manual `production-db-migrate.yml` reconcile workflow.
-4. **Stripe live payments are NOT enabled** — the connected Stripe account is a
-   sandbox; production has test keys only. Real money needs live keys +
-   `STRIPE_MODE=live` + `STRIPE_ALLOW_LIVE=true` in Render (see
-   `.ai/context/payment.md` and `.ai/reports/LATEST.md` §10).
-4. **Impeccable engine BLOCKED** — `impeccable --version` fails with
-   `unexpected e_type: 2`; UI review falls back to `VELNOX_DESIGN_THEME.md` + craft-floor.
+3. **Production DB access is indirect** — no `psql` connection string; agents READ production via Neon MCP (`wandering-glitter-94857012`), WRITE only through manual `production-db-migrate.yml` reconcile workflow.
+4. **Stripe live payments are NOT enabled** — sandbox/test keys only. Real money needs live keys + `STRIPE_MODE=live` + `STRIPE_ALLOW_LIVE=true` in Render (see `.ai/context/payment.md`). **Owner deferred live-card testing until device can test it — do not test until owner asks.**
+5. **Impeccable engine BLOCKED** — `impeccable --version` fails (`unexpected e_type: 2`); UI review falls back to `VELNOX_DESIGN_THEME.md` + craft-floor.
 
 ### Important Recent Decisions
-- **AI Office Sequential Stabilization (Phases 1-2) — 2026-11-05** — **PASS** ✅
-  - Phase 1: Fixed CI blocker in `backend/routes/seller-intelligence.ts` — added missing imports for `computePurchaseStats`, `estimatedNextPurchase`, `reorderConfidence` from `seller-stats.ts`. All typechecks pass.
-  - Phase 2: Repaired scheduler lifecycle in `.ai/office/scheduler/request-scheduler.ts`:
-    * Store `AbortController` reference (not just `AbortSignal`) for proper cancellation
-    * Added `_slotReleased` flag to prevent double-release of active slot
-    * Added `_retryPending` flag for proper retry handling
-    * Fixed `cancel()` and `cancelActive()` to use `abortController.abort()`
-    * Fixed `releaseSlot()` to check `_slotReleased` before releasing
-    * Fixed `handleError()` to properly re-queue with `_slotReleased=false` for retries
-    * Fixed `fromJSON()` to restore `AbortController` and new flags
-  - All 14 scheduler tests pass (concurrency=1, FIFO, cancellation, retry/backoff, persistence)
-  - Database sync: Added missing `status` and `commission_rate` columns to `shops` table in `db/run-sqleditor.sql` to match `db/schema.sql`
-  - Commit `48b8f34` pushed to origin/main; local HEAD == remote HEAD verified
-- **Stripe live mode is now an explicit opt-in (2026-11-05).** Production runs
-  Stripe **test mode** (`/api/stripe/configured` → `mode:"test"`), so real cards /
-  real PromptPay cannot complete — that was the reported “cannot pay”. A live key is
-  used only with `STRIPE_ALLOW_LIVE=true` (or `1`) **and** `STRIPE_MODE=live` plus a
-  webhook secret (`backend/lib/payment-config.ts`). Storefront shows
-  `checkout.testModeNotice` while mode is `test`. A production test-mode round trip
-  (quote ฿35 → order ฿384.30 → `cs_test_…` session) was executed and the test order
-  cancelled; the hosted card form could not be completed here (hidden browser).
-- **Shipping is server-priced (2026-11-05).** One flat fee per shop shipment
-  (`shops.shipping_fee`; NULL = platform default `SHIPPING_FLAT_FEE_THB` or 35.00,
-  0 = free; optional `free_shipping_threshold`). Quotes live in `shipping_quotes`
-  (15 min TTL, cart + address fingerprint, single use). Checkout refuses every
-  client money field and persists `subtotal − discount + shipping_fee`; a supplied
-  quote is rejected when stale/expired/foreign, and a missing one is minted server-side.
-  Production was missing the whole shipping schema until the 2026-11-05 reconcile
-  (`pg_constraint.constraint_schema` guards aborted every earlier run); that is the
-  cause of the reported checkout error "Could not calculate shipping for this cart".
-- **Seller Part 1 shipped (2026-11-04).** My Shop split into `components/shop/*`
-  (`ShopOnboarding`, `ShopIdentityCard`, `ShopVerificationDialog`); all seller-shop
-  copy lives in `sellerDash.shop.*` (0 inline Thai left); `PATCH /api/seller/shop`
-  now has a UI for name/description/phone. Report: `.ai/reports/LATEST.md`.
-- **AI Office fast-start (2026-11-04).** Startup is one page: `.ai/office/QUICK_START.md`. Task routing T1/T2/T3 is auto-selected; T1 skips AI 02 planning.
-- **Essential safety rules are always loaded** from `.ai/office/ESSENTIAL_RULES.md` at every level — including T1. T1 skips the full rulebook, never the safety rules.
-- **One canonical report:** `.ai/reports/LATEST.md`, overwritten per task. No dated report archive; git history is the durable record.
-- **Compact handoff** (this file). The pre-compaction 105 KB handoff is preserved verbatim at `.ai/history/archive/AI_HANDOFF_2026-11-02_FULL.md`.
-- Announcement carousel: active slide loads `eager` (was `lazy`), which fixed the invisible banner image.
-- VelCenter mobile nav offset fixed; drawer root cause resolved.
+- **Stripe live mode is an explicit opt-in (2026-11-05).** Production runs Stripe **test mode**; real cards / real PromptPay cannot complete. Live key used only with `STRIPE_ALLOW_LIVE=true` **and** `STRIPE_MODE=live` plus webhook secret (`backend/lib/payment-config.ts`). Owner decision (2026-11-09): do not run live-card tests until owner says the device can test.
+- **Shipping is server-priced (2026-11-05).** One flat fee per shop shipment; quotes in `shipping_quotes` (15 min TTL, single use). Checkout refuses every client money field.
+- **One canonical report:** `.ai/reports/LATEST.md`, overwritten per task. Dated records in `.ai/history/`, archive index in `.ai/history/AI_Handoff_Archive.md`.
+- **Compact handoff** (this file). Pre-compaction 105 KB handoff preserved at `.ai/history/archive/AI_HANDOFF_2026-11-02_FULL.md`.
 
 ---
 
@@ -124,9 +63,7 @@
 
 - `TEST_DATABASE_URL` is the only database a test may write to; DB tests **skip** when unset.
 - `DATABASE_URL` points at production Neon — never write to it from a test.
-- `bun run lint` now runs real ESLint (`eslint .`) and `bun run format` runs `prettier --check .`
-  (wired 2026-11-09, commit `6a2543e`). Both report the repo's pre-existing style debt
-  (1061 eslint problems, many prettier-formattable files) — they are tools, not a clean bill of health.
+- `bun run lint` runs real ESLint (`eslint .`) and `bun run format` runs `prettier --check .` (wired 2026-11-09, commit `6a2543e`). Both report the repo's pre-existing style debt (1061 eslint problems, many prettier-formattable files) — they are tools, not a clean bill of health.
 
 ---
 
