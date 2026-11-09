@@ -164,18 +164,29 @@ describe("typing is ephemeral, authorized and addressed", () => {
 
 describe("messenger rendering: side, ticks and system bubble", () => {
   const MESSAGE_LIB = "packages/shared/src/lib/chat-message.ts";
+  const CONVERSATION = "packages/shared/src/components/chat/chat-conversation.tsx";
 
-  test("one shared ownership rule drives every surface", () => {
-    // The rule lives in ONE module and all three apps import it, so they can no
-    // longer disagree about which side a bubble belongs on.
+  test("one shared renderer and one ownership rule drive every surface", () => {
+    // The rule lives in ONE module…
     const lib = read(MESSAGE_LIB);
     expect(lib).toContain("export function isOwnMessage");
     expect(lib).toContain("export function isSystemMessage");
     expect(lib).toContain("export function messageSide");
     expect(lib).toContain("export function mergeIncomingMessage");
+
+    // …and the BUBBLE itself is rendered in exactly one place now. The three
+    // pages used to each own a copy of the markup (three chances to disagree
+    // about side, ticks, grouping and system rows); the redesign moved the
+    // thread body into the shared renderer and the pages pass data to it.
+    const shared = read(CONVERSATION);
+    expect(shared).toContain("isOwnMessage(m, meId)");
+    expect(shared).toContain("isSystemMessage(m)");
+    expect(shared).toContain('mine ? "justify-end" : "justify-start"');
     for (const src of [read(SHOP_CHAT), read(SELLER_CHAT), read(CENTER_CHAT_UI)]) {
-      expect(src).toContain("isOwnMessage(m,");
-      expect(src).toContain('mine ? "justify-end" : "justify-start"');
+      expect(src).toContain("ChatConversation");
+      expect(src).toContain("@velnox/shared/components/chat/chat-conversation");
+      // No page may re-grow its own bubble markup beside the shared one.
+      expect(src).not.toContain('mine ? "justify-end" : "justify-start"');
       // The old per-app comparison is gone: it is what let a message with a NULL
       // sender be attributed to the viewer.
       expect(src).not.toContain("m.senderId === ");
@@ -183,21 +194,30 @@ describe("messenger rendering: side, ticks and system bubble", () => {
   });
 
   test("✓ means stored, ✓✓ means read, and only on my own messages", () => {
+    const shared = read(CONVERSATION);
+    expect(shared).toContain("read ? (");
+    expect(shared).toContain("<CheckCheck");
+    expect(shared).toContain("<Check ");
+    // Ticks exist only inside `mine &&` — an incoming bubble never shows one.
+    expect(shared).toMatch(/mine && \(/);
+    // A read receipt is still applied by the shared helper, never inline, so the
+    // pages keep merging server state the same way.
     for (const src of [read(SHOP_CHAT), read(SELLER_CHAT), read(CENTER_CHAT_UI)]) {
-      expect(src).toContain("m.readAt != null ? (");
-      expect(src).toContain("<CheckCheck");
-      expect(src).toContain("<Check\n");
-      // A read receipt is applied by the shared helper, never inline.
       expect(src).toContain("applyReadReceipt(prev,");
     }
   });
 
-  test("system messages are LEFT, distinct and tick-free", () => {
+  test("system messages are notes, never bubbles, and never carry a tick", () => {
+    const shared = read(CONVERSATION);
+    // One system-note primitive: centred, muted, annotated for screen readers.
+    expect(shared).toContain("ChatSystemNote");
+    expect(shared).toContain('role="note"');
+    expect(shared).toContain("if (isSystemRow(m))");
+    // The note is rendered BEFORE the bubble branch, and the bubble branch is the
+    // only place a tick can appear — so a system row cannot reach it.
+    expect(shared.indexOf("isSystemRow(m)")).toBeLessThan(shared.indexOf("<ChatBubble"));
     for (const src of [read(SHOP_CHAT), read(SELLER_CHAT), read(CENTER_CHAT_UI)]) {
-      expect(src).toContain("if (isSystemMessage(m))");
-      expect(src).toContain("border-dashed");
-      // The platform's own message is INCOMING: never centred, never right.
-      expect(src).not.toContain('<div key={m.id} className="flex justify-center">');
+      expect(src).not.toContain("border-dashed");
     }
   });
 });

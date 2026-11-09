@@ -99,9 +99,10 @@ describe("unified chat is one core, not parallel systems", () => {
       // Incoming messages are deduped by id through the ONE shared helper — the
       // API reply and the socket broadcast must render a single bubble.
       expect(src).toContain("mergeIncomingMessage(prev, message)");
-      // Ownership and system classification come from that same shared module.
-      expect(src).toContain("isOwnMessage(m,");
-      expect(src).toContain("isSystemMessage(m)");
+      // Ownership and system classification are NOT re-derived per page: the
+      // shared thread renderer applies them (chat-conversation.tsx reads
+      // isOwnMessage/isSystemMessage from lib/chat-message.ts).
+      expect(src).toContain("ChatConversation");
     }
     expect(read(CENTER_PAGE)).toContain('subscribeChatChannel("product:updated")');
     expect(read(API_ROUTES)).toContain('apiGetFresh("/api/center/chat/unread")');

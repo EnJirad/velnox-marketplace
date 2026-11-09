@@ -7,10 +7,9 @@ import { formatBaht, formatLocaleTime, formatRelativeTime } from "@velnox/shared
 import { connectChatSocket, onChatEvent, onChatReconnect, sendChatCommand } from "@velnox/shared/lib/chat-socket";
 import { useChatTyping } from "@velnox/shared/lib/chat-typing";
 import { applyReadReceipt, isOwnMessage, isSystemMessage, mergeIncomingMessage } from "@velnox/shared/lib/chat-message";
-import { buildTimeline } from "@velnox/shared/lib/chat-timeline";
 import { validateChatImage, uploadChatImage } from "@velnox/shared/lib/chat-attachment";
-import { ChatImageMessage } from "@velnox/shared/components/chat/chat-image";
 import { ChatComposer } from "@velnox/shared/components/chat/chat-composer";
+import { ChatConversation } from "@velnox/shared/components/chat/chat-conversation";
 import {
   ChatConversationRow,
   ChatFilterTabs,
@@ -718,94 +717,21 @@ export default function SellerChat() {
                             </button>
                           </div>
                         )}
-                        {messages.length === 0 ? (
-                          <div className="py-12 text-center">
-                            <p className="text-sm text-slate-500">{t("chat.emptyTitle")}</p>
-                            <p className="mt-1 text-xs text-slate-400">{t("chat.emptyDesc")}</p>
-                          </div>
-                        ) : (
-                          buildTimeline(messages, {
-                            locale: lang === "th" ? "th-TH" : lang === "my" ? "my-MM" : "en-GB",
-                          }).map((entry) => {
-                            if (entry.kind === "date") {
-                              return (
-                                <div key={`day-${entry.key}`} className="flex justify-center py-2 first:pt-0">
-                                  <span className="text-[11px] font-medium text-slate-400">{entry.label}</span>
-                                </div>
-                              );
-                            }
-                            const m = entry.message;
-                            // A SYSTEM message is ALWAYS incoming: the platform spoke,
-                            // not this viewer, so it sits on the LEFT with a distinct
-                            // muted bubble and never carries a read tick.
-                            if (isSystemMessage(m)) {
-                              return (
-                                <div key={m.id} className="flex justify-start">
-                                  <div
-                                    role="note"
-                                    aria-label={t("chat.systemMessage")}
-                                    className="flex max-w-[85%] items-start gap-2 rounded-2xl rounded-bl-md border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-[13px] leading-6 text-slate-600"
-                                  >
-                                    <Star className="mt-1 size-3.5 shrink-0 text-emerald-500" aria-hidden="true" />
-                                    <span className="min-w-0">
-                                      <span className="block whitespace-pre-wrap break-words">{m.body}</span>
-                                      <span className="mt-0.5 block text-[11px] text-slate-400">
-                                        {formatLocaleTime(m.createdAt, lang)}
-                                      </span>
-                                    </span>
-                                  </div>
-                                </div>
-                              );
-                            }
-                            const mine = isOwnMessage(m, user?.id);
-                            return (
-                              <div key={m.id} className={cn("flex", mine ? "justify-end" : "justify-start")}>
-                                <div
-                                  className={cn(
-                                    "max-w-[82%] rounded-2xl px-3.5 py-2 text-[14px] leading-6 shadow-soft sm:max-w-[72%]",
-                                    mine
-                                      ? "rounded-br-md bg-[#ECFDF5] text-slate-900"
-                                      : "rounded-bl-md bg-slate-100 text-slate-800",
-                                  )}
-                                >
-                                  {m.attachmentUrl && (
-                                    <div className="mb-1">
-                                      <ChatImageMessage
-                                        url={m.attachmentUrl}
-                                        alt={t("chat.imageAlt")}
-                                        label={t("chat.viewImage")}
-                                      />
-                                    </div>
-                                  )}
-                                  {m.body && <p className="whitespace-pre-wrap break-words">{m.body}</p>}
-                                  <div
-                                    className={cn(
-                                      "mt-1 flex items-center justify-end gap-1 text-[11px] tabular-nums",
-                                      mine ? "text-emerald-800/60" : "text-slate-400",
-                                    )}
-                                  >
-                                    <span>{formatLocaleTime(m.createdAt, lang)}</span>
-                                    {/* ✓ = stored by the server; ✓✓ = the other side read it. */}
-                                    {mine &&
-                                      (m.readAt != null ? (
-                                        <CheckCheck
-                                          role="img"
-                                          aria-label={t("chat.seen")}
-                                          className="size-3"
-                                        />
-                                      ) : (
-                                        <Check
-                                          role="img"
-                                          aria-label={t("chat.sent")}
-                                          className="size-3"
-                                        />
-                                      ))}
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })
-                        )}
+                        <ChatConversation
+                          messages={messages}
+                          meId={user?.id}
+                          locale={lang === "th" ? "th-TH" : lang === "my" ? "my-MM" : "en-GB"}
+                          labels={{
+                            formatTime: (ms) => formatLocaleTime(ms, lang),
+                            imageAlt: t("chat.imageAlt"),
+                            viewImage: t("chat.viewImage"),
+                            systemMessage: t("chat.systemMessage"),
+                            readLabel: t("chat.seen"),
+                            deliveredLabel: t("chat.sent"),
+                          }}
+                          emptyTitle={t("chat.emptyTitle")}
+                          emptyDesc={t("chat.emptyDesc")}
+                        />
                       </>
                     )}
                   </div>

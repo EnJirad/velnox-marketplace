@@ -39,8 +39,8 @@ import {
   isSystemMessage,
   mergeIncomingMessage,
 } from "@velnox/shared/lib/chat-message";
-import { buildTimeline, groupCorners } from "@velnox/shared/lib/chat-timeline";
-import { ChatImageMessage } from "@velnox/shared/components/chat/chat-image";
+
+import { ChatConversation } from "@velnox/shared/components/chat/chat-conversation";
 import { ChatComposer } from "@velnox/shared/components/chat/chat-composer";
 import { ChatSearchField } from "@velnox/shared/components/chat/chat-inbox";
 import { validateChatImage, uploadChatImage } from "@velnox/shared/lib/chat-attachment";
@@ -963,100 +963,21 @@ export default function ChatManagement() {
                         โหลดข้อความก่อนหน้า
                       </button>
                     )}
-                    {messages.length === 0 ? (
-                      <div className="py-12 text-center">
-                        <p className="text-sm text-slate-500">ยังไม่มีข้อความ</p>
-                        <p className="mt-1 text-xs text-slate-400">เริ่มบทสนทนาได้จากช่องด้านล่าง</p>
-                      </div>
-                    ) : (
-                      buildTimeline(messages, {
-                        locale: lang === "th" ? "th-TH" : lang === "my" ? "my-MM" : "en-GB",
-                      }).map((entry) => {
-                        if (entry.kind === "date") {
-                          return (
-                            <div key={`day-${entry.key}`} className="flex justify-center py-2">
-                              <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-500">
-                                {entry.label}
-                              </span>
-                            </div>
-                          );
-                        }
-                        const m = entry.message;
-                        // System message (daily support acknowledgment): ALWAYS
-                        // incoming, so left, muted, and never carries a tick.
-                        if (isSystemMessage(m)) {
-                          return (
-                            <div key={m.id} className="flex justify-start">
-                              <div
-                                role="note"
-                                aria-label={t("chat.systemMessage")}
-                                className="max-w-[86%] rounded-2xl rounded-bl-md border border-dashed border-slate-300 bg-slate-50 px-3.5 py-2.5 text-xs leading-5 text-slate-500"
-                              >
-                                {m.attachmentUrl && (
-                                  <div className="mb-1.5">
-                                    <ChatImageMessage url={m.attachmentUrl} alt={t("chat.imageAlt")} label={t("chat.viewImage")} />
-                                  </div>
-                                )}
-                                {m.body ? <p className="whitespace-pre-line break-words">{m.body}</p> : null}
-                                <p className="mt-1 text-[11px] text-slate-400">
-                                  {formatLocaleTime(m.createdAt, lang)}
-                                </p>
-                              </div>
-                            </div>
-                          );
-                        }
-                        const mine = isOwnMessage(m, userId);
-                        return (
-                          <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
-                            <div
-                              className={`max-w-[78%] px-3.5 py-2.5 text-sm leading-6 ${
-                                groupCorners(entry.firstOfGroup, entry.lastOfGroup, mine)
-                              } ${
-                                mine
-                                  ? "rounded-br-md bg-[#ECFDF5] text-slate-900"
-                                  : "rounded-bl-md bg-slate-100 text-slate-800"
-                              }`}
-                            >
-                              {/* THE ROOT-CAUSE FIX: a normal (non-system) bubble
-                                  must render its attachment too. Before this the
-                                  image was drawn only inside the system-message
-                                  branch, so customer/seller photos arrived as a
-                                  message with no visible media in VelCenter. */}
-                              {m.attachmentUrl ? (
-                                <div className="mb-1.5">
-                                  <ChatImageMessage
-                                    url={m.attachmentUrl}
-                                    alt={t("chat.imageAlt")}
-                                    label={t("chat.viewImage")}
-                                  />
-                                </div>
-                              ) : null}
-                              {m.body ? (
-                                <p className="whitespace-pre-line break-words">{m.body}</p>
-                              ) : null}
-                              <p className={`mt-1 flex items-center gap-1 text-[11px] ${mine ? "text-emerald-800/60" : "text-slate-400"}`}>
-                                <span>{formatLocaleTime(m.createdAt, lang)}</span>
-                                {/* ✓ = stored by the server; ✓✓ = the other side read it. */}
-                                {mine &&
-                                  (m.readAt != null ? (
-                                    <CheckCheck
-                                      role="img"
-                                      aria-label={t("chat.read")}
-                                      className="size-3 text-sky-200"
-                                    />
-                                  ) : (
-                                    <Check
-                                      role="img"
-                                      aria-label={t("chat.sent")}
-                                      className="size-3 text-emerald-50/70"
-                                    />
-                                  ))}
-                              </p>
-                            </div>
-                          </div>
-                        );
-                      })
-                    )}
+                    <ChatConversation
+                      messages={messages}
+                      meId={user?.id}
+                      locale={lang === "th" ? "th-TH" : lang === "my" ? "my-MM" : "en-GB"}
+                      labels={{
+                        formatTime: (ms) => formatLocaleTime(ms, lang),
+                        imageAlt: t("chat.imageAlt"),
+                        viewImage: t("chat.viewImage"),
+                        systemMessage: t("chat.systemMessage"),
+                        readLabel: t("chat.seen"),
+                        deliveredLabel: t("chat.sent"),
+                      }}
+                      emptyTitle="ยังไม่มีข้อความ"
+                      emptyDesc="เริ่มบทสนทนาได้จากช่องด้านล่าง"
+                    />
                   </>
                 )}
                 {typingUserIds.length > 0 && (

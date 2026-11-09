@@ -28,20 +28,26 @@ const CENTER_UI = "apps/velcenter/src/components/ChatManagement.tsx";
 const SHOP_UI = "apps/velshop/src/pages/ShopChat.tsx";
 const SELLER_UI = "apps/velseller/src/pages/SellerChat.tsx";
 
-describe("VelCenter renders chat images in every bubble", () => {
-  test("the normal bubble carries the shared image renderer, not only the system branch", () => {
-    const src = read(CENTER_UI);
-    // Two render sites: the system/automated bubble AND the human bubble.
-    const renders = src.split("<ChatImageMessage").length - 1;
-    expect(renders).toBeGreaterThanOrEqual(2);
-    // The human bubble guards an empty body (image-only messages are legal).
-    expect(src).toContain("{m.body ? (");
-    expect(src).toContain("THE ROOT-CAUSE FIX");
+const CONVERSATION = "packages/shared/src/components/chat/chat-conversation.tsx";
+
+describe("chat images render through one viewer, in every bubble", () => {
+  test("the shared bubble carries the image renderer once, for every sender", () => {
+    const shared = read(CONVERSATION);
+    // ONE render site now serves both the human and the system row, because the
+    // thread body itself is shared — the drift this test was written about
+    // (VelCenter's human bubble silently losing images) cannot recur per app.
+    expect(shared).toContain("<ChatImageMessage");
+    // An image-only message is legal: the body is optional around the image.
+    expect(shared).toContain("message.body && (");
+    expect(shared).toContain("{message.attachmentUrl && (");
   });
 
-  test("all three surfaces use the same viewer component", () => {
+  test("all three surfaces render the shared thread body", () => {
     for (const page of [SHOP_UI, SELLER_UI, CENTER_UI]) {
-      expect(read(page)).toContain("<ChatImageMessage");
+      const src = read(page);
+      expect(src).toContain("<ChatConversation");
+      // No page keeps a private image renderer beside the shared one.
+      expect(src).not.toContain("<ChatImageMessage");
     }
   });
 });
