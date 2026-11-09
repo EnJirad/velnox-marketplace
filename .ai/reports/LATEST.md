@@ -61,13 +61,17 @@
 
 ## ยังไม่ได้ทำ / ต้องตัดสินใจ
 
-- **DB-gated suites (425 skip)** — ต้องรันบน CI (disposable PostgreSQL) ไม่สามารถรันในเครื่อง Android นี้
+- **263 DB-gated tests ตกบน CI — มีมาก่อนแล้ว ถูกซ่อนอยู่หลัง typecheck ที่ตก** หลักฐาน: run `42631233940` (`6bdd203`) และ `42555549049` (`73fff9c`) ตกที่ step *Typecheck apps and backend* → step test ถูก `skipped` ทั้งหมด; หลังซ่อม typecheck รอบ `42632216207` (`8c695d0`) จึงรันเทสต์จริงและพบ 263 เคสตก
+- **สถานะแวดล้อมที่กันการซ่อมในเครื่อง (พิสูจน์แล้วทั้งสองทาง)**
+  1. **Neon branch ใช้เป็น TEST_DATABASE_URL ไม่ได้** — ทดลองจริง 2026-11-09: สร้าง branch `test-disposable-20261109`, สร้าง role `ci_runner`, สร้าง database `velnox_test` ที่ว่าง และ bootstrap `db/run-sqleditor.sql` สำเร็จ (67 tables) แต่ `backend/tests/setup.ts` → `assertTestDatabaseIsSafe()` **ปฏิเสธ host `*.neon.tech` โดยเจตนา** (`TestDatabaseRefusedError: REFUSING TEST AGAINST PRODUCTION DATABASE`) → ลบ branch + role + credential ท้องถิ่นทิ้งแล้ว ไม่มีอะไรค้างบน Neon
+  2. **PostgreSQL ท้องถิ่นยังรันไม่ได้** — ติดตั้ง `postgresql` 18.6 จาก repo สำเร็จ แต่ `initdb` ล้มด้วย `library "libicui18n.so.79" not found` ขณะที่ prefix มี ICU 78.3 และ `pkg_install libicu` ตอบ "already installed" โดยไม่ซ่อมไฟล์ (metadata เพี้ยน) → ต้องแก้ ICU ก่อนหรือรอ upstream
+- ด้วยเหตุนี้ **การซ่อม 263 เคสต้องวนผ่าน CI** (รอบละ ~2-3 นาที) ต้องจัดเป็นงานแยกเป็นชุดตาม subsystem ไม่ใช่งานรอบเดียว
 - **Seed ข้อมูล demo** — production มีสินค้าจริงเพียง 1 ชิ้น (published) + 1 ชิ้น suspended, ร้าน 2, หมวด 96 → ต้องตัดสินใจว่าจะ seed เข้า production หรือไม่ (เป็นการเขียนข้อมูล production)
 - **Stripe live** — ยัง test mode; ต้องใช้ live keys + `STRIPE_MODE=live` + `STRIPE_ALLOW_LIVE=true` (owner action)
 
 ## Next
 
-1. Push แล้วรอ CI รอบใหม่ยืนยันว่าแดง→เขียว
-2. Owner ตัดสินใจเรื่อง seed ข้อมูล (จำนวน/หมวด/แหล่งรูป)
-3. Owner เปิด Stripe live เมื่อพร้อมทดสอบการ์ดจริง
-4. ⚠️ ตรวจกับ session ก่อนเรื่อง "migration runner" — ไฟล์ `backend/scripts/migrate.ts` **ไม่มีในรีโป** (ดู `.ai/AI_HANDOFF.md` §Active Tasks)
+1. ตรวจกับ session ก่อนเรื่อง "migration runner" — ไฟล์ `backend/scripts/migrate.ts` **ไม่มีในรีโป** (ดู `.ai/AI_HANDOFF.md` §Active Tasks)
+2. ตัดสินใจว่าจะซ่อม 263 DB-gated tests แบบเป็นชุดผ่าน CI หรือพักไว้ — แนะนำเรียงตามความเสี่ยง: payment/checkout → shipment/inventory → auth/seller/admin → chat
+3. Owner ตัดสินใจเรื่อง seed ข้อมูล (จำนวน/หมวด/แหล่งรูป)
+4. Owner เปิด Stripe live เมื่อพร้อมทดสอบการ์ดจริง

@@ -28,7 +28,10 @@
 4. **Stripe live payments are NOT enabled** — sandbox/test keys only. Real money needs live keys + `STRIPE_MODE=live` + `STRIPE_ALLOW_LIVE=true` in Render (see `.ai/context/payment.md`). **Owner deferred live-card testing until device can test it — do not test until owner asks.**
 5. **Impeccable engine BLOCKED** — `impeccable --version` fails (`unexpected e_type: 2`); UI review falls back to `VELNOX_DESIGN_THEME.md` + craft-floor.
 6. **ข้อมูล production บางมาก (ตัวกั้น MVP ที่แท้จริง)** — 2026-11-09: `sellers` 2 (approved 2), `shops` 2, `products` 2 (published 1 · suspended 1), `categories` 96, `orders` 8, `users` 4. หน้าแรกจึงมีสินค้าเดียว. การ seed production เป็นการเขียนข้อมูลจริง — รอ owner สั่ง (จำนวน/หมวด/แหล่งรูป)
-7. **`.ai-office/DISCOVERY.md`** — ไฟล์หลงจาก session ก่อน (นอก `.ai/`) ยังไม่ commit ไม่ได้ลบ; ควรย้ายเข้า `.ai/history/` หรือลบ
+7. **263 DB-gated tests ตกบน CI** — มีมาก่อนหน้า (ถูกซ่อนเพราะ typecheck ตกและ step test ถูก skip) ต้องซ่อมเป็นชุดผ่าน CI เท่านั้น เพราะ:
+   - Neon branch ใช้ไม่ได้: `assertTestDatabaseIsSafe()` ปฏิเสธ host `*.neon.tech` โดยเจตนา (ทดลองจริง 2026-11-09 แล้ว, branch ถูกลบทิ้งแล้ว)
+   - PostgreSQL ท้องถิ่นใช้ไม่ได้: `initdb` ต้องการ `libicui18n.so.79` แต่ prefix มี 78.3 และ `pkg_install libicu` ไม่ซ่อมไฟล์
+8. **`.ai-office/DISCOVERY.md`** — ไฟล์หลงจาก session ก่อน (นอก `.ai/`) ยังไม่ commit ไม่ได้ลบ; ควรย้ายเข้า `.ai/history/` หรือลบ
 
 ### Important Recent Decisions
 - **Stripe live mode is an explicit opt-in (2026-11-05).** Production runs Stripe **test mode**; real cards / real PromptPay cannot complete. Live key used only with `STRIPE_ALLOW_LIVE=true` **and** `STRIPE_MODE=live` plus webhook secret (`backend/lib/payment-config.ts`). Owner decision (2026-11-09): do not run live-card tests until owner says the device can test.
