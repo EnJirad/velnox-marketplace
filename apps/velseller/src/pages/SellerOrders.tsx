@@ -191,12 +191,12 @@ export default function SellerOrders() {
                 <Table className="min-w-[960px]">
                   <TableHeader>
                     <TableRow className="bg-slate-50/80 hover:bg-slate-50/80">
-                      <TableHead className="pl-5 text-xs font-semibold uppercase tracking-wider text-slate-500">{t("sellerOrders.colOrder")}</TableHead>
-                      <TableHead className="text-xs font-semibold uppercase tracking-wider text-slate-500">{t("sellerOrders.colCustomer")}</TableHead>
-                      <TableHead className="text-xs font-semibold uppercase tracking-wider text-slate-500">{t("sellerOrders.colItems")}</TableHead>
-                      <TableHead className="text-xs font-semibold uppercase tracking-wider text-slate-500">{t("sellerOrders.colTotal")}</TableHead>
-                      <TableHead className="text-xs font-semibold uppercase tracking-wider text-slate-500">{t("sellerOrders.colStatus")}</TableHead>
-                      <TableHead className="pr-5 text-right text-xs font-semibold uppercase tracking-wider text-slate-500">{t("sellerOrders.colUpdated")}</TableHead>
+                      <TableHead className="pl-5 text-xs font-semibold uppercase tracking-wide text-slate-500">{t("sellerOrders.colOrder")}</TableHead>
+                      <TableHead className="text-xs font-semibold uppercase tracking-wide text-slate-500">{t("sellerOrders.colCustomer")}</TableHead>
+                      <TableHead className="text-xs font-semibold uppercase tracking-wide text-slate-500">{t("sellerOrders.colItems")}</TableHead>
+                      <TableHead className="text-xs font-semibold uppercase tracking-wide text-slate-500">{t("sellerOrders.colTotal")}</TableHead>
+                      <TableHead className="text-xs font-semibold uppercase tracking-wide text-slate-500">{t("sellerOrders.colStatus")}</TableHead>
+                      <TableHead className="pr-5 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">{t("sellerOrders.colUpdated")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>

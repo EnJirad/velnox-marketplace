@@ -176,11 +176,11 @@ export default function IncomePayoutDetail() {
                               {formatBaht(d.payout)}
                             </span>
                             <div className="w-full flex flex-col-reverse rounded-t-md overflow-hidden" style={{ height: `${grossH}%` }}>
-                              <div className="w-full bg-gradient-to-t from-emerald-400 to-emerald-500 transition-all"
+                              <div className="w-full bg-emerald-500 transition-all"
                                 style={{ height: `${Math.max(0, grossH - commH - retH)}%` }} />
                               <div className="w-full bg-amber-400 transition-all"
                                 style={{ height: `${retH}%` }} />
-                              <div className="w-full bg-gradient-to-t from-slate-400 to-slate-500 transition-all"
+                              <div className="w-full bg-slate-400 transition-all"
                                 style={{ height: `${commH}%` }} />
                             </div>
                             <span className="text-[9px] text-slate-400 truncate w-full text-center">{d.label}</span>
@@ -189,7 +189,7 @@ export default function IncomePayoutDetail() {
                       })}
                     </div>
                     <div className="mt-3 flex flex-wrap items-center gap-4 text-[11px] text-slate-500">
-                      <span className="flex items-center gap-1"><span className="size-2.5 rounded-sm bg-gradient-to-b from-emerald-400 to-emerald-500" /> {t("sellerDash.income.payoutDetail.colNet")}</span>
+                      <span className="flex items-center gap-1"><span className="size-2.5 rounded-sm bg-emerald-500" /> {t("sellerDash.income.payoutDetail.colNet")}</span>
                       <span className="flex items-center gap-1"><span className="size-2.5 rounded-sm bg-amber-400" /> {t("sellerDash.income.payoutDetail.colReturns")}</span>
                       <span className="flex items-center gap-1"><span className="size-2.5 rounded-sm bg-slate-400" /> {t("sellerDash.income.payoutDetail.colFee")}</span>
                     </div>

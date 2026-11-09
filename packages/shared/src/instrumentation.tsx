@@ -130,7 +130,7 @@ function ErrorDialog({
         </DialogHeader>
 
         <div className="rounded-md border border-amber-400/20 bg-amber-400/5 px-3 py-2.5">
-          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-amber-200/70">
+          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-amber-200/70">
             Error message
           </div>
           <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-zinc-200">

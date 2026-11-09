@@ -192,7 +192,7 @@ export default function Income() {
                       <span className="text-[10px] font-semibold tabular-nums text-slate-900">
                         {formatBaht(d.value).replace("฿", "")}
                       </span>
-                      <div className="w-full rounded-t-md bg-gradient-to-t from-emerald-500 to-emerald-300 transition-[width]"
+                      <div className="w-full rounded-t-md bg-emerald-500 transition-[width]"
                         style={{ height: `${(d.value / maxVal) * 100}%` }}
                       />
                       <span className="text-[9px] text-slate-400 truncate w-full text-center">{d.label}</span>
@@ -233,7 +233,7 @@ export default function Income() {
                       </span>
                     </div>
                     <div className="h-2.5 rounded-full bg-slate-100 overflow-hidden">
-                      <div className="h-full rounded-full bg-gradient-to-r from-emerald-400 via-amber-400 to-red-500 transition-[width]"
+                      <div className="h-full rounded-full bg-emerald-500/80 transition-[width]"
                         style={{ width: `${Math.min(returnRate * 5 * 100, 100)}%` }} />
                     </div>
                     <div className="flex justify-between text-[11px] text-slate-400 mt-1">
@@ -246,7 +246,7 @@ export default function Income() {
                   {/* Return breakdown: only shipped + confirmed returns */}
                   {returnShippedCount > 0 && (
                     <div className="space-y-2">
-                      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">รายการตีกลับที่ยืนยันแล้ว (ส่งจริง)</p>
+                      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">รายการตีกลับที่ยืนยันแล้ว (ส่งจริง)</p>
                       {items?.filter(i => i.isReturnEligible).slice(0, 10).map((item, i) => (
                         <div key={i} className="flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50/50 p-3">
                           <div className="min-w-0 flex-1">

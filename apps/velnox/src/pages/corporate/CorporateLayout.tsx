@@ -155,14 +155,14 @@ export function CorporateLayout() {
               </p>
             </div>
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">เว็บไซต์ของ Velnox</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">เว็บไซต์ของ Velnox</p>
               <ul className="mt-4 space-y-2.5">
                 <li><FooterLink to={SITE_URLS.velshop} external>VelShop — สำหรับลูกค้า</FooterLink></li>
                 <li><FooterLink to={SITE_URLS.velseller} external>VelSeller — สำหรับร้านค้า</FooterLink></li>
               </ul>
             </div>
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">บริษัท</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">บริษัท</p>
               <ul className="mt-4 space-y-2.5">
                 <li><FooterLink to="/about">เกี่ยวกับ</FooterLink></li>
                 <li><FooterLink to="/vision">วิสัยทัศน์</FooterLink></li>
@@ -173,7 +173,7 @@ export function CorporateLayout() {
               </ul>
             </div>
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">กฎและนโยบาย</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">กฎและนโยบาย</p>
               <ul className="mt-4 space-y-2.5">
                 <li><FooterLink to="/contact">ติดต่อเรา</FooterLink></li>
                 <li><FooterLink to="/privacy">นโยบายความเป็นส่วนตัว</FooterLink></li>

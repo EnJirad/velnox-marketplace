@@ -164,7 +164,7 @@ export default function IncomeCommissionDetail() {
                         -{formatBaht(d.commission)}
                       </span>
                       <div className="w-full flex flex-col-reverse rounded-t-md">
-                        <div className="w-full rounded-t-md bg-gradient-to-t from-slate-400 to-slate-500 transition-[width]"
+                        <div className="w-full rounded-t-md bg-slate-400 transition-[width]"
                           style={{ height: `${Math.min((d.commission / (maxVal || 1)) * 100, 100)}%` }} />
                       </div>
                       <span className="text-[9px] text-slate-400 truncate w-full text-center">{d.label}</span>

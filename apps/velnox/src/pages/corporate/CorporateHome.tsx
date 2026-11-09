@@ -29,7 +29,7 @@ function WholesaleCard() {
   return (
     <div className="relative mx-auto w-full max-w-sm rounded-3xl border border-slate-200 bg-white p-6 shadow-xl shadow-slate-900/5">
       <div className="flex items-center justify-between">
-        <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
           ร้านค้าชุมชน · เติมสต็อก
         </p>
         <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
@@ -80,7 +80,7 @@ export function CorporateHome() {
       <section className="mx-auto max-w-6xl px-4 pb-16 pt-14 sm:px-6 sm:pt-20">
         <div className="grid items-center gap-12 lg:grid-cols-2">
           <div>
-            <p className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-semibold uppercase tracking-wider text-slate-600">
+            <p className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-600">
               <span className="size-1.5 rounded-full bg-emerald-500" />
               Velnox Group · แพลตฟอร์มซื้อขายออนไลน์
             </p>

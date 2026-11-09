@@ -325,7 +325,7 @@ export default function ShopProfile() {
 
             {/* Shopping */}
             <section className="mt-6">
-              <p className="px-1 text-xs font-semibold uppercase tracking-wider text-slate-400">
+              <p className="px-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
                 {t("profile.groupShopping")}
               </p>
               <div className="mt-2 overflow-hidden rounded-2xl border border-slate-200 bg-white">
@@ -339,7 +339,7 @@ export default function ShopProfile() {
 
             {/* Communication */}
             <section className="mt-6">
-              <p className="px-1 text-xs font-semibold uppercase tracking-wider text-slate-400">
+              <p className="px-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
                 {t("profile.groupCommunication")}
               </p>
               <div className="mt-2 overflow-hidden rounded-2xl border border-slate-200 bg-white">
@@ -360,7 +360,7 @@ export default function ShopProfile() {
 
             {/* Account */}
             <section className="mt-6">
-              <p className="px-1 text-xs font-semibold uppercase tracking-wider text-slate-400">
+              <p className="px-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
                 {t("profile.groupAccount")}
               </p>
               <div className="mt-2 overflow-hidden rounded-2xl border border-slate-200 bg-white">
@@ -399,7 +399,7 @@ export default function ShopProfile() {
             {/* Session */}
             <section className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white">
               <div className="px-5 py-4">
-                <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
                   {t("profile.session")}
                 </p>
                 <Button

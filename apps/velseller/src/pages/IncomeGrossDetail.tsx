@@ -111,7 +111,7 @@ export default function IncomeGrossDetail() {
         ) : (
           <>
             {/* ── Total KPI ─────────────────────────────────────── */}
-            <section className="mt-6 rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-5 sm:p-6">
+            <section className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50/60 p-5 sm:p-6">
               <p className="text-sm text-slate-500">ยอดขายรวม ({periodLabels[period]})</p>
               <p className="mt-1 text-3xl font-bold tabular-nums tracking-tight text-emerald-700">{formatBaht(gross)}</p>
               <p className="mt-1 text-xs text-slate-400">{grossCount} คำสั่งซื้อ</p>
@@ -131,7 +131,7 @@ export default function IncomeGrossDetail() {
                 {periodData.map((d, i) => (
                   <div key={i} className="flex-1 flex flex-col items-center gap-1 h-full justify-end">
                     <span className="text-[10px] font-semibold tabular-nums text-slate-900">{formatBaht(d.value).replace("฿", "")}</span>
-                    <div className="w-full rounded-t-md bg-gradient-to-t from-emerald-500 to-emerald-300 transition-[width]"
+                    <div className="w-full rounded-t-md bg-emerald-500 transition-[width]"
                       style={{ height: `${(d.value / maxVal) * 100}%` }} />
                     <span className="text-[9px] text-slate-400 truncate w-full text-center">{d.label}</span>
                   </div>
