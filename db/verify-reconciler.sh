@@ -152,11 +152,16 @@ echo "Reconciler proof against $(psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d 
 # (the workflow now runs it): a fresh, thrice-rerun db/run-sqleditor.sql.
 # Measured 2026-11-09 by CI (disposable PostgreSQL, 3 consecutive runs with
 # identical counts — the idempotency proof):
-# 67 tables | 255 indexes | 285 constraints | 716 columns.
+# 67 tables | 256 indexes | 285 constraints | 716 columns.
+#
+# Member ID (2026-11-09): `employees.employee_id` gained a UNIQUE partial index
+# (`uq_employees_employee_id`) because it is the credential a staff member types
+# to sign in — measured on CI run 4267… : 67|256|285|716 (one index added, no
+# table/column/constraint change).
 # The previous figure was 63|241|265|661 (measured 2026-10-31, CI run
 # 41181150692); this constant is not a target to aim at but a measurement, so it
 # must be re-measured — never guessed — whenever the canonical schema grows.
-CANON="67|255|285|716"
+CANON="67|256|285|716"
 counts() { t "$1" "select (select count(*) from information_schema.tables where table_schema='public')||'|'||(select count(*) from pg_indexes where schemaname='public')||'|'||(select count(*) from pg_constraint c join pg_namespace n on n.oid=c.connamespace where n.nspname='public')||'|'||(select count(*) from information_schema.columns where table_schema='public')"; }
 
 # ── A. Fresh schema ────────────────────────────────────────────────────────
