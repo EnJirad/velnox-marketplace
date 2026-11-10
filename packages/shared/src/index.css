@@ -51,6 +51,11 @@
      etc. in 302 places, so changing it meant finding every literal. It now has
      one name. Colour values are unchanged (#10B981). */
   --color-brand: var(--brand);
+  /* The brand gradient. `from-[#0f766e] via-[#059669] to-[#34d399]` was written
+     out in five separate screens; a tweak to one would have left the other four
+     behind. Named here so the gradient is one thing. */
+  --color-brand-deep: var(--brand-deep);
+  --color-brand-light: var(--brand-light);
   /* Stronger emerald for text/icons on light emerald surfaces — the value that
      was written as `text-[#059669]` / `bg-[#059669]` in 32 places. */
   --color-brand-strong: var(--brand-strong);
@@ -93,6 +98,8 @@
   --ring: #10b981;
   --brand: #10b981;
   --brand-strong: #059669;
+  --brand-deep: #0f766e;
+  --brand-light: #34d399;
   --chart-1: #10b981;
   --chart-2: #0f172a;
   --chart-3: #f59e0b;

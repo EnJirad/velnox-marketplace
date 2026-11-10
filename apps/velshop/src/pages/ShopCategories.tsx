@@ -100,7 +100,7 @@ export default function ShopCategories() {
                   className="flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white transition-[transform,border-color,box-shadow,background-color] duration-200 hover:-translate-y-0.5 hover:shadow-float"
                 >
                   <Link to={to} className="block">
-                    <div className="flex h-24 items-center gap-4 bg-gradient-to-r from-[#0f766e] via-brand to-[#34d399] px-5">
+                    <div className="flex h-24 items-center gap-4 bg-gradient-to-r from-brand-deep via-brand to-brand-light px-5">
                       {root.icon || root.image_url ? (
                         <CategoryIcon icon={root.icon} imageUrl={root.image_url} className="size-12 rounded-lg" />
                       ) : (
@@ -150,7 +150,7 @@ export default function ShopCategories() {
           {/* VelShop Verified card */}
           <div className="flex flex-col overflow-hidden rounded-2xl border border-emerald-200 bg-white transition-[transform,border-color,box-shadow,background-color] duration-200 hover:-translate-y-0.5 hover:shadow-float">
             <Link to="/products?verified=true" className="block">
-              <div className="flex h-24 items-center gap-4 bg-gradient-to-r from-[#065f46] via-[#059669] to-brand px-5">
+              <div className="flex h-24 items-center gap-4 bg-gradient-to-r from-[#065f46] via-brand-strong to-brand px-5">
                 <span className="flex size-12 items-center justify-center rounded-lg bg-white/20 backdrop-blur">
                   <span className="text-lg font-extrabold text-white">V</span>
                 </span>

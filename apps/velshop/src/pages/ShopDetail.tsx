@@ -237,7 +237,7 @@ export default function ShopDetail() {
             {coverUrl ? (
               <img src={coverUrl} alt="" className="size-full object-cover" />
             ) : (
-              <div className="size-full bg-gradient-to-r from-[#0f766e] via-brand to-[#34d399]" />
+              <div className="size-full bg-gradient-to-r from-brand-deep via-brand to-brand-light" />
             )}
           </div>
 

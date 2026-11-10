@@ -260,7 +260,7 @@ export default function ShopProfile() {
           <>
             {/* Identity header — cover · avatar · name/email/status */}
             <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-soft">
-              <div className="relative h-36 bg-gradient-to-r from-[#0f766e] via-brand to-[#34d399] sm:h-44">
+              <div className="relative h-36 bg-gradient-to-r from-brand-deep via-brand to-brand-light sm:h-44">
                 <CoverImage
                   src={coverSrc}
                   alt={t("profile.coverAlt", { name: displayName || "VelShop" })}

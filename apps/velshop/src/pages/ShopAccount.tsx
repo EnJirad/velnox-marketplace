@@ -169,7 +169,7 @@ export default function ShopAccount() {
             {/* ── Cover + Avatar section ────────────────────────────── */}
             <section className="mt-8 overflow-hidden rounded-3xl border border-slate-200 bg-white">
               {/* Cover image with upload button */}
-              <div className="relative h-36 bg-gradient-to-r from-[#0f766e] via-brand to-[#34d399] sm:h-40">
+              <div className="relative h-36 bg-gradient-to-r from-brand-deep via-brand to-brand-light sm:h-40">
                 <CoverImage
                   src={profile?.coverUrl}
                   alt={t("profile.coverAlt", { name: profile?.name || "VelShop" })}

@@ -268,7 +268,7 @@ function PriceSummary({
         <button
           type="button"
           onClick={onRetry}
-          className="inline-flex min-h-8 shrink-0 items-center rounded-md px-1 text-xs font-semibold text-[#0f766e] underline decoration-dotted underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
+          className="inline-flex min-h-8 shrink-0 items-center rounded-md px-1 text-xs font-semibold text-brand-deep underline decoration-dotted underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
         >
           {status === "error" ? t("checkout.shippingRetry") : t("checkout.shippingPickAddress")}
         </button>
