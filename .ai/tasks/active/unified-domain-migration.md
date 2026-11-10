@@ -415,3 +415,35 @@ Prerequisites that must exist before the first env write:
 | Deployment | `request_rollback` / Render rollback |
 
 Never deleted: Neon data, R2 objects, the Render service, the four Vercel projects, or any legacy host.
+
+---
+
+## APPENDIX — Ready-to-import zone file
+
+Cloudflare dashboard → DNS → Import records accepts a BIND file. Every value below was read from a
+provider (`get_domain_config` for Vercel, live DoH for the current zone, the Render service host for
+`api`); nothing is guessed. **Do not enable the orange proxy on the first import** — import as DNS-only
+and turn the proxy on later, one host at a time, only after the host is proven to serve.
+
+```
+; velnox.live — imported 2026-11-10
+; A/CNAME for @ and www reproduce the current live zone exactly.
+; shop/seller/center come from the Vercel recommendedCNAME rank 1 (same
+;   per-project target www already uses).
+; api targets the Render service host.
+$TTL 3600
+@       IN A      216.198.79.1
+@       IN A      64.29.17.1
+www     IN CNAME  b04e1ed0b385c8f3.vercel-dns-017.com.
+shop    IN CNAME  b04e1ed0b385c8f3.vercel-dns-017.com.
+seller  IN CNAME  b04e1ed0b385c8f3.vercel-dns-017.com.
+center  IN CNAME  b04e1ed0b385c8f3.vercel-dns-017.com.
+api     IN CNAME  velnox-api.onrender.com.
+_dmarc  IN TXT    "v=DMARC1; p=quarantine; adkim=r; aspf=r; rua=mailto:dmarc_rua@onsecureserver.net;"
+```
+
+`64.29.17.1` is Vercel's second rank-1 apex address (the live zone currently carries only
+`216.198.79.1`); adding it is additive redundancy, not a replacement.
+
+**Ordering constraint:** `api` must only be imported after the Render dashboard already lists
+`api.velnox.live` as a custom domain, or Render will answer with a certificate error for that host.
