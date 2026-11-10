@@ -27,7 +27,7 @@ export default function CookiePolicy() {
   ];
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#F8FAFC] text-slate-900">
+    <div className="flex min-h-screen flex-col bg-background text-slate-900">
       <ShopHeader />
 
       <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-10 sm:px-6">

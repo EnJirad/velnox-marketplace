@@ -279,7 +279,7 @@ function VariantManager({ productId, price }: { productId: string; price: number
   if (variants.length === 0 && !loading) {
     return (
       <div className="mt-3 border-t border-slate-200 pt-3">
-        <Button type="button" variant="outline" className="w-full gap-1.5 border-dashed border-brand text-sm text-brand hover:bg-[#ECFDF5]" onClick={handleGenerate} disabled={generating}>
+        <Button type="button" variant="outline" className="w-full gap-1.5 border-dashed border-brand text-sm text-brand hover:bg-accent" onClick={handleGenerate} disabled={generating}>
           {generating ? <Loader2 className="size-4 animate-spin" /> : <ListOrdered className="size-4" />}
           {t("productForm.variants.generateCta")}
         </Button>

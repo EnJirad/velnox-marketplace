@@ -46,7 +46,7 @@ interface OrderData {
 }
 
 const STATUS_META: Record<string, { icon: typeof CheckCircle2; color: string; bg: string; labelKey: string }> = {
-  paid: { icon: CheckCircle2, color: "text-brand", bg: "bg-[#ECFDF5]", labelKey: "checkoutSuccess.paid" },
+  paid: { icon: CheckCircle2, color: "text-brand", bg: "bg-accent", labelKey: "checkoutSuccess.paid" },
   pending: { icon: Clock, color: "text-amber-500", bg: "bg-amber-50", labelKey: "checkoutSuccess.pending" },
   pending_payment: { icon: Clock, color: "text-amber-500", bg: "bg-amber-50", labelKey: "checkoutSuccess.pendingPayment" },
   cancelled: { icon: XCircle, color: "text-red-500", bg: "bg-red-50", labelKey: "checkoutSuccess.cancelled" },
@@ -147,7 +147,7 @@ export default function ShopCheckoutSuccess() {
 
   if (!orderId) {
     return (
-      <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
+      <div className="min-h-screen bg-background text-slate-900">
         <ShopHeader />
         <main className="mx-auto flex w-full max-w-2xl flex-col items-center px-4 py-24 text-center">
           <span className="flex size-14 items-center justify-center rounded-2xl bg-slate-100">
@@ -177,7 +177,7 @@ export default function ShopCheckoutSuccess() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
+    <div className="min-h-screen bg-background text-slate-900">
       <ShopHeader />
       <main className="mx-auto w-full max-w-2xl px-4 py-14 sm:px-6">
         {loading ? (

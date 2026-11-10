@@ -443,7 +443,7 @@ export default function ShopAddresses() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
+    <div className="min-h-screen bg-background text-slate-900">
       <ShopHeader />
 
       <main className="mx-auto w-full max-w-4xl px-4 py-8 sm:px-6 sm:py-10">
@@ -490,7 +490,7 @@ export default function ShopAddresses() {
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="text-sm font-bold text-slate-900">{a.label}</p>
                         {a.isDefault && (
-                          <Badge className="gap-1 rounded-full bg-[#ECFDF5] text-emerald-700 ring-1 ring-inset ring-emerald-600/15 hover:bg-[#ECFDF5]">
+                          <Badge className="gap-1 rounded-full bg-accent text-emerald-700 ring-1 ring-inset ring-emerald-600/15 hover:bg-accent">
                             <Star className="size-3 fill-emerald-600 text-emerald-600" />
                             {t("addresses.default")}
                           </Badge>

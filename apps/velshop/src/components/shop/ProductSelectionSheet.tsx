@@ -537,7 +537,7 @@ export function ProductSelectionSheet({
                         onClick={() => handleOptionSelect(group.id, val.id)}
                         className={`${group.displayType === "image" ? "flex w-full min-w-0 items-center gap-2 p-2 sm:w-[calc(50%-0.375rem)]" : "flex items-center gap-1.5 px-3 py-1.5"} rounded-xl border transition-colors ${
                           selected
-                            ? "border-brand bg-[#ECFDF5] ring-1 ring-brand/30"
+                            ? "border-brand bg-accent ring-1 ring-brand/30"
                             : valueInStock
                               ? "border-slate-200 bg-white hover:border-slate-300 active:bg-slate-50"
                               : "border-slate-100 bg-slate-50 opacity-40"

@@ -170,7 +170,7 @@ export default function ShopDetail() {
   // ── Loading state ──
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
+      <div className="min-h-screen bg-background text-slate-900">
         <ShopHeader />
         <main className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6">
           {/* Cover skeleton */}
@@ -198,7 +198,7 @@ export default function ShopDetail() {
   // ── Error state ──
   if (error || !shop) {
     return (
-      <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
+      <div className="min-h-screen bg-background text-slate-900">
         <ShopHeader />
         <main className="mx-auto flex w-full max-w-6xl flex-col items-center px-4 py-24 text-center sm:px-6">
           <Store className="size-10 text-slate-300" />
@@ -220,7 +220,7 @@ export default function ShopDetail() {
   const descriptionLong = (shop.description ?? "").length > 120;
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
+    <div className="min-h-screen bg-background text-slate-900">
       <ShopHeader />
 
       <main className="mx-auto w-full max-w-[1280px] px-3 py-4 sm:px-6 sm:py-6">
@@ -244,7 +244,7 @@ export default function ShopDetail() {
           {/* Logo + Info */}
           <div className="relative flex flex-col gap-2 px-3 pb-4 sm:flex-row sm:items-end sm:px-6 sm:pb-5">
             {/* Logo — smaller on mobile */}
-            <span className="-mt-8 flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border-3 border-white bg-[#ECFDF5] shadow-sm sm:-mt-11 sm:size-20">
+            <span className="-mt-8 flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border-3 border-white bg-accent shadow-sm sm:-mt-11 sm:size-20">
               {logoUrl ? (
                 <img src={logoUrl} alt={shop.name} className="size-full object-cover" />
               ) : (

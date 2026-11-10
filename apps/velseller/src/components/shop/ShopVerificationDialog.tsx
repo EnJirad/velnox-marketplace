@@ -171,7 +171,7 @@ export function ShopVerificationDialog({
               key={value}
               className={`flex-1 rounded-full px-3 py-1.5 text-center ${
                 step === value
-                  ? "bg-[#ECFDF5] text-[#047857] ring-1 ring-inset ring-emerald-600/20"
+                  ? "bg-accent text-accent-foreground ring-1 ring-inset ring-emerald-600/20"
                   : "bg-slate-100 text-slate-500"
               }`}
               aria-current={step === value ? "step" : undefined}
@@ -244,14 +244,14 @@ export function ShopVerificationDialog({
           )}
           {step === 1 ? (
             <Button
-              className="h-11 gap-1.5 bg-brand text-white hover:bg-[#059669]"
+              className="h-11 gap-1.5 bg-brand text-white hover:bg-brand-strong"
               onClick={() => setStep(2)}
             >
               {t("sellerDash.shop.verifyNext")}
             </Button>
           ) : (
             <Button
-              className="h-11 gap-1.5 bg-brand text-white hover:bg-[#059669]"
+              className="h-11 gap-1.5 bg-brand text-white hover:bg-brand-strong"
               onClick={() => void handleSubmit()}
               disabled={busy || hasUploading || !hasUploaded}
             >

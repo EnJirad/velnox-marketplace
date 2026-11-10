@@ -503,7 +503,7 @@ function Auth() {
               {/* Submit Button */}
               <Button
                 type="submit"
-                className="h-12 w-full rounded-md bg-brand text-white text-[15px] font-medium hover:bg-[#059669] disabled:opacity-50"
+                className="h-12 w-full rounded-md bg-brand text-white text-[15px] font-medium hover:bg-brand-strong disabled:opacity-50"
                 disabled={busy || !turnstileToken}
               >
                 {submitting ? (
@@ -550,7 +550,7 @@ function Auth() {
                     />
                     <Button
                       type="submit"
-                      className="h-10 w-full rounded-md bg-brand text-white hover:bg-[#059669]"
+                      className="h-10 w-full rounded-md bg-brand text-white hover:bg-brand-strong"
                       disabled={memberLoading || !memberIdentifier.trim() || !memberPassword}
                     >
                       {memberLoading ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}

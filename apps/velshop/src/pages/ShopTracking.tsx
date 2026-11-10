@@ -141,7 +141,7 @@ export default function ShopTracking() {
   }, [error, errorStatus, t]);
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
+    <div className="min-h-screen bg-background text-slate-900">
       <ShopHeader />
 
       <main className="mx-auto w-full max-w-3xl px-4 py-8 sm:px-6 sm:py-10">
@@ -204,7 +204,7 @@ export default function ShopTracking() {
                     <section key={s.id} className="rounded-2xl border border-slate-200 bg-white p-6">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
-                          <span className="flex size-9 items-center justify-center rounded-md bg-[#ECFDF5]">
+                          <span className="flex size-9 items-center justify-center rounded-md bg-accent">
                             <Truck className="size-4 text-brand" />
                           </span>
                           <div>
@@ -230,7 +230,7 @@ export default function ShopTracking() {
                             </div>
                         </div>
                         <div className="flex items-center gap-2">
-                          <Badge className="gap-1.5 rounded-full bg-[#ECFDF5] text-emerald-700 ring-1 ring-inset ring-emerald-600/15 hover:bg-[#ECFDF5]">
+                          <Badge className="gap-1.5 rounded-full bg-accent text-emerald-700 ring-1 ring-inset ring-emerald-600/15 hover:bg-accent">
                             <span className="size-1.5 rounded-full bg-brand" />
                             {trackingLabel(s.status)}
                           </Badge>

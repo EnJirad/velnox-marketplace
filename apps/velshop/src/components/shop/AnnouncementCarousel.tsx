@@ -152,7 +152,7 @@ export function AnnouncementCarousel({
       onBlur={() => setPaused(false)}
       tabIndex={count > 1 ? 0 : -1}
       className={cn(
-        "relative overflow-hidden rounded-2xl border border-brand/20 bg-[#ECFDF5] outline-none focus-visible:ring-2 focus-visible:ring-brand/60",
+        "relative overflow-hidden rounded-2xl border border-brand/20 bg-accent outline-none focus-visible:ring-2 focus-visible:ring-brand/60",
         className,
       )}
     >
@@ -173,7 +173,7 @@ export function AnnouncementCarousel({
           const body = (
             <>
               {item.eyebrow && (
-                <span className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wide text-[#059669] sm:text-2xs">
+                <span className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wide text-brand-strong sm:text-2xs">
                   {item.eyebrow}
                 </span>
               )}
@@ -188,7 +188,7 @@ export function AnnouncementCarousel({
                 </span>
               )}
               {item.href && hasText && (
-                <span className="mt-2 inline-flex w-fit items-center gap-1 text-2xs font-semibold text-[#059669] sm:text-xs">
+                <span className="mt-2 inline-flex w-fit items-center gap-1 text-2xs font-semibold text-brand-strong sm:text-xs">
                   {item.ctaLabel || t("home.bannerCta")}
                   <ArrowRight className="size-3.5" />
                 </span>
@@ -325,7 +325,7 @@ export function AnnouncementCarousel({
               type="button"
               onClick={() => goTo(index - 1)}
               aria-label={t("announce.prev")}
-              className="flex size-7 items-center justify-center rounded-full bg-white/70 text-slate-600 transition-colors hover:bg-white hover:text-[#059669]"
+              className="flex size-7 items-center justify-center rounded-full bg-white/70 text-slate-600 transition-colors hover:bg-white hover:text-brand-strong"
             >
               <ChevronLeft className="size-4" />
             </button>
@@ -333,7 +333,7 @@ export function AnnouncementCarousel({
               type="button"
               onClick={() => goTo(index + 1)}
               aria-label={t("announce.next")}
-              className="flex size-7 items-center justify-center rounded-full bg-white/70 text-slate-600 transition-colors hover:bg-white hover:text-[#059669]"
+              className="flex size-7 items-center justify-center rounded-full bg-white/70 text-slate-600 transition-colors hover:bg-white hover:text-brand-strong"
             >
               <ChevronRight className="size-4" />
             </button>

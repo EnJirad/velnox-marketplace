@@ -95,13 +95,13 @@ function GateCard({
 }) {
   const { t } = useLanguage();
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-[#F8FAFC] px-3 py-8 text-center sm:px-4">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-background px-3 py-8 text-center sm:px-4">
       <div
         className={`w-full rounded-2xl border border-slate-200 bg-white shadow-float ${
           wide ? "max-w-xl p-5 sm:p-8" : "max-w-md p-6 sm:p-8"
         }`}
       >
-        <span className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-[#ECFDF5]">
+        <span className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-accent">
           <Icon className="size-7 text-brand" />
         </span>
         <h1 className="mt-5 text-xl font-bold tracking-tight text-slate-900">{title}</h1>
@@ -934,7 +934,7 @@ export function RequireRole({ role, children }: RequireRoleProps) {
           ) : (
             <Button
               type="submit"
-              className="gap-1.5 bg-brand text-white hover:bg-[#059669]"
+              className="gap-1.5 bg-brand text-white hover:bg-brand-strong"
               disabled={busy || !shopName.trim() || !identityDocsReady}
             >
               {busy && <Loader2 className="size-4 animate-spin" />}

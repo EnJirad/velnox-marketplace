@@ -961,7 +961,7 @@ export default function ChatManagement() {
                         type="button"
                         onClick={() => void loadOlder()}
                         disabled={loadingMore}
-                        className="mx-auto flex items-center gap-1 text-xs font-medium text-brand transition-colors hover:text-[#059669] disabled:opacity-50"
+                        className="mx-auto flex items-center gap-1 text-xs font-medium text-brand transition-colors hover:text-brand-strong disabled:opacity-50"
                       >
                         {loadingMore && <Loader2 className="size-3 animate-spin" />}
                         โหลดข้อความก่อนหน้า

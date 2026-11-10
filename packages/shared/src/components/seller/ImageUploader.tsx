@@ -184,7 +184,7 @@ export function ImageUploader({ product, onChange }: ImageUploaderProps) {
             <span className="ml-0.5 text-2xs text-slate-400">{detailImages.length}</span>
           </button>
         </div>
-        <Badge className="gap-1 rounded-full bg-[#ECFDF5] text-emerald-700 ring-1 ring-inset ring-emerald-600/15 hover:bg-[#ECFDF5]">
+        <Badge className="gap-1 rounded-full bg-accent text-emerald-700 ring-1 ring-inset ring-emerald-600/15 hover:bg-accent">
           <Crown className="size-3" />
           R2 CDN
         </Badge>
@@ -294,7 +294,7 @@ export function ImageUploader({ product, onChange }: ImageUploaderProps) {
             if (e.dataTransfer.files.length > 0) handleFiles(e.dataTransfer.files);
           }}
           disabled={uploading}
-          className="flex w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed border-slate-300 bg-slate-50/50 px-4 py-8 text-center transition-colors hover:border-brand/60 hover:bg-[#ECFDF5]/50 disabled:cursor-not-allowed disabled:opacity-60"
+          className="flex w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed border-slate-300 bg-slate-50/50 px-4 py-8 text-center transition-colors hover:border-brand/60 hover:bg-accent/50 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {uploading ? (
             <>

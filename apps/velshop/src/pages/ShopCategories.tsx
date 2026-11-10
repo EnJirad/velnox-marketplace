@@ -60,7 +60,7 @@ export default function ShopCategories() {
     node.productCount + node.children.reduce((sum, c) => sum + countFor(c), 0);
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#F8FAFC] text-slate-900">
+    <div className="flex min-h-screen flex-col bg-background text-slate-900">
       <ShopHeader />
 
       <section className="border-b border-slate-100 bg-white">
@@ -124,7 +124,7 @@ export default function ShopCategories() {
                         <Link
                           key={child.id}
                           to={`/products?category=${encodeURIComponent(child.slug ?? child.id)}`}
-                          className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:border-brand/40 hover:bg-[#ECFDF5] hover:text-emerald-700"
+                          className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:border-brand/40 hover:bg-accent hover:text-emerald-700"
                         >
                           {child.display_name ?? child.name} · {child.productCount}
                         </Link>
@@ -135,7 +135,7 @@ export default function ShopCategories() {
                   <div className="mt-auto p-5 pt-4">
                     <Button
                       variant="ghost"
-                      className="h-9 w-full gap-1 text-xs text-slate-500 hover:bg-[#ECFDF5] hover:text-emerald-700"
+                      className="h-9 w-full gap-1 text-xs text-slate-500 hover:bg-accent hover:text-emerald-700"
                       asChild
                     >
                       <Link to={to}>

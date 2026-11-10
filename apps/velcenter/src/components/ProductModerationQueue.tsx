@@ -313,7 +313,7 @@ function ProductSummaryCard({ detail }: { detail: ProductDetail }) {
             <p className="text-2xs text-slate-400 line-through">{formatBaht(detail.product.compare_at_price)}</p>
           ) : null}
         </div>
-        <span className="inline-flex max-w-full items-center gap-1 truncate rounded-full bg-[#ECFDF5] px-2.5 py-1 text-2xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-600/15">
+        <span className="inline-flex max-w-full items-center gap-1 truncate rounded-full bg-accent px-2.5 py-1 text-2xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-600/15">
           <Tag className="size-3 shrink-0" />
           {category ?? "ไม่ระบุหมวดหมู่"}
         </span>
@@ -758,7 +758,7 @@ export default function ProductModerationQueue() {
         </div>
       ) : shopGroups.length === 0 ? (
         <div className="flex flex-col items-center rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center">
-          <span className="flex size-14 items-center justify-center rounded-2xl bg-[#ECFDF5]">
+          <span className="flex size-14 items-center justify-center rounded-2xl bg-accent">
             <Package className="size-7 text-brand" />
           </span>
           <h3 className="mt-5 text-lg font-semibold text-slate-900">ไม่มีสินค้า</h3>

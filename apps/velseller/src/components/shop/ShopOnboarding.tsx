@@ -167,7 +167,7 @@ export function ShopOnboarding({ onOpened }: ShopOnboardingProps) {
   return (
     <main className="mx-auto w-full max-w-2xl px-4 py-10 sm:px-6 sm:py-14">
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-float sm:p-8">
-        <span className="flex size-12 items-center justify-center rounded-xl bg-[#ECFDF5]">
+        <span className="flex size-12 items-center justify-center rounded-xl bg-accent">
           <Store className="size-6 text-brand" aria-hidden="true" />
         </span>
         <h1 className="mt-5 text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">
@@ -182,7 +182,7 @@ export function ShopOnboarding({ onOpened }: ShopOnboardingProps) {
               aria-current={step === value ? "step" : undefined}
               className={`flex-1 rounded-full px-3 py-1.5 text-center ${
                 step === value
-                  ? "bg-[#ECFDF5] text-[#047857] ring-1 ring-inset ring-emerald-600/20"
+                  ? "bg-accent text-accent-foreground ring-1 ring-inset ring-emerald-600/20"
                   : "bg-slate-100 text-slate-500"
               }`}
             >
@@ -445,7 +445,7 @@ export function ShopOnboarding({ onOpened }: ShopOnboardingProps) {
             )}
             <Button
               type="submit"
-              className="h-11 flex-1 gap-1.5 bg-brand text-white hover:bg-[#059669]"
+              className="h-11 flex-1 gap-1.5 bg-brand text-white hover:bg-brand-strong"
               disabled={busy || (step === 1 ? !stepOneValid : !stepTwoValid)}
             >
               {busy && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}

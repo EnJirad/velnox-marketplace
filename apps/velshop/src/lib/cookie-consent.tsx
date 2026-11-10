@@ -224,7 +224,7 @@ function CategoryRow({
       </div>
       <div className="shrink-0 pt-0.5">
         {disabled ? (
-          <span className="inline-flex items-center rounded-full bg-[#ECFDF5] px-2.5 py-1 text-2xs font-medium text-emerald-700">
+          <span className="inline-flex items-center rounded-full bg-accent px-2.5 py-1 text-2xs font-medium text-emerald-700">
             {alwaysActive}
           </span>
         ) : (

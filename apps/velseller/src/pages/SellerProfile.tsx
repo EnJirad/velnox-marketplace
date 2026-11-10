@@ -170,7 +170,7 @@ export default function SellerProfile() {
   const handleSignOut = async () => { await signOut(); window.location.href = "/auth"; };
 
   if (loading) return (
-    <div className="min-h-screen bg-[#F8FAFC]"><AppHeader />
+    <div className="min-h-screen bg-background"><AppHeader />
       <div className="flex items-center justify-center py-20"><Loader2 className="size-6 animate-spin text-slate-400" /></div>
     </div>
   );
@@ -179,7 +179,7 @@ export default function SellerProfile() {
   const VIcon = vMeta.icon;
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
+    <div className="min-h-screen bg-background text-slate-900">
       <AppHeader />
 
       <main className="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6 sm:py-8">

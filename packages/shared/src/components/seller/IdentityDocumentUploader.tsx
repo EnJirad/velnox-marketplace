@@ -267,7 +267,7 @@ export function IdentityDocumentUploader({
           type="button"
           onClick={() => inputRef.current?.click()}
           disabled={disabled || status === "uploading"}
-          className="flex min-h-28 w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-slate-200 bg-slate-50/60 px-4 py-6 text-center transition-colors hover:border-brand/50 hover:bg-[#ECFDF5]/40 disabled:cursor-not-allowed disabled:opacity-60"
+          className="flex min-h-28 w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-slate-200 bg-slate-50/60 px-4 py-6 text-center transition-colors hover:border-brand/50 hover:bg-accent/40 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {status === "uploading" ? (
             <Loader2 className="size-5 animate-spin text-brand" />

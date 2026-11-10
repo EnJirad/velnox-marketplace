@@ -68,6 +68,7 @@ Rules:
 |---|---|---|
 | `--ring` | `#10b981` | Focus ring / brand accent |
 | `--brand` | `#10b981` | **สีแบรนด์ตัวจริง** — เรียกผ่าน utility `text-brand` · `bg-brand` · `border-brand` · `ring-brand` · `via-brand` · `from-brand` · `to-brand` · `accent-brand` |
+| `--brand-strong` | `#059669` | emerald เข้มสำหรับข้อความ/ไอคอนบนพื้นเขียวอ่อน — `text-brand-strong` (เดิมเขียนเป็น `[#059669]` 32 จุด) |
 | Emerald Primary | `#10B981` | Brand, active state, Add to Cart |
 | Emerald Dark | `#0f766e` | Strong emerald / gradient start |
 | Emerald Mid | `#10B981` | Main gradient |

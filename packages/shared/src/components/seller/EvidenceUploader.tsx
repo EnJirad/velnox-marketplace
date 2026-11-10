@@ -384,7 +384,7 @@ export function EvidenceUploader({
             if (e.dataTransfer.files.length > 0) void handleFiles(e.dataTransfer.files);
           }}
           disabled={uploading}
-          className="flex w-full cursor-pointer flex-col items-center justify-center gap-1.5 rounded-lg border-2 border-dashed border-slate-200 bg-slate-50/50 px-3 py-4 text-center transition-colors hover:border-brand/50 hover:bg-[#ECFDF5]/30 disabled:cursor-not-allowed disabled:opacity-60"
+          className="flex w-full cursor-pointer flex-col items-center justify-center gap-1.5 rounded-lg border-2 border-dashed border-slate-200 bg-slate-50/50 px-3 py-4 text-center transition-colors hover:border-brand/50 hover:bg-accent/30 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {uploading ? (
             <>

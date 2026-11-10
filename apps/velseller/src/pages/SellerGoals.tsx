@@ -157,7 +157,7 @@ export default function SellerGoals() {
   const firstName = user?.name?.split(/\s+/)[0] || t("sellerDash.goals.fallbackName");
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
+    <div className="min-h-screen bg-background text-slate-900">
       <AppHeader />
 
       <main className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 sm:py-10">
@@ -175,7 +175,7 @@ export default function SellerGoals() {
             </p>
           </div>
           <Button
-            className="h-11 shrink-0 gap-1.5 bg-brand text-white hover:bg-[#059669]"
+            className="h-11 shrink-0 gap-1.5 bg-brand text-white hover:bg-brand-strong"
             onClick={() => {
               setEditingGoal(null);
               setFormOpen(true);
@@ -278,7 +278,7 @@ export default function SellerGoals() {
                 </div>
               ) : (
                 <div className="mt-4 flex flex-col items-center rounded-xl border border-dashed border-slate-300 bg-white px-6 py-14 text-center">
-                  <span className="flex size-14 items-center justify-center rounded-2xl bg-[#ECFDF5]">
+                  <span className="flex size-14 items-center justify-center rounded-2xl bg-accent">
                     <Target className="size-7 text-brand" aria-hidden="true" />
                   </span>
                   <h3 className="mt-5 text-lg font-semibold text-slate-900">
@@ -288,7 +288,7 @@ export default function SellerGoals() {
                     {t("sellerDash.goals.emptyDesc")}
                   </p>
                   <Button
-                    className="mt-6 h-11 gap-1.5 bg-brand text-white hover:bg-[#059669]"
+                    className="mt-6 h-11 gap-1.5 bg-brand text-white hover:bg-brand-strong"
                     onClick={() => {
                       setEditingGoal(null);
                       setFormOpen(true);

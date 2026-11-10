@@ -439,7 +439,7 @@ export default function ShopProducts() {
   );
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#F8FAFC] text-slate-900">
+    <div className="flex min-h-screen flex-col bg-background text-slate-900">
       <ShopHeader />
 
       {/* Page header */}

@@ -307,3 +307,43 @@ Phase A เก็บเฉพาะ `#10B981` (302 จุด) ยังเหล
 
 **ยังไม่ทำ** เพราะบางตัวเป็นการตัดสินใจเรื่องสี (เช่น `#F0FDF9` กับ `#ECFDF5` ใกล้กันมากจนอาจตั้งใจให้ต่าง
 หรืออาจเป็นความไม่สม่ำเสมอ) — ต้องดูของจริงก่อน ไม่ใช่แทนที่ตามตัวเลข
+
+---
+
+# เพิ่มเติม — UI Phase A2: สี hex ที่เหลือ 156 จุด
+
+## ทำอะไร
+
+Phase A เก็บเฉพาะ `#10B981` (302 จุด) รอบนี้เก็บ 4 สีที่ **พิสูจน์ได้ว่าเท่ากับ token ที่มีอยู่แล้ว**
+หรือที่เพิ่มใหม่:
+
+| เดิม | ใหม่ | จำนวน | หลักฐานว่าเท่ากัน |
+|---|---|---|---|
+| `bg-[#F8FAFC]` | `bg-background` | 57 | `--background: #f8fafc` |
+| `bg-[#ECFDF5]` | `bg-accent` | 54 | `--accent: #ecfdf5` |
+| `text-[#047857]` | `text-accent-foreground` | 13 | `--accent-foreground: #047857` |
+| `text-[#059669]` / `bg-[#059669]` | `text/bg-brand-strong` | 32 | เพิ่ม token ใหม่ `--brand-strong: #059669` |
+
+เพิ่ม `--color-brand-strong` + `--brand-strong` ใน `index.css` และบันทึกใน `VELNOX_DESIGN_THEME.md` §2.3
+
+## ตรวจ dark mode ก่อนแตะ
+
+การเปลี่ยน `bg-[#F8FAFC]` เป็น `bg-background` จะเปลี่ยนสีใน dark mode ถ้ามีคนเปิดใช้ — ตรวจแล้ว
+**ไม่มีโค้ดสลับ `.dark` ที่ไหนเลย** (มี `dark:` utility 44 จุดเตรียมไว้ แต่ class ไม่เคยถูกใส่) ⇒ ไม่มีผลวันนี้
+และถ้าเปิด dark ในอนาคต สีจะตาม theme อย่างถูกต้อง (ดีกว่าเขียน hex ทับ)
+
+## ตรวจแล้ว
+
+typecheck 4/4 · `build:apps` 4/4 exit 0 · `bun run test` **1432 pass / 0 fail** · `grep` ค่าเดิมเหลือ **0**
+ทั้ง 5 pattern · `git diff --check` clean
+
+**ยืนยันจาก CSS ที่ build จริง (ทั้ง 4 แอป):**
+`.bg-background{background-color:var(--background)}` · `--accent:#ecfdf5` · `--accent-foreground:#047857`
+· `--brand-strong:#059669` · `.text-brand-strong{color:var(--brand-strong)}`
+
+## บทเรียนการตรวจ (สำคัญ)
+
+ตอนแรกผมตรวจด้วย `grep -F ".bg-accent{"` แล้วขึ้น ✗ ทั้งที่คลาสมีอยู่จริง — เพราะ Tailwind v4
+**รวม selector ที่ค่าตกผลึกเหมือนกัน** เป็น `.bg-accent,.bg-accent\/50{...}` ทำให้ `{` ไม่ได้ตามหลังทันที
+และ `.bg-brand-strong` ไม่มีจริง ๆ ก็เพราะทั้ง 16 จุดเป็น `hover:bg-brand-strong`
+⇒ ต้องตรวจด้วย pattern ที่ทน `,` `{` `:` ไม่ใช่ยึด `{` อย่างเดียว

@@ -57,7 +57,7 @@ export default function ShopCheckoutCancel() {
   const payability = orderStripePayability(order);
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
+    <div className="min-h-screen bg-background text-slate-900">
       <ShopHeader />
       <main className="mx-auto flex w-full max-w-2xl flex-col items-center px-4 py-24 text-center sm:px-6">
         <span className="flex size-16 items-center justify-center rounded-full bg-slate-100">

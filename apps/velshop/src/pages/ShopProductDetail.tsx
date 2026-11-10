@@ -121,7 +121,7 @@ function ExpandableDescription({ text, t }: { text: string; t: (k: string, v?: R
         <p className="whitespace-pre-line text-sm leading-6 text-slate-600">{text}</p>
       </div>
       {needsExpand && (
-        <button type="button" onClick={() => setExpanded((v) => !v)} className="mt-2 inline-flex items-center gap-1 text-sm font-medium text-brand transition-colors hover:text-[#059669]">
+        <button type="button" onClick={() => setExpanded((v) => !v)} className="mt-2 inline-flex items-center gap-1 text-sm font-medium text-brand transition-colors hover:text-brand-strong">
           {expanded ? t("productDetail.hideDetails") : t("productDetail.seeAllDetails")}
           {expanded ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
         </button>
@@ -147,7 +147,7 @@ function ProductCarousel({ title, viewAllLink, products, emptyText, t }: {
       <div className="flex items-center justify-between">
         <h3 className="text-base font-bold text-slate-900">{title}</h3>
         <div className="flex items-center gap-2">
-          {viewAllLink && <Link to={viewAllLink} className="text-xs font-medium text-brand transition-colors hover:text-[#059669]">{t("productDetail.viewAll")}</Link>}
+          {viewAllLink && <Link to={viewAllLink} className="text-xs font-medium text-brand transition-colors hover:text-brand-strong">{t("productDetail.viewAll")}</Link>}
           <button type="button" onClick={() => scroll("left")} className="flex size-7 items-center justify-center rounded-full border border-slate-200 text-slate-400 transition-colors hover:border-slate-300 hover:text-slate-600" aria-label="Scroll left">
             <ChevronDown className="size-3.5 -rotate-90" />
           </button>
@@ -1051,7 +1051,7 @@ export default function ShopProductDetail() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
+      <div className="min-h-screen bg-background text-slate-900">
         <ShopHeader />
         <main className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6">
           <div className="grid gap-8 lg:grid-cols-2">
@@ -1067,7 +1067,7 @@ export default function ShopProductDetail() {
 
   if (!product) {
     return (
-      <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
+      <div className="min-h-screen bg-background text-slate-900">
         <ShopHeader />
         <main className="mx-auto flex w-full max-w-6xl flex-col items-center px-4 py-24 text-center sm:px-6">
           <span className="flex size-14 items-center justify-center rounded-2xl bg-slate-100"><ImageOff className="size-7 text-slate-400" /></span>
@@ -1090,7 +1090,7 @@ export default function ShopProductDetail() {
   ];
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#F8FAFC] text-slate-900">
+    <div className="flex min-h-screen flex-col bg-background text-slate-900">
       <ShopHeader />
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6 sm:py-10">
         {/* Back button */}
@@ -1226,7 +1226,7 @@ export default function ShopProductDetail() {
           <div className="flex min-w-0 flex-col">
             <div className="flex flex-wrap items-center gap-2">
               <Badge className="rounded-full bg-slate-100 text-slate-600 ring-1 ring-inset ring-slate-600/10">{categoryMeta?.label ?? product.categorySlug ?? product.category}</Badge>
-              {product.supplier && <Badge className="rounded-full bg-[#ECFDF5] text-emerald-700 ring-1 ring-inset ring-emerald-600/15">{product.supplier}</Badge>}
+              {product.supplier && <Badge className="rounded-full bg-accent text-emerald-700 ring-1 ring-inset ring-emerald-600/15">{product.supplier}</Badge>}
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <ProductTitle name={product.name} t={t} />
@@ -1300,7 +1300,7 @@ export default function ShopProductDetail() {
 
             {/* ═══════════ SELECTED VARIANT SUMMARY ═══════════ */}
             {selectedSummary && (
-              <div className="mt-2 rounded-xl bg-[#ECFDF5] px-3 py-2 text-xs font-medium text-[#047857]">
+              <div className="mt-2 rounded-xl bg-accent px-3 py-2 text-xs font-medium text-accent-foreground">
                 {selectedSummary}
               </div>
             )}
@@ -1523,7 +1523,7 @@ export default function ShopProductDetail() {
                             type="button"
                             onClick={() => void loadMoreReviews()}
                             disabled={reviewsLoadingMore}
-                            className="mx-auto flex items-center gap-1.5 text-sm font-medium text-brand transition-colors hover:text-[#059669] disabled:opacity-50"
+                            className="mx-auto flex items-center gap-1.5 text-sm font-medium text-brand transition-colors hover:text-brand-strong disabled:opacity-50"
                           >
                             {reviewsLoadingMore ? <Loader2 className="size-3.5 animate-spin" /> : <ChevronDown className="size-3.5" />}
                             {t("productDetail.loadMoreReviews")}
@@ -1604,7 +1604,7 @@ export default function ShopProductDetail() {
               <div className="min-w-0 flex-1">
                 {/* Selected summary */}
                 {selectedSummary && (
-                  <p className="mb-1 text-xs font-medium text-[#047857]" style={{ overflowWrap: "anywhere" }}>{selectedSummary}</p>
+                  <p className="mb-1 text-xs font-medium text-accent-foreground" style={{ overflowWrap: "anywhere" }}>{selectedSummary}</p>
                 )}
                 <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
                   <p className="text-lg font-bold tabular-nums text-slate-900 sm:text-2xl" style={{ overflowWrap: "anywhere" }}>{formatBaht(displayPrice)}</p>
@@ -1696,7 +1696,7 @@ export default function ShopProductDetail() {
                               onClick={() => handleOptionSelect(group.id, val.id)}
                               className={`${compactSheet ? "w-[88px] min-h-[96px] p-1.5" : "w-[112px] min-h-[128px] p-2"} flex flex-col items-center justify-center gap-1.5 rounded-xl border transition-colors ${
                                 isSelected
-                                  ? "border-brand bg-[#ECFDF5] ring-1 ring-brand/30"
+                                  ? "border-brand bg-accent ring-1 ring-brand/30"
                                   : valueInStock
                                     ? "border-slate-200 bg-white hover:border-slate-300 active:bg-slate-50"
                                     : "border-slate-100 bg-slate-50 opacity-40"
@@ -1727,7 +1727,7 @@ export default function ShopProductDetail() {
                             onClick={() => handleOptionSelect(group.id, val.id)}
                             className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 ${compactSheet ? "text-2xs" : "text-xs"} font-medium transition-colors ${
                               isSelected
-                                ? "border-brand bg-[#ECFDF5] text-brand ring-1 ring-brand/30"
+                                ? "border-brand bg-accent text-brand ring-1 ring-brand/30"
                                 : valueInStock
                                   ? "border-slate-200 bg-white text-slate-700 hover:border-slate-300 active:bg-slate-50"
                                   : "border-slate-100 bg-slate-50 text-slate-400 opacity-50"

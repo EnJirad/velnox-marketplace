@@ -278,7 +278,7 @@ function PriceSummary({
       const reason = quote.shops.some((s) => s.reason === "free_shipping_threshold")
         ? t("checkout.shippingFreeThreshold")
         : t("checkout.shippingFree");
-      return <span className="shrink-0 text-xs font-semibold text-[#047857]">{reason}</span>;
+      return <span className="shrink-0 text-xs font-semibold text-accent-foreground">{reason}</span>;
     }
     return <span className={valueClass}>{formatBaht(Number(quote.shippingTotal))}</span>;
   })();
@@ -292,7 +292,7 @@ function PriceSummary({
       {quote && Number(quote.discount) > 0 && (
         <div className={rowClass}>
           <span className={labelClass}>{t("checkout.discount")}</span>
-          <span className="shrink-0 tabular-nums text-[#047857]">-{formatBaht(Number(quote.discount))}</span>
+          <span className="shrink-0 tabular-nums text-accent-foreground">-{formatBaht(Number(quote.discount))}</span>
         </div>
       )}
       <div className={rowClass}>
@@ -788,11 +788,11 @@ export default function ShopCheckout() {
   // ═══════════════════════════════════════════════════════════════════════
   if (result) {
     return (
-      <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
+      <div className="min-h-screen bg-background text-slate-900">
         <ShopHeader />
         <main className="mx-auto w-full max-w-2xl px-4 py-14 sm:px-6">
           <div className="flex flex-col items-center text-center">
-            <span className="flex size-16 items-center justify-center rounded-full bg-[#ECFDF5]">
+            <span className="flex size-16 items-center justify-center rounded-full bg-accent">
               <CheckCircle2 className="size-8 text-brand" />
             </span>
             <h1 className="mt-5 text-2xl font-bold tracking-tight text-slate-900">{t("checkout.successTitle")}</h1>
@@ -845,7 +845,7 @@ export default function ShopCheckout() {
   // ═══════════════════════════════════════════════════════════════════════
   if (paymentStartError) {
     return (
-      <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
+      <div className="min-h-screen bg-background text-slate-900">
         <ShopHeader />
         <main className="mx-auto w-full max-w-2xl px-4 py-14 sm:px-6">
           <div className="flex flex-col items-center text-center">
@@ -888,7 +888,7 @@ export default function ShopCheckout() {
   // still preparing the Stripe redirect.
   if (!syncing && !authLoading && !submitting && isAuthenticated && checkoutCount === 0) {
     return (
-      <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
+      <div className="min-h-screen bg-background text-slate-900">
         <ShopHeader />
         <main className="mx-auto flex w-full max-w-6xl flex-col items-center px-4 py-24 text-center sm:px-6">
           <span className="flex size-14 items-center justify-center rounded-2xl bg-slate-100"><ShoppingBag className="size-7 text-slate-400" /></span>
@@ -904,7 +904,7 @@ export default function ShopCheckout() {
   // Main checkout
   // ═══════════════════════════════════════════════════════════════════════
   return (
-    <div className="min-h-screen max-w-full bg-[#F8FAFC] text-slate-900">
+    <div className="min-h-screen max-w-full bg-background text-slate-900">
       <ShopHeader />
 
       <main className="mx-auto w-full max-w-6xl px-4 pb-36 pt-4 sm:px-6 sm:pt-10 lg:pb-10 lg:pt-10">
@@ -1082,7 +1082,7 @@ export default function ShopCheckout() {
                   <MapPin className="size-4 shrink-0 text-brand" />
                   <span className="min-w-0 truncate" style={{ overflowWrap: "anywhere" }}>{t("checkout.addressTitle")}</span>
                 </h2>
-                <Button variant="ghost" size="sm" className="gap-1 text-xs text-brand hover:bg-[#ECFDF5]" asChild>
+                <Button variant="ghost" size="sm" className="gap-1 text-xs text-brand hover:bg-accent" asChild>
                   <Link to="/addresses">{t("checkout.manage")}</Link>
                 </Button>
               </div>

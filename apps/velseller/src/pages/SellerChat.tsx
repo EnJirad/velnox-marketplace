@@ -532,7 +532,7 @@ export default function SellerChat() {
     : null;
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
+    <div className="min-h-screen bg-background text-slate-900">
       <AppHeader />
 
       <main className="mx-auto w-full max-w-6xl px-3 py-4 sm:px-6 sm:py-6">

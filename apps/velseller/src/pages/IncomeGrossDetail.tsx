@@ -68,7 +68,7 @@ export default function IncomeGrossDetail() {
   const maxVal = Math.max(...periodData.map(d => d.value), 1);
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
+    <div className="min-h-screen bg-background text-slate-900">
       <AppHeader />
 
       <main className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-10">

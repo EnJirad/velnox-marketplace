@@ -397,7 +397,7 @@ export default function ShopOrderDetail() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
+      <div className="min-h-screen bg-background text-slate-900">
         <ShopHeader />
         <main className="mx-auto w-full max-w-4xl px-4 py-10 sm:px-6">
           <Skeleton className="h-8 w-48" />
@@ -410,7 +410,7 @@ export default function ShopOrderDetail() {
 
   if (error || !order) {
     return (
-      <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
+      <div className="min-h-screen bg-background text-slate-900">
         <ShopHeader />
         <main className="mx-auto flex w-full max-w-4xl flex-col items-center px-4 py-24 text-center sm:px-6">
           <span className="flex size-14 items-center justify-center rounded-2xl bg-slate-100">
@@ -539,7 +539,7 @@ export default function ShopOrderDetail() {
   ) : null;
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
+    <div className="min-h-screen bg-background text-slate-900">
       <ShopHeader />
 
       <main className="mx-auto w-full max-w-4xl px-4 py-8 sm:px-6 sm:py-10">
@@ -1222,7 +1222,7 @@ export default function ShopOrderDetail() {
                 rows={3}
               />
             </div>
-            <p className="rounded-md bg-[#ECFDF5] px-3 py-2 text-xs text-emerald-700">
+            <p className="rounded-md bg-accent px-3 py-2 text-xs text-emerald-700">
               {t("orderDetail.verifiedNote")}
             </p>
           </div>

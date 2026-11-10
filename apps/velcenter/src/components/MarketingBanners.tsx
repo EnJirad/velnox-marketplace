@@ -255,7 +255,7 @@ export function MarketingBanners() {
           </Button>
           <Button
             type="button"
-            className="gap-1.5 bg-brand text-white hover:bg-[#059669]"
+            className="gap-1.5 bg-brand text-white hover:bg-brand-strong"
             onClick={onSave}
             disabled={saving || hasEmptyRow}
           >
@@ -474,10 +474,10 @@ export function MarketingBanners() {
                   {mode === "image+text" && (
                     <div className="flex items-stretch">
                       <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5 px-3 py-2">
-                        <span className="text-2xs font-semibold uppercase tracking-wide text-[#059669]">{t("marketing.stripEyebrow")}</span>
+                        <span className="text-2xs font-semibold uppercase tracking-wide text-brand-strong">{t("marketing.stripEyebrow")}</span>
                         {row.title.trim() && <span className="text-xs font-bold text-slate-900">{row.title}</span>}
                         {row.subtitle.trim() && <span className="line-clamp-1 text-2xs text-slate-600">{row.subtitle}</span>}
-                        {row.ctaUrl && <span className="text-2xs font-semibold text-[#059669]">{row.ctaLabel || t("marketing.stripCta")} →</span>}
+                        {row.ctaUrl && <span className="text-2xs font-semibold text-brand-strong">{row.ctaLabel || t("marketing.stripCta")} →</span>}
                       </div>
                       <img src={row.imageUrl!} alt="" className="h-14 w-[34%] object-cover" />
                     </div>
@@ -486,7 +486,7 @@ export function MarketingBanners() {
                     <div className="px-3 py-2">
                       {row.title.trim() && <span className="block text-xs font-bold text-slate-900">{row.title}</span>}
                       {row.subtitle.trim() && <span className="mt-0.5 block line-clamp-1 text-2xs text-slate-600">{row.subtitle}</span>}
-                      {row.ctaUrl && <span className="mt-1 inline-flex text-2xs font-semibold text-[#059669]">{row.ctaLabel || t("marketing.stripCta")} →</span>}
+                      {row.ctaUrl && <span className="mt-1 inline-flex text-2xs font-semibold text-brand-strong">{row.ctaLabel || t("marketing.stripCta")} →</span>}
                     </div>
                   )}
                   {mode === "image" && (

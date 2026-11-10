@@ -152,7 +152,7 @@ export default function ShopCart() {
   };
 
   return (
-    <div className="flex min-h-screen max-w-full flex-col bg-[#F8FAFC] pb-44 text-slate-900 md:pb-32">
+    <div className="flex min-h-screen max-w-full flex-col bg-background pb-44 text-slate-900 md:pb-32">
       <ShopHeader />
 
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 pt-8 sm:px-6 sm:pt-10">
@@ -312,7 +312,7 @@ export default function ShopCart() {
                               </p>
                             )}
                             {line.wholesale && line.packSize != null && (
-                              <p className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-[#ECFDF5] px-2 py-0.5 text-2xs font-semibold text-[#047857]">
+                              <p className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-accent px-2 py-0.5 text-2xs font-semibold text-accent-foreground">
                                 {t("cart.wholesaleBadge", {
                                   packs: line.packs ?? 0,
                                   size: line.packSize,
@@ -474,7 +474,7 @@ export default function ShopCart() {
                               {formatBaht(line.price)} × {line.qty}
                             </p>
                             {line.wholesale && line.packSize != null && (
-                              <p className="mt-0.5 text-2xs font-semibold text-[#047857]">
+                              <p className="mt-0.5 text-2xs font-semibold text-accent-foreground">
                                 {t("cart.wholesaleBadge", {
                                   packs: line.packs ?? 0,
                                   size: line.packSize,

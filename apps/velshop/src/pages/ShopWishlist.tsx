@@ -118,7 +118,7 @@ export default function ShopWishlist() {
     "mt-8 grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4 xl:grid-cols-5";
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
+    <div className="min-h-screen bg-background text-slate-900">
       <ShopHeader />
 
       <main className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 sm:py-10">

@@ -291,7 +291,7 @@ export default function MyOrders() {
   }, [orders, now, load]);
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
+    <div className="min-h-screen bg-background text-slate-900">
       <ShopHeader />
 
       <main className="mx-auto w-full max-w-4xl px-4 py-8 sm:px-6 sm:py-10">
@@ -345,7 +345,7 @@ export default function MyOrders() {
             </div>
           ) : orders.length === 0 ? (
             <div className="mt-8 flex flex-col items-center rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center">
-              <span className="flex size-14 items-center justify-center rounded-2xl bg-[#ECFDF5]">
+              <span className="flex size-14 items-center justify-center rounded-2xl bg-accent">
                 <PackageSearch className="size-7 text-brand" />
               </span>
               <h2 className="mt-5 text-lg font-semibold text-slate-900">{t("orders.emptyTitle")}</h2>
@@ -362,8 +362,8 @@ export default function MyOrders() {
               {purchases.map((purchase) => (
               <div key={purchase.key} className="space-y-3">
               {purchase.orders.length > 1 && (
-                <div className="rounded-lg border border-brand/30 bg-[#ECFDF5]/60 px-3 py-2">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-[#047857]">
+                <div className="rounded-lg border border-brand/30 bg-accent/60 px-3 py-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-accent-foreground">
                     {t("orders.purchaseGroup")}
                   </p>
                   <p className="mt-0.5 text-xs text-slate-600">

@@ -303,7 +303,7 @@ export function MapPicker({
             onClick={() => setLayer("satellite")}
             className={`flex items-center gap-1 px-2.5 py-1.5 font-medium transition-colors ${
               layer === "satellite"
-                ? "bg-[#ECFDF5] text-[#0f766e]"
+                ? "bg-accent text-[#0f766e]"
                 : "text-slate-500 hover:bg-slate-50"
             }`}
             aria-pressed={layer === "satellite"}
@@ -316,7 +316,7 @@ export function MapPicker({
             onClick={() => setLayer("standard")}
             className={`flex items-center gap-1 px-2.5 py-1.5 font-medium transition-colors ${
               layer === "standard"
-                ? "bg-[#ECFDF5] text-[#0f766e]"
+                ? "bg-accent text-[#0f766e]"
                 : "text-slate-500 hover:bg-slate-50"
             }`}
             aria-pressed={layer === "standard"}

@@ -31,7 +31,7 @@ export function HomePromoStrip({ banners }: { banners: PromoStripBanner[] }) {
   return (
     <section className="border-b border-slate-100 bg-white">
       <div className="mx-auto w-full max-w-6xl px-4 py-4 sm:px-6 sm:py-5">
-        <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[#059669]">
+        <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-brand-strong">
           {t("marketing.stripEyebrow")}
         </p>
         <div className="mt-3 grid gap-3 md:grid-cols-2">
@@ -65,7 +65,7 @@ export function HomePromoStrip({ banners }: { banners: PromoStripBanner[] }) {
                       <p className="mt-1 text-xs leading-5 text-slate-600">{banner.subtitle}</p>
                     )}
                     {banner.href && (
-                      <span className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-[#059669]">
+                      <span className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-brand-strong">
                         {banner.ctaLabel || t("marketing.stripCta")}
                         <ArrowRight className="size-3.5" />
                       </span>
@@ -77,7 +77,7 @@ export function HomePromoStrip({ banners }: { banners: PromoStripBanner[] }) {
             return (
               <div
                 key={banner.id}
-                className="flex items-center gap-4 rounded-2xl border border-brand/15 bg-[#ECFDF5]/50 p-3 sm:p-4"
+                className="flex items-center gap-4 rounded-2xl border border-brand/15 bg-accent/50 p-3 sm:p-4"
               >
                 {banner.href ? (
                   banner.href.startsWith("http") ? (

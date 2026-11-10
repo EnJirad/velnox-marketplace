@@ -176,7 +176,7 @@ export function ShopIdentityCard({ shop, verificationStatus, onUpdated }: ShopId
       className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-float"
     >
       {/* Storefront banner: the seller's own cover, else the brand band. */}
-      <div className="relative h-24 bg-[#ECFDF5] sm:h-32">
+      <div className="relative h-24 bg-accent sm:h-32">
         {cover ? (
           <img src={cover} alt="" className="size-full object-cover" loading="lazy" />
         ) : (
@@ -474,7 +474,7 @@ export function ShopIdentityCard({ shop, verificationStatus, onUpdated }: ShopId
               {t("common.cancel")}
             </Button>
             <Button
-              className="h-11 gap-1.5 bg-brand text-white hover:bg-[#059669]"
+              className="h-11 gap-1.5 bg-brand text-white hover:bg-brand-strong"
               onClick={() => void handleSave()}
               disabled={saving || !form.name.trim() || postalInvalid || shippingInvalid}
             >

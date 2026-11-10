@@ -304,7 +304,7 @@ export default function MyShop() {
     const rejected = status === "rejected" || status === "needs_correction";
     const suspended = status === "suspended";
     return (
-      <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
+      <div className="min-h-screen bg-background text-slate-900">
         <AppHeader />
         <main className="mx-auto w-full max-w-xl px-4 py-12 sm:px-6">
           <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-float">
@@ -351,7 +351,7 @@ export default function MyShop() {
   // ------------------------------------------------------------- states
   if (profileState === "loading") {
     return (
-      <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
+      <div className="min-h-screen bg-background text-slate-900">
         <AppHeader />
         <main className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 sm:py-10" aria-busy="true">
           <div className="h-24 animate-pulse rounded-2xl bg-slate-100 sm:h-32" />
@@ -364,7 +364,7 @@ export default function MyShop() {
 
   if (profileState === "failed") {
     return (
-      <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
+      <div className="min-h-screen bg-background text-slate-900">
         <AppHeader />
         <main className="mx-auto w-full max-w-lg px-4 py-12 sm:px-6">
           <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center">
@@ -391,7 +391,7 @@ export default function MyShop() {
     // No seller row at all → the application form is the correct next step.
     if (!application) {
       return (
-        <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
+        <div className="min-h-screen bg-background text-slate-900">
           <AppHeader />
           <ShopOnboarding onOpened={loadProfile} />
         </div>
@@ -404,7 +404,7 @@ export default function MyShop() {
   // `profileState === "ok"` guarantees a payload; this keeps the type honest.
   if (!profile) {
     return (
-      <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
+      <div className="min-h-screen bg-background text-slate-900">
         <AppHeader />
         <main className="mx-auto w-full max-w-lg px-4 py-12 sm:px-6">
           <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center">
@@ -423,7 +423,7 @@ export default function MyShop() {
   // ---------------------------------------------------------------- onboarding
   if (!shop) {
     return (
-      <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
+      <div className="min-h-screen bg-background text-slate-900">
         <AppHeader />
         <ShopOnboarding onOpened={loadProfile} />
       </div>
@@ -439,7 +439,7 @@ export default function MyShop() {
   const terminal = (product: StoreProduct) => TERMINAL_STATUSES.includes(product.status);
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
+    <div className="min-h-screen bg-background text-slate-900">
       <AppHeader />
 
       <main className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-10">
@@ -477,7 +477,7 @@ export default function MyShop() {
                 />
               </div>
               <Button
-                className="h-11 shrink-0 gap-1.5 bg-brand text-white hover:bg-[#059669]"
+                className="h-11 shrink-0 gap-1.5 bg-brand text-white hover:bg-brand-strong"
                 onClick={() => {
                   setEditing(null);
                   setFormOpen(true);
@@ -535,7 +535,7 @@ export default function MyShop() {
 
           {products !== undefined && !productsFailed && counts.all === 0 && (
             <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-white p-10 text-center">
-              <span className="mx-auto flex size-12 items-center justify-center rounded-xl bg-[#ECFDF5]">
+              <span className="mx-auto flex size-12 items-center justify-center rounded-xl bg-accent">
                 <Package className="size-6 text-brand" aria-hidden="true" />
               </span>
               <h3 className="mt-4 text-sm font-semibold text-slate-900">
@@ -545,7 +545,7 @@ export default function MyShop() {
                 {t("sellerDash.shop.emptyDesc")}
               </p>
               <Button
-                className="mt-5 h-11 gap-1.5 bg-brand text-white hover:bg-[#059669]"
+                className="mt-5 h-11 gap-1.5 bg-brand text-white hover:bg-brand-strong"
                 onClick={() => {
                   setEditing(null);
                   setFormOpen(true);
@@ -728,7 +728,7 @@ export default function MyShop() {
                     <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3 min-w-0">
                       <Button
                         size="sm"
-                        className="h-11 flex-none gap-1.5 bg-brand text-white hover:bg-[#059669] disabled:bg-slate-200 disabled:text-slate-500 min-w-0 px-3"
+                        className="h-11 flex-none gap-1.5 bg-brand text-white hover:bg-brand-strong disabled:bg-slate-200 disabled:text-slate-500 min-w-0 px-3"
                         onClick={() => void handleTogglePublish(product)}
                         disabled={
                           togglingId === product.id ||

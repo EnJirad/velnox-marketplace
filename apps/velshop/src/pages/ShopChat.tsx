@@ -539,7 +539,7 @@ export default function ShopChat() {
   // ── Login CTA ───────────────────────────────────────────────────────
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
+      <div className="min-h-screen bg-background text-slate-900">
         <ShopHeader />
         <main className="mx-auto flex w-full max-w-md flex-col items-center px-4 py-24 text-center">
           <span className="flex size-14 items-center justify-center rounded-2xl bg-slate-100">
@@ -557,7 +557,7 @@ export default function ShopChat() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
+    <div className="min-h-screen bg-background text-slate-900">
       <ShopHeader />
 
       <main className="mx-auto w-full max-w-6xl px-3 py-4 sm:px-6 sm:py-6">

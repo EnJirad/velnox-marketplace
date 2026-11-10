@@ -230,7 +230,7 @@ export function NotificationBell() {
             <Link
               to="/notifications"
               onClick={() => setOpen(false)}
-              className="flex items-center gap-0.5 text-xs font-medium text-brand transition-colors hover:text-[#059669]"
+              className="flex items-center gap-0.5 text-xs font-medium text-brand transition-colors hover:text-brand-strong"
             >
               {t("notifications.viewAll")}
               <ChevronRight className="size-3" />

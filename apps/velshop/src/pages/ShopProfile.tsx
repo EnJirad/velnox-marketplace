@@ -220,7 +220,7 @@ export default function ShopProfile() {
         <ChevronRight className="size-4 shrink-0 text-slate-300" />
       </>
     );
-    const className = "flex items-center gap-3.5 px-5 py-4 transition-colors hover:bg-[#F8FAFC]";
+    const className = "flex items-center gap-3.5 px-5 py-4 transition-colors hover:bg-background";
     if (row.external) {
       return (
         <a key={row.to + row.labelKey} href={row.to} target="_blank" rel="noreferrer" className={className}>
@@ -236,7 +236,7 @@ export default function ShopProfile() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
+    <div className="min-h-screen bg-background text-slate-900">
       <ShopHeader />
 
       <main className="mx-auto w-full max-w-3xl px-4 py-8 sm:px-6 sm:py-10">
@@ -275,7 +275,7 @@ export default function ShopProfile() {
                       className={`flex size-24 shrink-0 items-center justify-center overflow-hidden rounded-full border-4 border-white shadow-sm ${
                         avatarSrc
                           ? "bg-transparent"
-                          : "bg-[#ECFDF5] text-3xl font-bold text-brand"
+                          : "bg-accent text-3xl font-bold text-brand"
                       }`}
                     >
                       {avatarSrc ? (
@@ -309,7 +309,7 @@ export default function ShopProfile() {
                   </p>
                   {displayEmail && <p className="truncate text-sm text-slate-500">{displayEmail}</p>}
                   <div className="mt-2 flex flex-wrap items-center gap-2">
-                    <span className="inline-flex items-center gap-1 rounded-full bg-[#ECFDF5] px-2.5 py-1 text-2xs font-medium text-emerald-700">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-accent px-2.5 py-1 text-2xs font-medium text-emerald-700">
                       <ShieldCheck className="size-3" />
                       {t("profile.statusActive")}
                     </span>

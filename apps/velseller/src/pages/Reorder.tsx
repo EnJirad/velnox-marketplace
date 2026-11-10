@@ -98,7 +98,7 @@ export default function Reorder() {
 
   if (suggestions === null) {
     return (
-      <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
+      <div className="min-h-screen bg-background text-slate-900">
         <AppHeader />
         <main className="flex min-h-[60vh] items-center justify-center px-4">
           <Loader2 className="size-6 animate-spin text-slate-300" />
@@ -224,7 +224,7 @@ export default function Reorder() {
   );
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
+    <div className="min-h-screen bg-background text-slate-900">
       <AppHeader />
       <main className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 sm:py-10">
         <div>
@@ -269,14 +269,14 @@ export default function Reorder() {
 
         {suggestions.length === 0 && (
           <div className="mt-10 flex flex-col items-center rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center">
-            <span className="flex size-14 items-center justify-center rounded-2xl bg-[#ECFDF5]">
+            <span className="flex size-14 items-center justify-center rounded-2xl bg-accent">
               <TrendingUp className="size-7 text-brand" />
             </span>
             <h3 className="mt-5 text-lg font-semibold text-slate-900">ยังไม่มีสินค้าในร้าน</h3>
             <p className="mt-1.5 max-w-sm text-sm leading-6 text-slate-500">
               เพิ่มสินค้าและตั้งจุดสั่งซื้อซ้ำที่หน้า "ร้านของฉัน" — เมื่อมีออเดอร์จริง ระบบจะเริ่มคาดการณ์รอบถัดไปให้
             </p>
-            <Button className="mt-6 gap-1.5 h-11 bg-brand text-white hover:bg-[#059669]" asChild>
+            <Button className="mt-6 gap-1.5 h-11 bg-brand text-white hover:bg-brand-strong" asChild>
               <a href="/seller/shop">
                 <Store className="size-4" />
                 ไปที่ร้านของฉัน

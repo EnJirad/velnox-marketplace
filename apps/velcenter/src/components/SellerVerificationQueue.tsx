@@ -265,7 +265,7 @@ export default function SellerVerificationQueue() {
         </div>
       ) : rows.length === 0 ? (
         <div className="flex flex-col items-center rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center">
-          <span className="flex size-14 items-center justify-center rounded-2xl bg-[#ECFDF5]">
+          <span className="flex size-14 items-center justify-center rounded-2xl bg-accent">
             <ShieldCheck className="size-7 text-brand" />
           </span>
           <h3 className="mt-5 text-lg font-semibold text-slate-900">{t("review.noApplications")}</h3>

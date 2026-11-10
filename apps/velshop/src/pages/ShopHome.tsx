@@ -305,7 +305,7 @@ export default function ShopHome() {
   useEffect(() => { setSeo({ title: t("home.seoTitle", { shop: "VelShop" }), description: t("home.seoDesc", { tagline: "ซื้อขายของจริง ปลีกและส่ง ในที่เดียว" }) }); }, [t]);
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#F8FAFC] text-slate-900">
+    <div className="flex min-h-screen flex-col bg-background text-slate-900">
       <ShopHeader />
 
       {/* Hero — Announcement Carousel (single slot, platform-level messages only) */}

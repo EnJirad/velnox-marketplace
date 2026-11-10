@@ -280,7 +280,7 @@ export function CategoryPicker({
                     title={getLocalizedName(node, lang)}
                     className={`flex w-full min-w-0 items-center gap-3 overflow-hidden rounded-xl px-3 py-2.5 text-left transition-all ${
                       pendingSelection === node.slug
-                        ? "bg-[#ECFDF5] ring-1 ring-brand text-[#059669]"
+                        ? "bg-accent ring-1 ring-brand text-brand-strong"
                         : "hover:bg-slate-50 text-slate-700"
                     }`}
                   >
@@ -326,7 +326,7 @@ export function CategoryPicker({
                       // width with min-w-0 + truncate instead.
                       className={`flex w-full min-w-0 items-center gap-1 rounded-xl transition-all ${
                         active
-                          ? "bg-[#ECFDF5] ring-1 ring-brand"
+                          ? "bg-accent ring-1 ring-brand"
                           : "hover:bg-slate-50"
                       }`}
                     >
@@ -349,7 +349,7 @@ export function CategoryPicker({
                         <div className="min-w-0 flex-1 overflow-hidden">
                           <p
                             className={`w-full truncate text-sm font-medium ${
-                              active ? "text-[#059669]" : "text-slate-700"
+                              active ? "text-brand-strong" : "text-slate-700"
                             }`}
                           >
                             {getLocalizedName(node, lang)}
@@ -404,7 +404,7 @@ export function CategoryPicker({
               size="sm"
               onClick={handleConfirm}
               disabled={!pendingSelection}
-              className="bg-brand text-white hover:bg-[#059669] disabled:opacity-50"
+              className="bg-brand text-white hover:bg-brand-strong disabled:opacity-50"
             >
               {t("categoryPicker.select")}
             </Button>

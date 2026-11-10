@@ -1108,7 +1108,7 @@ export default function Center() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
+    <div className="min-h-screen bg-background text-slate-900">
       <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/90 backdrop-blur">
         <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-4 sm:px-6">
           <div className="flex items-center gap-2 sm:gap-5">
@@ -1433,7 +1433,7 @@ export default function Center() {
               </div>
             ) : ordersData.length === 0 ? (
               <div className="flex flex-col items-center rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center">
-                <span className="flex size-14 items-center justify-center rounded-2xl bg-[#ECFDF5]">
+                <span className="flex size-14 items-center justify-center rounded-2xl bg-accent">
                   <ShoppingBag className="size-7 text-brand" />
                 </span>
                 <h2 className="mt-5 text-lg font-semibold text-slate-900">ยังไม่มีออเดอร์</h2>
@@ -1944,7 +1944,7 @@ export default function Center() {
                         </div>
                       ) : filteredCustomers.length === 0 ? (
                         <div className="flex flex-col items-center rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center">
-                          <span className="flex size-12 items-center justify-center rounded-2xl bg-[#ECFDF5]">
+                          <span className="flex size-12 items-center justify-center rounded-2xl bg-accent">
                             <ShoppingBag className="size-6 text-brand" />
                           </span>
                           <p className="mt-4 text-sm font-semibold text-slate-900">

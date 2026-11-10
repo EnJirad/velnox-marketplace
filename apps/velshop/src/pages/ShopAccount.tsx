@@ -143,7 +143,7 @@ export default function ShopAccount() {
     : null;
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
+    <div className="min-h-screen bg-background text-slate-900">
       <ShopHeader />
 
       <main className="mx-auto w-full max-w-xl px-4 py-8 sm:px-6 sm:py-10">
@@ -195,7 +195,7 @@ export default function ShopAccount() {
                     className={`flex size-24 shrink-0 items-center justify-center overflow-hidden rounded-full border-4 border-white shadow-sm ${
                       profile?.avatarUrl
                         ? "bg-transparent"
-                        : "bg-[#ECFDF5] text-3xl font-bold text-brand"
+                        : "bg-accent text-3xl font-bold text-brand"
                     }`}
                   >
                     <AvatarImage
@@ -231,7 +231,7 @@ export default function ShopAccount() {
                   </div>
                 </div>
                 <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-4">
-                  <span className="inline-flex items-center gap-1 rounded-full bg-[#ECFDF5] px-2.5 py-1 text-2xs font-medium text-emerald-700">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-accent px-2.5 py-1 text-2xs font-medium text-emerald-700">
                     <ShieldCheck className="size-3" />
                     {t("account.statusActive")}
                   </span>

@@ -125,7 +125,7 @@ export default function ShopHelp() {
   }, [query, t]);
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
+    <div className="min-h-screen bg-background text-slate-900">
       <ShopHeader />
 
       <main className="mx-auto w-full max-w-3xl px-4 py-8 sm:px-6 sm:py-10">
@@ -169,7 +169,7 @@ export default function ShopHelp() {
               return (
                 <section key={cat.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
                   <div className="flex items-start gap-3 px-5 pt-5 pb-3 sm:px-6">
-                    <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-[#ECFDF5] text-[#047857]">
+                    <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-foreground">
                       <Icon className="size-[18px]" />
                     </span>
                     <div className="min-w-0">

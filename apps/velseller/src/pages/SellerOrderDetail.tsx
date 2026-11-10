@@ -274,7 +274,7 @@ export default function SellerOrderDetail() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
+      <div className="min-h-screen bg-background text-slate-900">
         <AppHeader />
         <main className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6">
           <Skeleton className="h-8 w-56" />
@@ -287,7 +287,7 @@ export default function SellerOrderDetail() {
 
   if (error || !order) {
     return (
-      <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
+      <div className="min-h-screen bg-background text-slate-900">
         <AppHeader />
         <main className="mx-auto flex w-full max-w-5xl flex-col items-center px-4 py-24 text-center sm:px-6">
           <span className="flex size-14 items-center justify-center rounded-2xl bg-slate-100">
@@ -298,7 +298,7 @@ export default function SellerOrderDetail() {
             {error ?? t("orderDetail.notFoundDesc")}
           </p>
           <div className="mt-6 flex flex-col gap-2 sm:flex-row">
-            <Button className="gap-1.5 h-11 bg-brand text-white hover:bg-[#059669]" onClick={() => void load()}>
+            <Button className="gap-1.5 h-11 bg-brand text-white hover:bg-brand-strong" onClick={() => void load()}>
               <RefreshCw className="size-4" />
               {t("orderDetail.retry")}
             </Button>
@@ -339,7 +339,7 @@ export default function SellerOrderDetail() {
     : "";
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
+    <div className="min-h-screen bg-background text-slate-900">
       <AppHeader />
 
       <main className="mx-auto w-full max-w-5xl px-4 py-8 sm:px-6 sm:py-10">

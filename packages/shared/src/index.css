@@ -51,6 +51,9 @@
      etc. in 302 places, so changing it meant finding every literal. It now has
      one name. Colour values are unchanged (#10B981). */
   --color-brand: var(--brand);
+  /* Stronger emerald for text/icons on light emerald surfaces — the value that
+     was written as `text-[#059669]` / `bg-[#059669]` in 32 places. */
+  --color-brand-strong: var(--brand-strong);
   /* 11px is used 295 times as `text-[11px]` because the type scale has no step
      between text-xs (12px) and nothing. Declared WITHOUT a paired line-height
      so the utility sets font-size only — exactly what `text-[11px]` did. */
@@ -89,6 +92,7 @@
   --input: #e2e8f0;
   --ring: #10b981;
   --brand: #10b981;
+  --brand-strong: #059669;
   --chart-1: #10b981;
   --chart-2: #0f172a;
   --chart-3: #f59e0b;

@@ -82,7 +82,7 @@ export function MobileTabBar({
               <span
                 className={cn(
                   "relative flex h-8 w-14 items-center justify-center rounded-full transition-colors",
-                  active && "bg-[#ECFDF5]",
+                  active && "bg-accent",
                 )}
               >
                 <Icon className="size-[22px]" strokeWidth={active ? 2.4 : 2} />

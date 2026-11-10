@@ -132,7 +132,7 @@ export function ShopHeader() {
           >
             <ShoppingCart className="size-6" />
             {count > 0 && (
-              <span className="absolute -right-0.5 -top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-white px-1 text-2xs font-bold leading-none text-[#047857] shadow-sm">
+              <span className="absolute -right-0.5 -top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-white px-1 text-2xs font-bold leading-none text-accent-foreground shadow-sm">
                 {count > 99 ? "99+" : count}
               </span>
             )}
@@ -145,7 +145,7 @@ export function ShopHeader() {
           >
             <MessageCircle className="size-6" />
             {chatUnread != null && chatUnread > 0 && (
-              <span className="absolute -right-0.5 -top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-white px-1 text-2xs font-bold leading-none text-[#047857] shadow-sm">
+              <span className="absolute -right-0.5 -top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-white px-1 text-2xs font-bold leading-none text-accent-foreground shadow-sm">
                 {chatUnread > 99 ? "99+" : chatUnread}
               </span>
             )}

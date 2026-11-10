@@ -218,7 +218,7 @@ export function GoalCard({ goal, onEdit, onDelete, onRecordProgress }: GoalCardP
       <div className="mt-auto">
         <Button
           variant="outline"
-          className="h-11 w-full gap-1.5 border-slate-200 bg-white text-slate-700 hover:border-brand hover:bg-[#ECFDF5] hover:text-emerald-700"
+          className="h-11 w-full gap-1.5 border-slate-200 bg-white text-slate-700 hover:border-brand hover:bg-accent hover:text-emerald-700"
           onClick={() => onRecordProgress(goal)}
         >
           <Plus className="size-4" aria-hidden="true" />

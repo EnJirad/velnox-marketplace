@@ -50,7 +50,7 @@ export default function ChangePasswordScreen() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#F8FAFC] px-4 text-slate-900">
+    <div className="flex min-h-screen items-center justify-center bg-background px-4 text-slate-900">
       <div className="w-full max-w-md">
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
           <div className="flex size-12 items-center justify-center rounded-2xl bg-amber-50">

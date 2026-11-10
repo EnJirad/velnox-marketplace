@@ -253,7 +253,7 @@ export function SellerNotificationBell() {
               {t("notifications.title")}
             </p>
             {unread > 0 && (
-              <span className="rounded-full bg-[#ECFDF5] px-2 py-0.5 text-2xs font-semibold text-[#047857]">
+              <span className="rounded-full bg-accent px-2 py-0.5 text-2xs font-semibold text-accent-foreground">
                 {t("notifications.unread", { count: unread })}
               </span>
             )}
