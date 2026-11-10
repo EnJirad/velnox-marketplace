@@ -237,3 +237,43 @@ typecheck 4/4 exit 0 · `bun --filter @velnox/velseller build` ผ่าน · `
 ## ตรวจแล้ว
 
 typecheck 4/4 · `build:apps` 4/4 exit 0 · `bun run test` **1432 pass / 0 fail** · `git diff --check` clean
+
+---
+
+# เพิ่มเติม — C4 ตัวแรก: focus management ของ `NotificationBell` (velshop)
+
+## สิ่งที่ขาด
+
+วัดแล้ว: ไฟล์นี้มี `role="dialog"` และจัดการ Escape กับคลิกข้างนอกได้ **แต่ไม่เคยย้าย focus เข้าแผง**
+⇒ คนที่ใช้คีย์บอร์ดหรือ screen reader กดกระดิ่งแล้ว focus ยังอยู่ที่กระดิ่ง กด Tab ต่อก็เดินไป
+element ข้างหลังแผง และ `role="dialog"` ไม่ถูกประกาศให้ใครฟัง
+
+## ทำไมไม่ใช้ Radix Popover ตามที่ผมเสนอไว้ตอนแรก
+
+ผมเสนอ `ui/popover.tsx` แต่พออ่านจริงพบว่า `PopoverContent` ห่อ `PopoverPrimitive.Content` ที่**จัดตำแหน่ง
+ด้วย Popper** ⇒ จะทับ layout ที่โค้ดนี้ตั้งใจทำไว้: บนมือถือแผงเป็น `fixed inset-x-3` ที่ตรึงกับขอบ viewport
+(คอมเมนต์ในไฟล์ระบุว่าเวอร์ชันเดิมที่ใช้ `absolute right-0` ล้นขอบจอ 320px ไป ~80px)
+
+ถ้าเปลี่ยนไปใช้ Radix ตอนนี้ ผมจะ**แก้สิ่งที่ไม่ได้พัง (ตำแหน่ง) และทำให้สิ่งที่พัง (focus) ดีขึ้น
+โดยที่ยืนยันผลไม่ได้** ⇒ เลือกแก้เฉพาะ focus management บน layout เดิม
+
+## สิ่งที่แก้
+
+| เปลี่ยน | ผล |
+|---|---|
+| `panelRef` + `tabIndex={-1}` + `outline-none` บนแผง | โฟกัสย้ายเข้าแผงเมื่อเปิด ⇒ screen reader อ่านชื่อแผง |
+| effect `if (open) panelRef.current?.focus()` | เปิดด้วยคีย์บอร์ดแล้วอยู่ "ใน" แผงทันที |
+| Escape → `setOpen(false)` **+** `triggerRef.current?.focus()` | ปิดแล้วโฟกัสกลับไปที่กระดิ่ง ไม่ตกไปที่ `<body>` |
+| `triggerRef` บนปุ่มกระดิ่ง | ปลายทางของการคืนโฟกัส |
+
+**ไม่ทำ focus trap** — แผงนี้เป็น non-modal popover (ไม่มี backdrop, ไม่ล็อก scroll) การกัก Tab ไว้จะขัด
+ธรรมชาติของผู้ใช้ มาตรฐานของ popover คือย้ายโฟกัสเข้าแล้วปล่อยให้ Tab ออกได้
+
+**ไม่แตะ:** ตรรกะโหลด/มาร์คอ่าน/นำทาง, realtime subscription, layout มือถือ, สี
+
+## ตรวจแล้ว
+
+typecheck 4/4 exit 0 · `bun --filter @velnox/velshop build` ผ่าน · `bun run test` **1432 pass / 0 fail**
+(รวม `notification-flow.test.ts` ที่อ้างไฟล์นี้) · `git diff --check` clean
+
+**ยังไม่ได้ทดสอบด้วยคีย์บอร์ดจริง** — ต้องให้ owner กด Tab ดู (ผมทดสอบ interaction ในเบราว์เซอร์ไม่ได้)

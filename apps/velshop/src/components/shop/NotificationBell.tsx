@@ -72,6 +72,8 @@ export function NotificationBell() {
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
     try {
@@ -111,6 +113,17 @@ export function NotificationBell() {
     if (open) void load();
   }, [open, load]);
 
+  // Move focus into the panel when it opens.
+  //
+  // Without this, a keyboard or screen-reader user who pressed the bell stayed
+  // focused on the bell itself: the panel opened visually but Tab walked the
+  // page behind it, and the panel's role="dialog" was announced to nobody.
+  // The panel is a non-modal popover, so focus is moved in but never trapped;
+  // Escape hands it back to the bell.
+  useEffect(() => {
+    if (open) panelRef.current?.focus();
+  }, [open]);
+
   // Close on outside click / Escape.
   useEffect(() => {
     if (!open) return;
@@ -118,7 +131,12 @@ export function NotificationBell() {
       if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") {
+        setOpen(false);
+        // Return focus to the control that opened the panel, otherwise focus
+        // falls back to <body> and the keyboard user loses their place.
+        triggerRef.current?.focus();
+      }
     };
     document.addEventListener("mousedown", onDown);
     document.addEventListener("touchstart", onDown);
@@ -169,6 +187,7 @@ export function NotificationBell() {
   return (
     <div ref={wrapRef} className="relative">
       <button
+        ref={triggerRef}
         type="button"
         onClick={handleOpen}
         aria-label={
@@ -190,15 +209,17 @@ export function NotificationBell() {
 
       {open && (
         <div
+          ref={panelRef}
           role="dialog"
           aria-label={t("notifications.title")}
+          tabIndex={-1}
           /*
             Phone (< sm): a fixed sheet pinned to the viewport gutters, so it can
             never extend past the left edge of a 320/375/430 px screen (the old
             `absolute right-0` panel started ~80 px off-screen).
             Tablet/desktop (sm+): the anchored popover under the bell.
           */
-          className="fixed inset-x-3 top-[calc(4.5rem+env(safe-area-inset-top))] z-[60] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-overlay sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-[min(360px,calc(100vw-1.5rem))]"
+          className="fixed inset-x-3 top-[calc(4.5rem+env(safe-area-inset-top))] z-[60] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-overlay outline-none sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-[min(360px,calc(100vw-1.5rem))]"
         >
           {/* Header */}
           <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
