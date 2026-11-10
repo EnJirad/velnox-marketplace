@@ -5,11 +5,19 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
 import { useTracking } from "@velnox/shared/lib/track";
 import { apiBaseUrl as API_BASE } from "@velnox/shared/lib/sites";
+import {
+  clearGuestCart,
+  readGuestCart,
+  writeGuestCart,
+  type GuestCartRecord,
+  type StorageLike,
+} from "@velnox/shared/lib/guest-cart";
 
 /**
  * Cart line — the real cart lives in the backend (Neon via API).
@@ -114,6 +122,51 @@ function toLine(item: {
 
 let guestSeq = 0;
 
+/**
+ * localStorage when this runs in a browser, otherwise null. Reading it can throw
+ * (Safari private mode, locked-down WebViews), so the access itself is guarded.
+ */
+function resolveGuestStorage(): StorageLike | null {
+  try {
+    return typeof window !== "undefined" ? window.localStorage : null;
+  } catch {
+    return null;
+  }
+}
+
+const guestStorage = resolveGuestStorage();
+
+/** Only the durable fields survive a refresh; server-only annotations do not. */
+function toGuestRecord(line: CartLine): GuestCartRecord {
+  return {
+    productId: line.productId,
+    variantId: line.variantId,
+    name: line.name,
+    unit: line.unit,
+    price: line.price,
+    qty: line.qty,
+    stock: line.stock,
+    ...(line.imageUrl ? { imageUrl: line.imageUrl } : {}),
+    ...(line.shopId ? { shopId: line.shopId } : {}),
+  };
+}
+
+/** A restored line gets a fresh id so it can never collide with a new guest line. */
+function toGuestLine(record: GuestCartRecord): CartLine {
+  return {
+    id: `guest-${++guestSeq}`,
+    productId: record.productId,
+    variantId: record.variantId,
+    name: record.name,
+    unit: record.unit,
+    price: record.price,
+    qty: record.qty,
+    stock: record.stock,
+    imageUrl: record.imageUrl,
+    shopId: record.shopId ?? null,
+  };
+}
+
 /** Unwrap the {success, data} envelope that the backend sends. */
 function unwrapJson(raw: any): any {
   if (raw && typeof raw === "object" && "data" in raw && raw.success !== undefined) {
@@ -136,6 +189,11 @@ async function apiCartAdd(productId: string, quantity: number, variantId?: strin
     body: JSON.stringify({ productId, quantity, variantId: variantId ?? null }),
   });
   const raw = await res.json();
+  // A rejected add must be a rejection: the guest-cart merge relies on this to
+  // keep only the lines the server refused, instead of dropping them silently.
+  if (!res.ok) {
+    throw new Error((raw as any)?.error?.message ?? `cart add failed (${res.status})`);
+  }
   return unwrapJson(raw);
 }
 async function apiCartItemUpdate(cartItemId: string, quantity: number): Promise<any> {
@@ -161,17 +219,34 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const { isAuthenticated, isLoading: authLoading } = useAuth();
   const { track } = useTracking();
 
-  const [lines, setLines] = useState<CartLine[]>([]);
+  // Read during the initial render, not in an effect: a guest cart restored in
+  // an effect would be momentarily `[]`, and the persist effect could write
+  // that empty value over the stored one.
+  const [lines, setLines] = useState<CartLine[]>(() =>
+    readGuestCart(guestStorage).map(toGuestLine),
+  );
   const [syncing, setSyncing] = useState(false);
   const [cartError, setCartError] = useState<string | null>(null);
   const [version, setVersion] = useState(0);
 
+  /** One guest→server merge per sign-in; `version` bumps must not repeat it. */
+  const mergedRef = useRef(false);
+
   const reload = useCallback(() => setVersion((v) => v + 1), []);
 
-  // Load the server cart whenever auth state changes (or after mutations).
+  // Mirror guest edits to storage. Skipped while signed in — the server owns the
+  // cart then, and writing here would resurrect stale guest lines next sign-in.
+  useEffect(() => {
+    if (authLoading || isAuthenticated) return;
+    writeGuestCart(guestStorage, lines.map(toGuestRecord));
+  }, [lines, isAuthenticated, authLoading]);
+
+  // Load the server cart whenever auth state changes (or after mutations), and
+  // fold a guest's pending cart into it exactly once on sign-in.
   useEffect(() => {
     if (authLoading) return;
     if (!isAuthenticated) {
+      mergedRef.current = false;
       setLines([]);
       return;
     }
@@ -180,7 +255,31 @@ export function CartProvider({ children }: { children: ReactNode }) {
     // Clear a previous failure so a retry starts from a clean state (a stale
     // error must not survive the request that fixes it).
     setCartError(null);
-    apiCartGet()
+
+    const load = async () => {
+      if (!mergedRef.current) {
+        mergedRef.current = true;
+        const pending = readGuestCart(guestStorage);
+        if (pending.length > 0) {
+          const refused: GuestCartRecord[] = [];
+          for (const record of pending) {
+            try {
+              await apiCartAdd(record.productId, record.qty, record.variantId);
+            } catch {
+              refused.push(record);
+            }
+          }
+          // Keep ONLY the lines the server refused. Clearing everything would
+          // lose their cart; keeping everything would re-add the successful ones
+          // and double their quantity on the next sign-in.
+          if (refused.length > 0) writeGuestCart(guestStorage, refused);
+          else clearGuestCart(guestStorage);
+        }
+      }
+      return apiCartGet();
+    };
+
+    load()
       .then((cart) => {
         if (!alive) return;
         setLines(((cart as any)?.items ?? []).map(toLine));

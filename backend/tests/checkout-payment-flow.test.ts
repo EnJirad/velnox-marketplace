@@ -279,9 +279,11 @@ describe("ShopCheckout — one press goes order → Stripe → redirect", () => 
     expect(src).toContain('t("checkout.preparingPayment")');
     // Both the desktop and the mobile CTA are disabled while submitting, AND
     // while there is no redeemable delivery quote (a total the server has not
-    // priced must never be payable).
+    // priced must never be payable), AND while no payment method is usable
+    // (a customer who can only pick a dashed "coming soon" card must not be
+    // able to press pay and collect a toast).
     expect(
-      src.match(/disabled=\{submitting \|\| checkoutCount === 0 \|\| addresses === null \|\| !quoteReady\}/g) ?? [],
+      src.match(/disabled=\{submitting \|\| checkoutCount === 0 \|\| addresses === null \|\| !quoteReady \|\| \(methodOptions !== null && enabledMethods\.length === 0\)\}/g) ?? [],
     ).toHaveLength(2);
     // The empty-cart screen must not steal the view mid-redirect.
     expect(src).toContain("!syncing && !authLoading && !submitting && isAuthenticated");

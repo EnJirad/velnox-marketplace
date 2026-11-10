@@ -1208,7 +1208,7 @@ export default function ShopCheckout() {
                   size="lg"
                 />
               </div>
-              <Button className="mt-5 w-full gap-1.5 bg-slate-900 text-white hover:bg-slate-800" onClick={handleSubmit} disabled={submitting || checkoutCount === 0 || addresses === null || !quoteReady} aria-busy={submitting}>
+              <Button className="mt-5 w-full gap-1.5 bg-slate-900 text-white hover:bg-slate-800" onClick={handleSubmit} disabled={submitting || checkoutCount === 0 || addresses === null || !quoteReady || (methodOptions !== null && enabledMethods.length === 0)} aria-busy={submitting}>
                 {submitting ? (<><Loader2 className="size-4 animate-spin" />{isStripeMethod ? t("checkout.preparingPayment") : t("checkout.submitting")}</>) : (<><ShieldCheck className="size-4" />{t("checkout.submit", { total: quote ? formatBaht(Number(quote.total)) : "—" })}</>)}
               </Button>
               <p className="mt-3 text-center text-[11px] leading-5 text-slate-400">{t("checkout.priceNote")}</p>
@@ -1225,7 +1225,7 @@ export default function ShopCheckout() {
               <p className="text-[11px] text-slate-400">{t("checkout.total")}</p>
               <p className="text-lg font-bold tabular-nums tracking-tight text-slate-900">{quote ? formatBaht(Number(quote.total)) : "—"}</p>
             </div>
-            <Button className="h-11 flex-1 gap-1.5 rounded-xl bg-slate-900 text-white hover:bg-slate-800" style={{ minWidth: 0, flexShrink: 1 }} onClick={handleSubmit} disabled={submitting || checkoutCount === 0 || addresses === null || !quoteReady} aria-busy={submitting}>
+            <Button className="h-11 flex-1 gap-1.5 rounded-xl bg-slate-900 text-white hover:bg-slate-800" style={{ minWidth: 0, flexShrink: 1 }} onClick={handleSubmit} disabled={submitting || checkoutCount === 0 || addresses === null || !quoteReady || (methodOptions !== null && enabledMethods.length === 0)} aria-busy={submitting}>
               {submitting ? (<><Loader2 className="size-4 shrink-0 animate-spin" /><span className="min-w-0 truncate">{isStripeMethod ? t("checkout.preparingPayment") : t("checkout.submitting")}</span></>) : (<><ShieldCheck className="size-4 shrink-0" /><span className="min-w-0 truncate">{t("checkout.submit", { total: quote ? formatBaht(Number(quote.total)) : "—" })}</span></>)}
             </Button>
           </div>
