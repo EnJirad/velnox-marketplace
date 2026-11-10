@@ -1,6 +1,6 @@
 # Velnox AI Handoff — Current State
 
-**Last verified:** 2026-11-10 · **Branch:** `main` · **HEAD:** `3390540` — **CI GREEN** (`Tests` + `Production DB Verify` success)
+**Last verified:** 2026-11-10 · **Branch:** `main` · **HEAD:** `76eada0` — **CI GREEN** (`Tests` + `Production DB Verify` success)
 
 ## 1. Current Project State
 
@@ -12,6 +12,7 @@
 
 
 ### Active Tasks
+- **Launch readiness รอบ 1 (2026-11-10)** — ✅ DONE, verified — ตามแผน `.ai/tasks/active/launch-readiness-plan.md`. ปิดรู 3 จุด: (ก) ตะกร้า guest หายเมื่อ refresh/ล็อกอิน → เพิ่ม `packages/shared/src/lib/guest-cart.ts` (pure storage + validate + clamp qty กับ stock) และ merge เข้า server cart ครั้งเดียวต่อการล็อกอิน แบบไม่คูณสอง (ข) ปุ่มจ่ายเปิดทั้งที่ไม่มีวิธีจ่าย → disable ทั้ง desktop + mobile CTA (ค) ร้านที่ถูกระงับยังขาย → catalog + detail เพิ่ม `sh.status = 'active'`. Test ที่ pin contract เก่า 3 ไฟล์อัปเดตตามพฤติกรรมใหม่ ไม่ได้ลบ. รายละเอียด `.ai/reports/LATEST.md`. **ยังไม่ทดสอบบน production** — ต้อง deploy แล้วลอง flow จริง
 - **Unified Domain Migration (2026-11-10)** — 🔶 **PARKED by owner** — task file: `.ai/tasks/active/unified-domain-migration.md`, record: `.ai/history/2026-11-10-unified-domain-migration.md`. เจ้าของเลือกใช้ URL เดิมต่อก่อน แล้วค่อยสลับเมื่อแก้เรื่อง DNS ได้. **ไม่มีอะไรค้างครึ่งทาง:** Vercel domain 3 ตัวที่เพิ่มไว้ยังไม่ resolve, ไม่ได้แตะ DNS/env/R2/Stripe เลย, และ code ที่แก้เป็น behaviour-neutral ⇒ production เหมือนเดิมทุกอย่าง ยกเว้น mailto ที่ตายอยู่แล้ว 2 จุด. แกนโดเมนเปลี่ยนจาก `velnox.com` (RDAP พิสูจน์ว่าไม่ใช่ของเจ้าของ) เป็น **`velnox.live`**. **ตัวกันเดียวที่เหลือ:** Cloudflare MCP เป็น read-only (`POST /zones` → 403 ยืนยันซ้ำ 2 ครั้ง) ⇒ ต้องเลือกทาง A (สร้าง zone + import BIND + เปลี่ยน NS) หรือทาง B (ชี้ NS ไป Vercel DNS แล้ว AI 01 สร้าง record เองได้ทั้งหมด). ข้อเท็จจริงที่ได้เพิ่ม: **Convex ไม่มีในระบบนี้เลย** (realtime = WebSocket ใน backend) และ **R2 CORS ขาด `velnox.live`/`www.velnox.live`** ⇒ อัปโหลดจากหน้าร้านจริงถูกบล็อก (bug ที่มีอยู่ก่อน)
 - **CI เขียว + MVP storefront polish (2026-11-09)** — ✅ DONE, verified, commit+pushed. ซ่อม CI 2 จุดที่ต้นเหตุ (auth.ts typing, CANON ใน verify-reconciler.sh) + ปิดงานค้าง Phase 2: tablet nav ของ velseller กลับมา (`until="lg"`), แถวตาราง seller orders เลิก full reload, `formatBaht` แสดงเศษสตางค์ครบ 2 หลัก, การ์ดสินค้าเลิกแสดงปุ่มตาย `0 0 0`. Test ค้าง 5 ไฟล์อัปเดตตาม behavior จริง (ไม่ใช่กลบ). รายละเอียด: `.ai/reports/LATEST.md`
 - **Automatic Neon Database Migration System (2026-11-09)** — ⚠️ **ไม่พบไฟล์ในรีโป ปัจจุบัน** — handoff/LATEST ของ session ก่อนอ้างว่า `backend/scripts/migrate.ts` + `backend/tests/migrate-runner.test.ts` ถูกสร้างแล้ว แต่ตรวจ tree จริง (`ls backend/scripts`, `git ls-files`, `find -name "migrate*.ts"`) ไม่พบทั้งสองไฟล์ และ `backend/package.json` ไม่มี script `migrate` (`package.json` root มีแค่ `db:migrate` ที่เป็น echo) — บันทึกของ session นั้น (`2026-11-09-automatic-migration-system.md`) ยัง untracked และ**ไม่ถูก commit** จนกว่าจะตรวจกับ session นั้นได้ ของจริงที่ยืนยันได้คือ: production schema 67 tables == canonical 67 และ ledger `schema_migrations` มี row ของ tracking (ตรวจผ่าน Neon MCP)
