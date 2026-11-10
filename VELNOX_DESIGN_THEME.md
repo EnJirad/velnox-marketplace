@@ -1,4 +1,4 @@
-# VELNOX_DESIGN_THEME.md — Velnox Design System v2.0
+# VELNOX_DESIGN_THEME.md — Velnox Design System v2.1
 
 > SOURCE OF TRUTH for all Velnox UI/UX work.
 >
@@ -67,6 +67,7 @@ Rules:
 | Token | Hex | Usage |
 |---|---|---|
 | `--ring` | `#10b981` | Focus ring / brand accent |
+| `--brand` | `#10b981` | **สีแบรนด์ตัวจริง** — เรียกผ่าน utility `text-brand` · `bg-brand` · `border-brand` · `ring-brand` · `via-brand` · `from-brand` · `to-brand` · `accent-brand` |
 | Emerald Primary | `#10B981` | Brand, active state, Add to Cart |
 | Emerald Dark | `#0f766e` | Strong emerald / gradient start |
 | Emerald Mid | `#10B981` | Main gradient |
@@ -75,6 +76,9 @@ Rules:
 | Emerald Text | `#047857` | Text on emerald-soft surfaces |
 
 **Add to Cart / เพิ่มลงตะกร้า = Velnox emerald.**
+
+⚠️ **ห้ามเขียน `text-[#10B981]` / `bg-[#10B981]` ตรง ๆ อีก** — ใช้ `*-brand` (เพิ่ม 2026-11-10
+หลังแทนที่ของเดิม 302 จุด) การเขียน hex ซ้ำทำได้แค่ทำให้แก้สีแบรนด์ต้องไล่หา 300 กว่าที่
 
 ## 2.4 Secondary / Neutral
 
@@ -250,17 +254,35 @@ Do not invent heavy multi-layer shadows for ordinary UI.
 
 # 7. Border Radius
 
-| Component | Pattern |
-|---|---|
-| Base | `0.75rem` |
-| Buttons | `rounded-[10px]` |
-| Inputs | `rounded-[10px]` |
-| Cards | `rounded-2xl` / `rounded-3xl` |
-| Badges | `rounded-full` |
-| Avatars | `rounded-full` |
-| Pills | `rounded-full` |
+| Component | Pattern | ค่าจริง |
+|---|---|---|
+| Base | `--radius: 0.75rem` | 12px |
+| Buttons | `rounded-md` | 10px (`calc(var(--radius) - 2px)`) |
+| Inputs | `rounded-md` | 10px |
+| Cards | `rounded-2xl` / `rounded-3xl` | 16px / 24px |
+| Badges | `rounded-full` | — |
+| Avatars | `rounded-full` | — |
+| Pills | `rounded-full` | — |
 
-Avoid arbitrary radius values unless an existing component specifically requires them.
+**ค่าจริงที่วัดจาก CSS ที่ build แล้ว** (อย่าเดาจากค่า default ของ Tailwind):
+
+| Class | ค่าที่คำนวณได้ |
+|---|---|
+| `rounded-sm` | `calc(var(--radius) - 4px)` = **8px** |
+| `rounded-md` | `calc(var(--radius) - 2px)` = **10px** |
+| `rounded-lg` | `var(--radius)` = **12px** |
+| `rounded-xl` | `calc(var(--radius) + 4px)` = **16px** |
+| `rounded-2xl` | `var(--radius-2xl)` = **16px** |
+| `rounded-3xl` | `var(--radius-3xl)` = **24px** |
+
+⚠️ `rounded-xl` กับ `rounded-2xl` ให้ผลเท่ากัน (16px) ในโปรเจกต์นี้ เพราะ `--radius-xl` ถูก override
+เป็น `radius + 4px` แต่ `--radius-2xl` ยังเป็นค่า default ⇒ **เลือกใช้ตัวเดียว** (`rounded-2xl`)
+
+**ห้ามเขียน `rounded-[10px]` / `rounded-[12px]` / `rounded-[16px]`** — ทั้งสามค่าเป็นค่าเดียวกับ
+`rounded-md` / `rounded-lg` / `rounded-xl` เป๊ะ ๆ (เดิมเอกสารนี้เองสั่งให้ใช้ `rounded-[10px]`
+ซึ่งขัดกับประโยค "Avoid arbitrary radius values" ถัดมา — แก้ 2026-11-10 หลังรวม 262 จุด)
+
+ถ้าต้องใช้ค่าที่ไม่มีในระบบ (เช่น 2px/4px/6px/14px) ให้เพิ่ม token ใน `index.css` ก่อน ไม่ใช่พิมพ์ค่าดิบ
 
 ---
 
@@ -280,14 +302,31 @@ Rules:
 - Noto Sans Myanmar for Burmese
 - Never use decorative fonts
 
-| Size | Class | Usage |
+### Type scale (แก้ 2026-11-10 — ตารางเดิมผิดทั้งหมด)
+
+> **ตารางเดิมของเอกสารนี้บอก `text-xs` = 11px, `text-sm` = 12px, `text-base` = 14px ซึ่งผิด**
+> Tailwind จริงคือ 12 / 14 / 16 ⇒ คนที่ทำตามเอกสารจึงต้องพิมพ์ `text-[11px]` เอง **295 ครั้ง**
+> นี่คือต้นเหตุของความไม่สม่ำเสมอ
+
+| ขนาดจริง | Class | ใช้เมื่อ |
 |---|---|---|
-| 11px | `text-xs` | Caption/badge/timestamp |
-| 12px | `text-sm` | Secondary text |
-| 14px | `text-base` | Body |
-| 16px | `text-lg` | Subheading |
-| 18px | `text-xl` | Section heading |
-| 24px | `text-2xl` | Page title |
+| 11px | `text-2xs` | meta: badge, timestamp, helper, label ตัวพิมพ์ใหญ่ — **ตัวเล็กสุดที่อนุญาต** |
+| 12px | `text-xs` | caption, secondary label |
+| 14px | `text-sm` | **body หลักของ UI ทั้งระบบ** (ค่าเริ่มต้น) |
+| 16px | `text-base` | เนื้อหายาวที่ต้องอ่านจริงจัง |
+| 18px | `text-lg` | หัวข้อการ์ด / block |
+| 20px | `text-xl` | หัวข้อ section |
+| 24px | `text-2xl` | ชื่อหน้า |
+| 30px | `text-3xl` | hero เท่านั้น |
+
+### กฎที่ต้องจำ
+
+1. **`text-2xs` ประกาศโดยไม่มี line-height คู่** ⇒ `text-2xs` ตั้งแค่ font-size เหมือน `text-[11px]`
+2. **`text-xs` / `text-sm` / `text-base` ตั้ง line-height มาด้วย** ⇒ `text-[14px]` **ไม่เท่ากับ** `text-sm`
+   (line-height ต่างกัน) ถ้าต้องการ pixels เดิมเป๊ะให้ใช้ชื่อ token ไม่ใช่ค่าดิบ
+3. **ห้ามใช้ `text-[13px]` / `text-[15px]`** — ไม่มีในระบบ ถ้าจำเป็นให้เพิ่ม token ก่อน
+4. **ห้ามใช้ `text-[8px]`** — เล็กกว่าขั้นต่ำที่อ่านออก (ยังเหลือ 2 จุดในโค้ด รอแก้ใน Phase D)
+5. หนึ่งจอใช้ไม่เกิน 4 ขนาด — ถ้าเกินแปลว่าลำดับความสำคัญยังไม่ชัด
 | 30px | `text-3xl` | Hero title |
 
 Weights:
@@ -682,6 +721,10 @@ Before finishing a UI task:
 - [ ] Borders = slate-200 family
 - [ ] Radius follows system
 - [ ] Shadows follow system
+- [ ] **ไม่มี arbitrary value `[...]` สำหรับสี / radius / font-size** — ใช้ token
+      (`*-brand`, `rounded-md|lg|xl|2xl`, `text-2xs|xs|sm|base|lg|xl|2xl|3xl`)
+- [ ] สีแบรนด์ใช้ `*-brand` ไม่ใช่ `[#10B981]`
+- [ ] ขนาดตัวอักษรมาจาก type scale เท่านั้น (ไม่มี `text-[13px]` / `text-[15px]` / `text-[8px]`)
 - [ ] Mobile checked
 - [ ] TH/EN/MY checked
 - [ ] No raw translation key in UI
@@ -705,6 +748,19 @@ The goal is not just to make one screen look good. The goal is to keep all Velno
 
 ## Version
 
-**Velnox Design System v2.0**
+**Velnox Design System v2.1** (2026-11-10)
+
+### Changelog v2.0 → v2.1
+
+ทั้งหมดนี้เกิดจากการวัดโค้ดจริง ไม่ใช่การรีดีไซน์ — **ไม่มีพิกเซลใดเปลี่ยน**
+
+| แก้ | เดิม | ใหม่ |
+|---|---|---|
+| Type scale (§8) | `text-xs`=11px · `text-sm`=12px · `text-base`=14px (ผิดทั้งหมด) | 12 / 14 / 16 ตาม Tailwind จริง + เพิ่ม `text-2xs`=11px |
+| Radius (§7) | สั่งใช้ `rounded-[10px]` ทั้งที่บรรทัดถัดมาห้าม arbitrary | `rounded-md` (ค่าเท่ากันเป๊ะ) |
+| สีแบรนด์ (§2.3) | ไม่มี token | `--brand` + `*-brand` utilities |
+| Checklist (§26) | ไม่มีข้อห้าม arbitrary | เพิ่ม 3 ข้อ |
+
+**ผลที่วัดได้:** 262 ค่า radius · 302 ค่า hex · 295 ขนาดตัวอักษร ถูกแทนด้วย token ใน Phase A
 
 Based on the current `VELNOX_DESIGN_THEME.md` in `EnJirad/velnox-marketplace` and the project's current documented UI architecture.

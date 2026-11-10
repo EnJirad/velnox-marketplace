@@ -69,3 +69,40 @@ class (`[10px]` = ตัวอักษร 1,0,p,x) วัดใหม่ด้�
   เป็นต้นเหตุที่ทำให้เกิด `text-[11px]` 295 ครั้ง) + กฎห้าม arbitrary value
 - **Phase C** — `<button>` ดิบ 204 → `<Button>` ทีละแอป เริ่ม `velnox` (5 ไฟล์)
 - **Phase D** — ลดความหนาแน่น 4 จอใหญ่
+
+---
+
+# เพิ่มเติม — UI Phase B: แก้เอกสาร design system (v2.1)
+
+งานเอกสารล้วน **ไม่มีไฟล์โค้ดถูกแตะ** — commit นี้เปลี่ยนแค่ `VELNOX_DESIGN_THEME.md` และ
+`.ai/context/frontend.md`
+
+## สาเหตุที่ต้องทำก่อน Phase C
+
+ตาราง Type scale ใน §8 ของเอกสารบอกว่า `text-xs` = 11px, `text-sm` = 12px, `text-base` = 14px
+แต่ Tailwind จริงคือ **12 / 14 / 16** ⇒ ทุกคนที่ทำตามเอกสารและอยากได้ 11px ต้องพิมพ์ `text-[11px]`
+เอง 295 ครั้ง นั่นคือรากของความไม่สม่ำเสมอที่ Phase A เพิ่งเก็บกวาดไป **ถ้าไม่แก้เอกสาร agent ตัวถัดไป
+จะสร้างมันกลับมา**
+
+## สิ่งที่แก้
+
+| § | เดิม | ใหม่ |
+|---|---|---|
+| 7 Border Radius | สั่งใช้ `rounded-[10px]` ทั้งที่บรรทัดถัดมาห้าม arbitrary | ชื่อ token + **ตารางค่าจริงที่วัดจาก CSS ที่ build แล้ว** |
+| 8 Typography | ตัวเลขผิดทั้งตาราง | ตรงตาม Tailwind + เพิ่ม `text-2xs` (11px) + กฎ 5 ข้อ |
+| 2.3 Emerald | ไม่มี token สีแบรนด์ | `--brand` + รายชื่อ utility `*-brand` |
+| 26 Checklist | ไม่มีข้อห้าม arbitrary | เพิ่ม 3 ข้อ |
+| Version | v2.0 | v2.1 + changelog |
+
+## ข้อค้นพบใหม่ระหว่างเขียน
+
+**`rounded-xl` กับ `rounded-2xl` ให้ผลเท่ากัน (16px) ในโปรเจกต์นี้** — เพราะ `index.css` override
+`--radius-xl: calc(var(--radius) + 4px)` = 16px ขณะที่ `--radius-2xl` ยังเป็นค่า default ของ
+Tailwind (1rem = 16px) เอกสารจึงระบุให้เลือกใช้ตัวเดียว (`rounded-2xl`) และบันทึกไว้เป็นงานเก็บกวาด
+ในอนาคต — ถ้าไม่เขียนไว้ คนอ่านจะเดาว่า Tailwind ปกติ (xl=12px) แล้วใช้ผิด
+
+## ตรวจแล้ว
+
+`git diff --check` clean · ไม่มีไฟล์โค้ดเปลี่ยน (`git status` = 2 ไฟล์เอกสาร) ·
+ตรวจว่าเอกสารไม่ขัดความจริง: ไม่มี `| Buttons | rounded-[10px]` เหลือ (0) · ไม่มี `| 11px | text-xs`
+เหลือ (0) · มี `text-2xs` 4 จุด · มี `--brand` 2 จุด
