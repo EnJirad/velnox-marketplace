@@ -102,6 +102,8 @@ export function SellerNotificationBell() {
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
     try {
@@ -150,13 +152,25 @@ export function SellerNotificationBell() {
     if (open) void load();
   }, [open, load]);
 
+  // Move focus into the panel when it opens. Same defect as the VelShop bell:
+  // the panel declared role="dialog" and closed on Escape, but focus never
+  // moved in, so a keyboard user pressing the bell stayed on the bell and Tab
+  // walked the page behind the open panel. Non-modal, so no focus trap.
+  useEffect(() => {
+    if (open) panelRef.current?.focus();
+  }, [open]);
+
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent | TouchEvent) => {
       if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") {
+        setOpen(false);
+        // Hand focus back to the bell instead of letting it fall to <body>.
+        triggerRef.current?.focus();
+      }
     };
     document.addEventListener("mousedown", onDown);
     document.addEventListener("touchstart", onDown);
@@ -204,6 +218,7 @@ export function SellerNotificationBell() {
   return (
     <div ref={wrapRef} className="relative">
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-label={unread > 0 ? t("notifications.ariaOpenWithCount", { count: unread }) : t("notifications.ariaOpen")}
@@ -221,14 +236,16 @@ export function SellerNotificationBell() {
 
       {open && (
         <div
+          ref={panelRef}
           role="dialog"
           aria-label={t("notifications.title")}
+          tabIndex={-1}
           /*
             Phone (< sm): a fixed sheet pinned to the viewport gutters, so the
             panel cannot start off-screen (its old `absolute right-0` position
             clipped ~36 px at 320/375 px). Tablet/desktop: anchored popover.
           */
-          className="fixed inset-x-3 top-[calc(4.5rem+env(safe-area-inset-top))] z-[60] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-overlay sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-[min(380px,calc(100vw-1.5rem))]"
+          className="fixed inset-x-3 top-[calc(4.5rem+env(safe-area-inset-top))] z-[60] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-overlay outline-none sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-[min(380px,calc(100vw-1.5rem))]"
         >
           <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
             <p className="flex items-center gap-1.5 text-sm font-bold text-slate-900">

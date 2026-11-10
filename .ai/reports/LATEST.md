@@ -277,3 +277,33 @@ typecheck 4/4 exit 0 · `bun --filter @velnox/velshop build` ผ่าน · `bu
 (รวม `notification-flow.test.ts` ที่อ้างไฟล์นี้) · `git diff --check` clean
 
 **ยังไม่ได้ทดสอบด้วยคีย์บอร์ดจริง** — ต้องให้ owner กด Tab ดู (ผมทดสอบ interaction ในเบราว์เซอร์ไม่ได้)
+
+---
+
+# เพิ่มเติม — C4 ตัวที่สอง: `SellerNotificationBell` (shared)
+
+แก้แบบเดียวกับตัวแรก ทุกจุด — ตรวจแล้วทั้งสองไฟล์มี pattern ตรงกันทั้ง 5 ตัว:
+`triggerRef` · `panelRef` · `tabIndex={-1}` · `panelRef.current?.focus()` · `triggerRef.current?.focus()`
+
+เพราะไฟล์นี้อยู่ใน `packages/shared` ⇒ **velseller ได้ผลทันที** (และแอปอื่นที่ใช้ bell นี้)
+
+## ตรวจแล้ว
+
+typecheck 4/4 · `build:apps` 4/4 exit 0 · `bun run test` **1432 pass / 0 fail** · `git diff --check` clean
+
+## สี hex ที่ยังเขียนดิบ — งานถัดไปที่วัดได้
+
+Phase A เก็บเฉพาะ `#10B981` (302 จุด) ยังเหลือ **183 จุด** ที่เป็นสีอื่น:
+
+| สี | จำนวน | ควรเป็น |
+|---|---|---|
+| `bg-[#F8FAFC]` | 57 | `bg-background` (เท่ากับ `--background`) |
+| `bg-[#ECFDF5]` | 54 | `bg-accent` (เท่ากับ `--accent`) |
+| `text/bg-[#059669]` | 32 | emerald-600 — ต้องเพิ่ม token |
+| `text-[#047857]` | 13 | `text-accent-foreground` (เท่ากับ `--accent-foreground`) |
+| `bg-[#F0FDF9]` | 9 | ไม่มี token — ต้องตัดสินใจ |
+| `from-[#0f766e]` / `to-[#34d399]` | 8 | gradient stops — ต้องเพิ่ม token |
+| อื่น ๆ | 10 | — |
+
+**ยังไม่ทำ** เพราะบางตัวเป็นการตัดสินใจเรื่องสี (เช่น `#F0FDF9` กับ `#ECFDF5` ใกล้กันมากจนอาจตั้งใจให้ต่าง
+หรืออาจเป็นความไม่สม่ำเสมอ) — ต้องดูของจริงก่อน ไม่ใช่แทนที่ตามตัวเลข
