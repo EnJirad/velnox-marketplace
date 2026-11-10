@@ -146,3 +146,49 @@ status filter ใน `SellerOrders.tsx` + `MyShop.tsx`, segment tab ใน `Sell
 - primitive segmented/toggle (C2) — ต้องตัดสินใจเรื่องหน้าตาก่อน
 - ปุ่ม action จริงที่เหลือ ~5 ตัวใน `velshop` / `velcenter`
 - dialog/sheet ที่ประกาศเอง 5 ไฟล์ (C4)
+
+---
+
+# เพิ่มเติม — UI Phase C2: `SegmentedOption` primitive
+
+## ทำแล้ว
+
+สร้าง `packages/shared/src/components/ui/segmented.tsx` และแทน `<button>` ที่เขียนซ้ำ **5 ไฟล์**
+(`Income`, `IncomeCommissionDetail`, `IncomeGrossDetail`, `IncomePayoutDetail`, `IncomeReturnsDetail`)
+
+```tsx
+// เดิม — เขียนซ้ำ 5 ที่ ทุกไบต์เหมือนกัน
+<button key={p} onClick={...}
+  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${period === p ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+>{periodLabels[p]}</button>
+
+// ใหม่
+<SegmentedOption key={p} active={period === p} onClick={...}>{periodLabels[p]}</SegmentedOption>
+```
+
+**ได้อะไร:**
+- `type="button"` — เดิม **ไม่มี** ทั้ง 5 ที่ (ถ้าย้ายเข้า `<form>` วันไหนจะ submit โดยไม่ตั้งใจ)
+- `aria-pressed` — เดิม **ไม่มี** ⇒ screen reader ไม่รู้ว่าตัวไหนถูกเลือก
+- สูตรสีอยู่ที่เดียว แก้ครั้งเดียวมีผลทั้ง 5 จอ
+- หน้าตาเหมือนเดิมเป๊ะ (recipe คัดลอกมาจาก class string เดิมทุกตัวอักษร)
+
+## ข้อเท็จจริงที่ต้องแก้คำพูดของผม
+
+ตอนเสนอทางเลือก ผมบอกว่า segmented มี **2 แบบ** — พอมองปุ่มจริงทั้ง 40 ตัวพบ **3 สูตร**:
+
+| recipe | ลักษณะ | ที่ใช้ | สถานะ |
+|---|---|---|---|
+| `tray` | chip ในรางสีเทา | `Income*` 5 ไฟล์ | ✅ แปลงแล้ว |
+| `dark` | พื้นเข้ม | `SellerOrders:133`, `SellerProfile:190` | ❌ ยังไม่แปลง — **สองตัวนี้ยังไม่เหมือนกันเอง** (radius + text size + hover ต่างกัน) |
+| `brand` | emerald + ไอคอน + จำนวน | `MyShop:499` และอื่น ๆ | ❌ ยังไม่แปลง |
+
+`dark` มี 2 สูตรย่อย ⇒ แปลงตอนนี้ต้อง**เดาว่าอันไหนคือมาตรฐาน** ซึ่งเท่ากับเปลี่ยนดีไซน์แบบ disguising
+เป็น refactor จึงหยุดที่ `tray` ที่ตรงกันจริง และเขียนอีก 2 recipe ไว้ในคอมเมนต์ของ primitive
+เพื่อไม่ให้ใคร invent สูตรที่ 4
+
+## ตรวจแล้ว
+
+typecheck 4/4 exit 0 · `bun --filter @velnox/velseller build` ผ่าน · `bun run test` **1432 pass / 0 fail**
+· `git diff --check` clean · **`.py-1\.5{` ยังถูก generate ใน CSS** (สำคัญ: class ย้ายจาก app ไป shared
+แล้ว ต้องยืนยันว่า Tailwind v4 `@source "./"` สแกนเจอจริง ไม่งั้น chip จะเสียสี/ระยะ) ·
+`<button key={p}>` ใน Income* เหลือ 0

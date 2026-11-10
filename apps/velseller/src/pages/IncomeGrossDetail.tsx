@@ -5,6 +5,7 @@
 import { AppHeader } from "@velnox/shared/components/AppHeader";
 import { Badge } from "@velnox/shared/components/ui/badge";
 import { Button } from "@velnox/shared/components/ui/button";
+import { SegmentedOption } from "@velnox/shared/components/ui/segmented";
 import { api, useAction } from "@velnox/shared/lib/api-routes";
 import {
   commissionOf, formatBaht, formatIsoDate, getOrderStatusMeta,
@@ -86,9 +87,7 @@ export default function IncomeGrossDetail() {
           </div>
           <div className="flex gap-1 rounded-lg border border-slate-200 bg-slate-50 p-0.5">
             {(["daily", "weekly", "monthly"] as Period[]).map((p) => (
-              <button key={p} onClick={() => setSearchParams({ period: p })}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${period === p ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
-              >{periodLabels[p]}</button>
+              <SegmentedOption key={p} active={period === p} onClick={() => setSearchParams({ period: p })}>{periodLabels[p]}</SegmentedOption>
             ))}
           </div>
         </div>

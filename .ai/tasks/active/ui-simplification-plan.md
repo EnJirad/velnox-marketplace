@@ -131,7 +131,21 @@ generate ออกมา ไม่ใช่จากการอ่านโค�
 |---|---|---|---|
 | ~~C1~~ | ~~`<button>` ดิบ 204 → `<Button>`~~ **เป้านี้ผิด** — ดูข้อค้นพบด้านล่าง | — | — |
 | C1 (ทำแล้ว) | ปุ่ม action จริงของ `velnox` 2 ตัว → `<Button>` | `Contact.tsx`, `CorporateLayout.tsx` | `<button>` เหลือ 0 · build ผ่าน |
-| C2 (เสนอ) | สร้าง primitive กลางสำหรับ **segmented / pill toggle** แล้วแทนที่ของซ้ำ | `packages/shared/src/components/ui/` | class string ที่ซ้ำกันหายไป · `aria-pressed` ครบทุกตัว |
+| C2 (ทำบางส่วน) | `SegmentedOption` primitive + แทน `tray` recipe 5 จุด (Income*) | `packages/shared/src/components/ui/segmented.tsx` | `<button key={p}>` ใน Income* เหลือ 0 · `aria-pressed` ครบ · build ผ่าน |
+
+### C2 — ข้อเท็จจริง: มี 3 สูตร ไม่ใช่ 2
+
+ตอนเสนอ ผมบอกว่ามี 2 แบบ (pill / tab) แต่พอมองปุ่มทั้ง 40 ตัวจริงพบ **3 สูตร**:
+
+| recipe | ลักษณะ | ที่ใช้ | สถานะ |
+|---|---|---|---|
+| `tray` | chip เล็กในรางสีเทา, active = การ์ดขาว + เงา | `Income*.tsx` 5 ไฟล์ | **แปลงแล้ว** (ตรงกันทุกไบต์) |
+| `dark` | พื้นเข้ม, active = slate-900 | `SellerOrders.tsx:133` (rounded-full) · `SellerProfile.tsx:190` (rounded-lg + text-sm + hover ต่าง) | ยังไม่แปลง — **2 ตัวนี้ไม่เหมือนกันด้วยซ้ำ** |
+| `brand` | emerald ทึบ + ไอคอน + จำนวน | `MyShop.tsx:499` และอื่น ๆ | ยังไม่แปลง |
+
+`dark` มี 2 สูตรย่อย (radius ต่าง + hover ต่าง) ⇒ ถ้าแปลงทั้งคู่ตอนนี้จะต้องเดาว่าอันไหนคือ
+"มาตรฐาน" ซึ่งเป็นการเปลี่ยนดีไซน์ disguised เป็น refactor **จึงแปลงเฉพาะ `tray` ที่ตรงกันจริง 5 ไฟล์**
+และบันทึกอีก 2 recipe ไว้ในคอมเมนต์ของ primitive เพื่อไม่ให้ใครไปคิดสูตรที่ 4 ขึ้นมาใหม่
 | C3 | ปุ่ม action ที่เหลือ (สแกนแล้วมีน้อย) | `velshop`, `velcenter` | นับจริงก่อน-หลัง |
 | C4 | ตรวจว่า dialog/sheet ที่ประกาศเอง 5 ไฟล์ใช้ primitive กลางได้ไหม | 5 ไฟล์ที่ grep เจอ | ไม่มี `createPortal` ที่เขียนเองใหม่ |
 
