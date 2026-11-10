@@ -11,7 +11,14 @@ import { useEffect, useRef, useState } from "react";
 import { SUPPORTED_LANGUAGES, languageLabel } from "@velnox/shared/lib/i18n/config";
 import { useLanguage } from "@velnox/shared/lib/i18n";
 
-export function LanguageSwitcher({ className }: { className?: string }) {
+export function LanguageSwitcher({
+  className,
+  tone = "default",
+}: {
+  className?: string;
+  /** `brand` = white trigger for the solid brand-green header bars. */
+  tone?: "default" | "brand";
+}) {
   const { lang, setLang } = useLanguage();
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -42,7 +49,11 @@ export function LanguageSwitcher({ className }: { className?: string }) {
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={languageLabel(lang)}
-        className="flex size-9 items-center justify-center rounded-lg text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900"
+        className={`flex size-9 items-center justify-center rounded-lg transition-colors ${
+          tone === "brand"
+            ? "text-white hover:bg-white/15 hover:text-white"
+            : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+        }`}
       >
         <Languages className="size-4" />
       </button>

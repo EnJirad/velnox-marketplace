@@ -26,17 +26,17 @@ export function AppHeader() {
   const unread = chatUnread != null && chatUnread > 0 ? chatUnread : null;
   const chatBadge =
     unread == null ? null : (
-      <span className="ml-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-brand px-1 text-2xs font-bold leading-none text-white">
+      <span className="ml-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-white px-1 text-2xs font-bold leading-none text-brand">
         {unread > 99 ? "99+" : unread}
       </span>
     );
 
   return (
-    <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/90 backdrop-blur">
+    <header className="sticky top-0 z-40 border-b border-white/15 bg-brand">
       <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-4 sm:px-6">
         <div className="flex items-center gap-2 sm:gap-5">
           <button type="button" onClick={() => navigate("/")} aria-label="Velnox">
-            <Logo />
+            <Logo tone="light" />
           </button>
           <nav className="hidden items-center gap-1 md:flex">
             {NAV_ITEMS.map((item) => {
@@ -47,8 +47,8 @@ export function AppHeader() {
                   to={item.to}
                   className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
                     active
-                      ? "bg-slate-100 text-slate-900"
-                      : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+                      ? "bg-white/20 text-white"
+                      : "text-white/80 hover:bg-white/15 hover:text-white"
                   }`}
                 >
                   <item.icon className="size-4" />
@@ -73,20 +73,20 @@ export function AppHeader() {
             aria-current={location.pathname.startsWith("/seller/chat") ? "page" : undefined}
             className={`relative flex size-10 items-center justify-center rounded-md transition-colors md:hidden ${
               location.pathname.startsWith("/seller/chat")
-                ? "bg-slate-100 text-slate-900"
-                : "text-slate-600 hover:bg-slate-100"
+                ? "bg-white/20 text-white"
+                : "text-white hover:bg-white/15"
             }`}
           >
             <MessageCircle className="size-5" />
             {unread != null && (
-              <span className="absolute right-0 top-0 flex h-4 min-w-4 items-center justify-center rounded-full bg-brand px-1 text-2xs font-bold leading-none text-white">
+              <span className="absolute right-0 top-0 flex h-4 min-w-4 items-center justify-center rounded-full bg-white px-1 text-2xs font-bold leading-none text-brand">
                 {unread > 99 ? "99+" : unread}
               </span>
             )}
           </Link>
           {/* VelCenter correction requests reach the seller here. */}
-          <SellerNotificationBell />
-          <UserMenu />
+          <SellerNotificationBell tone="brand" />
+          <UserMenu tone="brand" />
         </div>
       </div>
     </header>

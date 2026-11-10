@@ -59,7 +59,7 @@ function notificationDestination(n: NotificationRow): string | null {
  * marks it read and navigates to its real destination when one exists.
  * Not signed in → renders nothing.
  */
-export function NotificationBell() {
+export function NotificationBell({ tone = "default" }: { tone?: "default" | "brand" } = {}) {
   const { t, lang } = useLanguage();
   const navigate = useNavigate();
   const { user, isAuthenticated } = useAuth();
@@ -197,11 +197,17 @@ export function NotificationBell() {
         }
         aria-haspopup="true"
         aria-expanded={open}
-        className="relative flex size-10 cursor-pointer items-center justify-center rounded-md text-slate-600 transition-colors hover:bg-slate-100"
+        className={`relative flex size-10 cursor-pointer items-center justify-center rounded-md transition-colors ${
+          tone === "brand"
+            ? "text-white hover:bg-white/15"
+            : "text-slate-600 hover:bg-slate-100"
+        }`}
       >
         <Bell className="size-5" />
         {unread > 0 && (
-          <span className="absolute right-0 top-0 flex size-5 items-center justify-center rounded-full bg-brand text-2xs font-bold text-white">
+          <span className={`absolute right-0 top-0 flex size-5 items-center justify-center rounded-full text-2xs font-bold ${
+            tone === "brand" ? "bg-white text-brand" : "bg-brand text-white"
+          }`}>
             {unread > 99 ? "99+" : unread}
           </span>
         )}

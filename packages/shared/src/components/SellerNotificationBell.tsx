@@ -89,7 +89,7 @@ function destinationFor(n: NotificationRow): string | null {
   return null;
 }
 
-export function SellerNotificationBell() {
+export function SellerNotificationBell({ tone = "default" }: { tone?: "default" | "brand" } = {}) {
   const { t, lang } = useLanguage();
   const navigate = useNavigate();
   const { user, isAuthenticated } = useAuth();
@@ -224,7 +224,11 @@ export function SellerNotificationBell() {
         aria-label={unread > 0 ? t("notifications.ariaOpenWithCount", { count: unread }) : t("notifications.ariaOpen")}
         aria-haspopup="true"
         aria-expanded={open}
-        className="relative flex size-10 cursor-pointer items-center justify-center rounded-md text-slate-600 transition-colors hover:bg-slate-100"
+        className={`relative flex size-10 cursor-pointer items-center justify-center rounded-md transition-colors ${
+          tone === "brand"
+            ? "text-white hover:bg-white/15"
+            : "text-slate-600 hover:bg-slate-100"
+        }`}
       >
         <Bell className="size-5" />
         {unread > 0 && (

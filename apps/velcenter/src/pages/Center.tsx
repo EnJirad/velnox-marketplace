@@ -1109,11 +1109,11 @@ export default function Center() {
 
   return (
     <div className="min-h-screen bg-background text-slate-900">
-      <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/90 backdrop-blur">
+      <header className="sticky top-0 z-40 border-b border-white/15 bg-brand">
         <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-4 sm:px-6">
           <div className="flex items-center gap-2 sm:gap-5">
             <button type="button" onClick={() => navigate("/")} aria-label="velcenter">
-              <Logo />
+              <Logo tone="light" />
             </button>
           </div>
           <div className="flex items-center gap-1">
@@ -1122,7 +1122,7 @@ export default function Center() {
               onClick={() => setNavCollapsed((value) => !value)}
               aria-label={navCollapsed ? "ขยายเมนู" : "ย่อเมนู"}
               aria-pressed={navCollapsed}
-              className="hidden size-9 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 md:flex"
+              className="hidden size-9 items-center justify-center rounded-lg text-white hover:bg-white/15 md:flex"
             >
               <PanelLeft className="size-4" />
             </button>
@@ -1132,12 +1132,12 @@ export default function Center() {
               aria-label="เมนู"
               aria-expanded={navOpen}
               aria-controls="center-nav"
-              className="flex size-9 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 md:hidden"
+              className="flex size-9 items-center justify-center rounded-lg text-white hover:bg-white/15 md:hidden"
             >
               <Menu className="size-5" />
             </button>
-            <LanguageSwitcher />
-            <UserMenu />
+            <LanguageSwitcher tone="brand" />
+            <UserMenu tone="brand" />
           </div>
         </div>
       </header>

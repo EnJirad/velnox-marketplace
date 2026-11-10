@@ -30,7 +30,7 @@ const ROLE_LABEL: Record<string, string> = {
   customer: "ลูกค้า",
 };
 
-export function UserMenu() {
+export function UserMenu({ tone = "default" }: { tone?: "default" | "brand" } = {}) {
   const { user, isLoading, signOut } = useAuth();
   const navigate = useNavigate();
 
@@ -44,7 +44,9 @@ export function UserMenu() {
       <DropdownMenuTrigger asChild>
         <Button
           variant="ghost"
-          className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 text-slate-700 hover:bg-slate-100"
+          className={`flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 ${
+            tone === "brand" ? "text-white hover:bg-white/15" : "text-slate-700 hover:bg-slate-100"
+          }`}
         >
           <span className={`relative flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full border ${
               isLoading ? "border-transparent bg-transparent" : user?.image ? "border-transparent bg-slate-100" : "border-slate-200 bg-slate-900"
@@ -62,14 +64,14 @@ export function UserMenu() {
             />
           </span>
           <span className="hidden text-left sm:block">
-            <span className="block text-sm font-medium leading-4 text-slate-900">
+            <span className={`block text-sm font-medium leading-4 ${tone === "brand" ? "text-white" : "text-slate-900"}`}>
               {user?.name || "ผู้ใช้งาน"}
             </span>
-            <span className="block text-xs text-slate-400">
+            <span className={`block text-xs ${tone === "brand" ? "text-white/70" : "text-slate-400"}`}>
               {ROLE_LABEL[user?.role ?? ""] ?? "ลูกค้า"}
             </span>
           </span>
-          <ChevronDown className="hidden size-4 text-slate-400 sm:block" />
+          <ChevronDown className={`hidden size-4 sm:block ${tone === "brand" ? "text-white/70" : "text-slate-400"}`} />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">

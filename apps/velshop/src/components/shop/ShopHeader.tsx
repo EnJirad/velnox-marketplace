@@ -18,8 +18,8 @@ import { Link, useLocation, useNavigate } from "react-router";
  * Mobile: solid brand bar (56 px) — brand mark · white pill search · language ·
  * cart with the real count · chat with the real unread count. Matches the
  * reference app shell; the bottom tab bar stays the primary menu.
- * Desktop: unchanged — logo · Home/Products/Categories · language ·
- * notifications · cart · account (its search is the products page box).
+ * Desktop: the same solid brand bar — white logo · Home/Products/Categories ·
+ * language · notifications · cart · account (its search is the products page box).
  *
  * Search reuses the products page contract (`/products?q=`) — the header only
  * writes that one param, so there is never a second search implementation.
@@ -75,8 +75,8 @@ export function ShopHeader() {
         to={to}
         className={`rounded-md px-3 py-2 text-sm font-medium transition-colors ${
           active
-            ? "bg-slate-100 text-slate-900"
-            : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+            ? "bg-white/20 text-white"
+            : "text-white/80 hover:bg-white/15 hover:text-white"
         }`}
       >
         {label}
@@ -94,7 +94,7 @@ export function ShopHeader() {
             aria-label={t("header.ariaHome", { name: "VelShop" })}
             className="flex size-9 shrink-0 items-center justify-center"
           >
-            <LogoMark className="size-8 rounded-md bg-white" />
+            <LogoMark tone="light" className="h-7 w-auto" />
           </Link>
 
           {showSearch ? (
@@ -153,12 +153,12 @@ export function ShopHeader() {
         </div>
       </div>
 
-      {/* Desktop bar — unchanged behaviour */}
-      <div className="hidden border-b border-slate-200 bg-white/90 backdrop-blur md:block">
+      {/* Desktop bar — same solid brand surface as mobile */}
+      <div className="hidden border-b border-white/15 bg-brand md:block">
         <div className="mx-auto flex h-14 w-full max-w-6xl items-center gap-1.5 px-4 sm:gap-2 sm:px-6">
           {/* Brand — mark-only on the smallest screens so the utility row never overflows */}
           <Link to="/" aria-label={t("header.ariaHome", { name: "VelShop" })} className="shrink-0">
-            <Logo wordmarkClassName="hidden sm:inline" />
+            <Logo tone="light" wordmarkClassName="hidden sm:inline" />
           </Link>
 
           {/* Desktop navigation */}
@@ -171,22 +171,22 @@ export function ShopHeader() {
           {/* Utility actions */}
           <div className="ml-auto flex items-center gap-1 lg:ml-2">
             {/* Language — desktop full trigger */}
-            <LanguageSwitcher variant="desktop" />
+            <LanguageSwitcher variant="desktop" tone="brand" />
 
             {/* Notifications — real unread data, floating panel (auth only) */}
-            <NotificationBell />
+            <NotificationBell tone="brand" />
 
             <Button
               variant="ghost"
               size="icon"
               data-cart-icon="true"
-              className="relative size-10 cursor-pointer rounded-md text-slate-600 hover:bg-slate-100"
+              className="relative size-10 cursor-pointer rounded-md text-white hover:bg-white/15"
               onClick={openCart}
               aria-label={t("header.ariaCart")}
             >
               <ShoppingCart className="size-5" />
               {count > 0 && (
-                <span className="absolute right-0 top-0 flex size-5 items-center justify-center rounded-full bg-brand text-2xs font-bold text-white">
+                <span className="absolute right-0 top-0 flex size-5 items-center justify-center rounded-full bg-white text-2xs font-bold text-brand">
                   {count > 99 ? "99+" : count}
                 </span>
               )}
@@ -195,7 +195,7 @@ export function ShopHeader() {
             {isLoading ? null : isAuthenticated ? (
               <Link
                 to="/profile"
-                className="flex size-10 items-center justify-center rounded-md text-slate-600 transition-colors hover:bg-slate-100"
+                className="flex size-10 items-center justify-center rounded-md text-white transition-colors hover:bg-white/15"
                 aria-label={t("header.ariaProfile")}
               >
                 <User className="size-5" />
@@ -203,7 +203,7 @@ export function ShopHeader() {
             ) : (
               <Button
                 variant="outline"
-                className="h-9 border-slate-200 text-slate-700"
+                className="h-9 border-0 bg-white text-brand hover:bg-white/90 hover:text-brand"
                 asChild
               >
                 <Link to="/auth?returnTo=/">{t("header.login")}</Link>

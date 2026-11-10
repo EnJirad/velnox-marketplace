@@ -69,10 +69,10 @@ export function CorporateLayout() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <header className="sticky top-0 z-40 border-b border-border/70 bg-background/85 backdrop-blur">
+      <header className="sticky top-0 z-40 border-b border-white/15 bg-brand">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
           <Link to="/" onClick={() => setOpen(false)} aria-label="Velnox Group — หน้าแรก">
-            <Logo />
+            <Logo tone="light" />
           </Link>
 
           <nav className="hidden items-center gap-0.5 lg:flex" aria-label="เมนูหลัก">
@@ -83,8 +83,8 @@ export function CorporateLayout() {
                 className={cn(
                   "rounded-lg px-3 py-2 text-sm font-medium transition-colors",
                   isActive(item)
-                    ? "bg-slate-900 text-white"
-                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
+                    ? "bg-white/20 text-white"
+                    : "text-white/80 hover:bg-white/15 hover:text-white",
                 )}
               >
                 {item.label}
@@ -94,7 +94,7 @@ export function CorporateLayout() {
 
           <a
             href={SITE_URLS.velshop}
-            className="hidden items-center gap-1.5 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-slate-800 lg:inline-flex"
+            className="hidden items-center gap-1.5 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-brand transition-colors hover:bg-white/90 lg:inline-flex"
           >
             เข้าช้อปปิ้ง
             <ArrowUpRight className="size-4" />
@@ -104,7 +104,7 @@ export function CorporateLayout() {
             variant="ghost"
             size="icon"
             type="button"
-            className="size-10 rounded-lg text-slate-700 hover:bg-slate-100 hover:text-slate-700 lg:hidden"
+            className="size-10 rounded-lg text-white hover:bg-white/15 hover:text-white lg:hidden"
             onClick={() => setOpen((v) => !v)}
             aria-label={open ? "ปิดเมนู" : "เปิดเมนู"}
             aria-expanded={open}
@@ -114,7 +114,7 @@ export function CorporateLayout() {
         </div>
 
         {open && (
-          <div className="border-t border-border/70 bg-background px-4 pb-4 pt-2 lg:hidden">
+          <div className="border-t border-white/15 bg-brand px-4 pb-4 pt-2 lg:hidden">
             <nav className="flex flex-col gap-1" aria-label="เมนูหลัก (มือถือ)">
               {NAV.map((item) => (
                 <Link
@@ -124,8 +124,8 @@ export function CorporateLayout() {
                   className={cn(
                     "rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
                     isActive(item)
-                      ? "bg-slate-900 text-white"
-                      : "text-slate-700 hover:bg-slate-100",
+                      ? "bg-white/20 text-white"
+                      : "text-white/80 hover:bg-white/15 hover:text-white",
                   )}
                 >
                   {item.label}
@@ -134,7 +134,7 @@ export function CorporateLayout() {
               <a
                 href={SITE_URLS.velshop}
                 onClick={() => setOpen(false)}
-                className="mt-2 inline-flex items-center justify-center gap-1.5 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white"
+                className="mt-2 inline-flex items-center justify-center gap-1.5 rounded-lg bg-white px-4 py-2.5 text-sm font-semibold text-brand"
               >
                 เข้าช้อปปิ้ง
                 <ArrowUpRight className="size-4" />
