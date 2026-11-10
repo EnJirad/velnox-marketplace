@@ -55,3 +55,34 @@ resolve. Code change เป็น behaviour-neutral (ค่า default ของ
 ทาง A: สร้าง zone `velnox.live` ใน Cloudflare + import BIND + เปลี่ยน NS ที่ GoDaddy
 ทาง B: เปลี่ยน NS ที่ GoDaddy ไป `ns1/ns2.vercel-dns.com` แล้ว AI 01 สร้าง record ทั้ง 6 เองได้ผ่าน MCP
 ก่อน PHASE 5 ต้องให้ owner snapshot env ไว้ก่อน (MCP อ่าน Render env ไม่ได้ ⇒ ชั้นนั้น rollback ไม่ได้)
+
+---
+
+## 8. Seller upload path — verified working (2026-11-10)
+
+Owner will seed the catalog themselves with their own photos via the VelSeller UI. The path was
+verified end-to-end against production instead of assumed:
+
+| Check | Result |
+|---|---|
+| `OPTIONS /api/upload/presign` from `Origin: https://velseller.vercel.app` | `204`, `Access-Control-Allow-Origin: https://velseller.vercel.app`, `Allow-Credentials: true` |
+| `POST /api/upload/presign` (no auth) | `401 UNAUTHORIZED` — route is alive, auth-gated as designed |
+| R2 bucket CORS for `velseller.vercel.app` | present; methods `PUT,GET,HEAD` |
+| `https://velseller.vercel.app/` | `200` |
+| `GET /api/products` | `200`, `total: 1`, full payload incl. 9 R2 images |
+
+**Nothing blocks the seller flow.** Upload cap is `MAX_UPLOAD_BYTES` = 10 MB (`backend/lib/media-config.ts:19`);
+the client converts to WebP before upload (`packages/shared/src/lib/image-optimize.ts`).
+
+**The real gate is moderation, not infra.** `resolveCreationStatus()` (`backend/lib/product-lifecycle.ts:76-79`)
+allows a seller to create only `draft` or `pending_review` — never `published`. Every new product must be
+approved in VelCenter (`ProductModerationQueue.tsx`) by an account with the right role.
+
+Accounts in production (Neon, 2026-11-10): `ma0979354966.js91934@gmail.com` = **owner** ·
+`pongsatronnick@gmail.com` = **seller, verified** (SUPER GADGET ZENE) ·
+`ma0979354966.js9193@gmail.com` = **staff** (differs from the owner address by one digit — probable typo) ·
+`support@velnox.com` = **support + seller, unverified** (Velnox Support shop) — **cannot log in, the domain
+is not owned**. Flagged, not changed.
+
+Customer-side uploads (profile pictures) from `www.velnox.live` remain blocked by the R2 CORS gap in §2 —
+that does not affect the seller flow.
