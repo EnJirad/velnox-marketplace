@@ -6,7 +6,7 @@
  * apps/corporate), each deployed to its own domain.
  *
  * SITE_URLS drives cross-application navigation across domain boundaries
- * (VelShop → "Become a Seller" → seller.velnox.com). Each app deploys
+ * (VelShop → "Become a Seller" → seller.velnox.live). Each app deploys
  * standalone, so the defaults are the production domains; override with
  * VITE_CORPORATE_URL / VITE_VELSHOP_URL / VITE_VELSELLER_URL /
  * VITE_VELCENTER_URL when a deployment targets a different host.
@@ -59,14 +59,14 @@ export function siteBasename(site: SiteId): string {
 /**
  * Safely join a base URL and a path segment, avoiding double-slash issues.
  *
- * joinUrl("https://shop.velnox.com", "/products")
- *   → "https://shop.velnox.com/products"
+ * joinUrl("https://shop.velnox.live", "/products")
+ *   → "https://shop.velnox.live/products"
  *
- * joinUrl("https://shop.velnox.com", "products")
- *   → "https://shop.velnox.com/products"
+ * joinUrl("https://shop.velnox.live", "products")
+ *   → "https://shop.velnox.live/products"
  *
- * joinUrl("https://shop.velnox.com", "")
- *   → "https://shop.velnox.com"
+ * joinUrl("https://shop.velnox.live", "")
+ *   → "https://shop.velnox.live"
  */
 export function joinUrl(base: string, path: string): string {
   const b = base.replace(/\/+$/, "");

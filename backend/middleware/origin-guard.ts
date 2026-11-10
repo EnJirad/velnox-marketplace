@@ -5,7 +5,7 @@ import type { NextFunction, Request, RequestHandler, Response } from "express";
  *
  * WHY:
  *   Sessions are cookie-based (SameSite=None; Secure) because the API
- *   (velnox-api.onrender.com) and the frontends (velnox.com subdomains)
+ *   (velnox-api.onrender.com) and the frontends (velnox.live subdomains)
  *   are cross-site. CORS already prevents cross-origin browsers from
  *   *reading* responses, but a state-changing cross-site request can
  *   still be *sent* with cookies. The Origin header — set by browsers on

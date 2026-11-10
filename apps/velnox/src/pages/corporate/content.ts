@@ -162,7 +162,7 @@ export const STATIC_CONTENT: Record<StaticPageId, StaticContent> = {
       },
       {
         heading: "ส่งใบสมัคร",
-        body: "ถ้าคุณเชื่อว่าเทคโนโลยีควรทำให้การค้าขายเล็ก ๆ ง่ายขึ้น — ส่งโปรไฟล์ของคุณมาที่ careers@velnox.com หรือผ่านหน้า 'ติดต่อเรา'",
+        body: "ถ้าคุณเชื่อว่าเทคโนโลยีควรทำให้การค้าขายเล็ก ๆ ง่ายขึ้น — ส่งโปรไฟล์ของคุณมาที่ careers@velnox.live หรือผ่านหน้า 'ติดต่อเรา'",
       },
     ],
   },
@@ -204,7 +204,7 @@ export const STATIC_CONTENT: Record<StaticPageId, StaticContent> = {
       },
       {
         heading: "ติดต่อ",
-        body: "คำถามหรือข้อสงสัยเกี่ยวกับข้อมูลส่วนตัว: privacy@velnox.com",
+        body: "คำถามหรือข้อสงสัยเกี่ยวกับข้อมูลส่วนตัว: privacy@velnox.live",
       },
     ],
   },
@@ -227,7 +227,7 @@ export const STATIC_CONTENT: Record<StaticPageId, StaticContent> = {
       },
       {
         heading: "ติดต่อ",
-        body: "คำถามเกี่ยวกับข้อกำหนด: legal@velnox.com",
+        body: "คำถามเกี่ยวกับข้อกำหนด: legal@velnox.live",
       },
     ],
   },

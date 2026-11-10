@@ -596,7 +596,7 @@ export default function EmployeeManager({ readOnly = false }: { readOnly?: boole
                 required
                 value={newEmployee.email}
                 onChange={(e) => setNewEmployee((f) => ({ ...f, email: e.target.value }))}
-                placeholder="somchai@velnox.com"
+                placeholder="somchai@velnox.live"
               />
             </div>
             <div className="grid gap-2">

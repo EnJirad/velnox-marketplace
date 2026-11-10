@@ -86,3 +86,24 @@ Every change so far is additive and reversible: remove the three Vercel custom d
 code edits. No DNS, env, R2, Stripe or database state has changed. The DNS record table in the task file
 (PHASE 1) is the only snapshot that exists, because GoDaddy DNS is not exposed by any MCP — an env
 baseline must be captured by the owner before PHASE 5 or rollback of that layer is impossible.
+
+## Addendum — canonical domain aligned in source
+
+The Corporate site advertised `support@ / privacy@ / legal@ / careers@velnox.com`, and the VelCenter
+employee form used a `somchai@velnox.com` placeholder — all on a domain the project does not own.
+Every `velnox.com` occurrence in `apps/`, `backend/` and `packages/` source was changed to `velnox.live`
+(user-facing strings and the doc comments that named the canonical domain), so the codebase no longer
+asserts a domain that is not under the owner's control.
+
+This is what made the original brief wrong about the main domain; leaving it in comments would let the
+same false premise be reintroduced.
+
+**Honest caveat:** `velnox.live` publishes no `MX` record, so mail to these addresses still does not
+deliver. The change makes the address correct-by-domain so that adding mail later works; it does not
+create a mailbox.
+
+Re-verified after the change: `git diff --check` clean · typecheck 4/4 exit 0 · i18n parity 2235×3 ·
+`bun run test` 1420 pass / 425 skip / 0 fail.
+
+Cloudflare zone creation was retried once after the owner said to proceed: still `403`
+`com.cloudflare.api.account.zone.create`. The blocker is the token scope, not the request.

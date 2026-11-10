@@ -1,5 +1,5 @@
 /**
- * VELNOX GROUP — Corporate website (velnox.com)
+ * VELNOX GROUP — Corporate website (velnox.live)
  *
  * Public, content-only entry. Deliberately has NO auth and
  * NO dashboard code — corporate is the company face of the ecosystem and

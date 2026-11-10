@@ -182,10 +182,17 @@ by any MCP):
 No `MX`, no SPF, no DKIM selector, no other subdomain → **migrating this zone loses no mail or
 verification record.** `shop`, `seller`, `center`, `api` do not exist yet.
 
-**Also found (report, do not silently change):** the Corporate site publishes `support@velnox.com`,
-`privacy@velnox.com`, `legal@velnox.com`, `careers@velnox.com`
-(`apps/velnox/src/pages/corporate/content.ts:165,207,230`, `Contact.tsx:8,70`) on a domain the project
-does not own — those addresses cannot receive mail. Recommend switching them to `@velnox.live`.
+**Also found — FIXED 2026-11-10:** the Corporate site published `support@ / privacy@ / legal@ /
+careers@velnox.com` (`content.ts:165,207,230`, `Contact.tsx:8,70`) plus a `somchai@velnox.com`
+placeholder (`EmployeeManager.tsx:599`) on a domain the project does not own — those addresses could
+never receive mail. All user-facing strings now use `@velnox.live`, and the canonical domain in source
+comments (`main.tsx:2`, `origin-guard.ts:8`, `auth-flow.ts:168-169`, `sites.ts:9,62-69`,
+`vite-env.d.ts:10-19`, `security-hardening.test.ts:234,238`) matches reality. `velnox.com` no longer
+appears anywhere in source.
+
+**Caveat, still true:** `velnox.live` has no `MX` record, so mail to these addresses does **not**
+deliver yet either. The change aligns the address with the owned domain so that adding MX later makes
+them work; it does not by itself create a mailbox.
 
 **Owner decision taken:** route the zone through Cloudflare (owner changes the nameservers at GoDaddy
 personally). **Blocked in practice** by the read-only Cloudflare token (§0.9) — see the decision gate.

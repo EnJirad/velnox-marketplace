@@ -165,8 +165,8 @@ export function classifyGoogleError(error: unknown): GoogleAuthErrorKind {
  * the origin explicitly and keep the original returnTo (if any) as a query
  * param for the auth page's post-sign-in redirect logic.
  *
- * Example: ("https://shop.velnox.com", "/checkout")
- *   → "https://shop.velnox.com/auth?returnTo=%2Fcheckout"
+ * Example: ("https://shop.velnox.live", "/checkout")
+ *   → "https://shop.velnox.live/auth?returnTo=%2Fcheckout"
  */
 export function buildGoogleRedirectTo(
   origin: string,

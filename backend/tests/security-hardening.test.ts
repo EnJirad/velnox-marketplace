@@ -231,11 +231,11 @@ describe("rateLimitSecurity route classes", () => {
 // ─── Origin guard (CSRF) ────────────────────────────────────────────────────
 
 describe("origin guard", () => {
-  const guard = createOriginGuard(["https://shop.velnox.com", "https://seller.velnox.com", "http://localhost:5173"]);
+  const guard = createOriginGuard(["https://shop.velnox.live", "https://seller.velnox.live", "http://localhost:5173"]);
 
   test("trusted origin is allowed", () => {
     let called = false;
-    guard(fakeReq({ headers: { origin: "https://shop.velnox.com" } }), {} as Response, () => { called = true; });
+    guard(fakeReq({ headers: { origin: "https://shop.velnox.live" } }), {} as Response, () => { called = true; });
     expect(called).toBe(true);
   });
 

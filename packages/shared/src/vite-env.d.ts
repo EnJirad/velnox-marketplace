@@ -7,16 +7,16 @@ interface ImportMetaEnv {
   /** Sub-path basename when the app is deployed behind a gateway (e.g. "/center") */
   readonly VITE_SITE_BASENAME?: string;
 
-  /** Full URL of the VelShop frontend (e.g. https://shop.velnox.com) */
+  /** Full URL of the VelShop frontend (e.g. https://shop.velnox.live) */
   readonly VITE_VELSHOP_URL?: string;
 
-  /** Full URL of the VelSeller frontend (e.g. https://seller.velnox.com) */
+  /** Full URL of the VelSeller frontend (e.g. https://seller.velnox.live) */
   readonly VITE_VELSELLER_URL?: string;
 
-  /** Full URL of the VelCenter frontend (e.g. https://center.velnox.com) */
+  /** Full URL of the VelCenter frontend (e.g. https://center.velnox.live) */
   readonly VITE_VELCENTER_URL?: string;
 
-  /** Full URL of the Velnox corporate website (e.g. https://velnox.com) */
+  /** Full URL of the Velnox corporate website (e.g. https://velnox.live) */
   readonly VITE_CORPORATE_URL?: string;
 
   /** Customer-support email shown on the Help Center (optional). */

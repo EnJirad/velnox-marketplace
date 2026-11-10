@@ -5,7 +5,7 @@ const CHANNELS = [
   {
     icon: Mail,
     title: "อีเมล",
-    lines: ["support@velnox.com", "privacy@velnox.com"],
+    lines: ["support@velnox.live", "privacy@velnox.live"],
   },
   {
     icon: MapPin,
@@ -67,7 +67,7 @@ export function Contact() {
 
         <form
           className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8 lg:col-span-3"
-          action={`mailto:support@velnox.com?subject=${subject}&body=${body}`}
+          action={`mailto:support@velnox.live?subject=${subject}&body=${body}`}
           method="post"
           encType="text/plain"
           onSubmit={(e) => {
