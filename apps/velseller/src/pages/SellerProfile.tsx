@@ -14,7 +14,7 @@ import { Badge } from "@velnox/shared/components/ui/badge";
 import { AppHeader } from "@velnox/shared/components/AppHeader";
 import { VBadge, VerificationStatusLabel } from "@velnox/shared/components/VBadge";
 import { type VerificationStatus } from "@velnox/shared/lib/commerce";
-import { apiBaseUrl } from "@velnox/shared/lib/sites";
+import { apiBaseUrl, SITE_URLS } from "@velnox/shared/lib/sites";
 import { formatBaht } from "@velnox/shared/lib/commerce";
 import { compressImage } from "@velnox/shared/lib/image-optimize";
 import { useAuth } from "@velnox/shared/hooks/use-auth";
@@ -284,7 +284,7 @@ export default function SellerProfile() {
             <div className="space-y-1 rounded-2xl border border-slate-200 bg-white overflow-hidden">
               {[
                 { icon: MessageCircle, label: "แชทกับลูกค้า", desc: "ตอบคำถามจากลูกค้า", to: "/seller/chat", chevron: true },
-                { icon: FileText, label: "ดูหน้าร้านค้า", desc: "VelShop: SUPER GADGET ZENE", to: `https://velshop.vercel.app/shops/${shop?.slug ?? shop?.id}`, external: true },
+                { icon: FileText, label: "ดูหน้าร้านค้า", desc: "VelShop: SUPER GADGET ZENE", to: `${SITE_URLS.velshop}/shops/${shop?.slug ?? shop?.id}`, external: true },
               ].map(({ icon: Icon, label, desc, to, external, chevron }) => (
                 external ? (
                   <a key={label} href={to} target="_blank" rel="noopener noreferrer"

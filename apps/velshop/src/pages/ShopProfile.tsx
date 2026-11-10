@@ -15,6 +15,7 @@ import {
 import { Button } from "@velnox/shared/components/ui/button";
 import { Skeleton } from "@velnox/shared/components/ui/skeleton";
 import { api } from "@velnox/shared/lib/api-routes";
+import { SITE_URLS } from "@velnox/shared/lib/sites";
 import { useAuth } from "@velnox/shared/hooks/use-auth";
 import { useChatUnread } from "@velnox/shared/hooks/use-chat-unread";
 import { useAction } from "@velnox/shared/lib/api-routes";
@@ -90,8 +91,8 @@ const COMMUNICATION: ProfileRow[] = [
 const ACCOUNT: ProfileRow[] = [
   { to: "/profile/account", labelKey: "profile.account", descKey: "profile.accountDesc", icon: CircleUserRound },
   { to: "/cookies", labelKey: "profile.cookies", descKey: "profile.cookiesDesc", icon: ShieldCheck },
-  { to: "https://velnox-theta.vercel.app/terms", external: true, labelKey: "profile.terms", descKey: "profile.termsDesc", icon: FileText },
-  { to: "https://velnox-theta.vercel.app/privacy", external: true, labelKey: "profile.privacy", descKey: "profile.privacyDesc", icon: ShieldCheck },
+  { to: `${SITE_URLS.corporate}/terms`, external: true, labelKey: "profile.terms", descKey: "profile.termsDesc", icon: FileText },
+  { to: `${SITE_URLS.corporate}/privacy`, external: true, labelKey: "profile.privacy", descKey: "profile.privacyDesc", icon: ShieldCheck },
 ];
 
 interface NotificationRow {
