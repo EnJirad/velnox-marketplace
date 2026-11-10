@@ -266,8 +266,8 @@ export function ProductFormDialog({ open, onOpenChange, product }: ProductFormDi
                 placeholder="ชื่อร้านค้าส่ง"
               />
             </div>
-            <div className="flex items-end gap-2 rounded-[10px] border border-slate-200 px-3 py-2.5">
-              <Store className="size-4 shrink-0 text-[#10B981]" />
+            <div className="flex items-end gap-2 rounded-md border border-slate-200 px-3 py-2.5">
+              <Store className="size-4 shrink-0 text-brand" />
               <div className="flex-1">
                 <p className="text-sm font-medium text-slate-900">ประกาศขายที่หน้าร้าน</p>
                 <p className="text-xs text-slate-400">แสดงใน velshop ให้ลูกค้าสั่งซื้อได้</p>

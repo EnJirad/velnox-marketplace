@@ -84,7 +84,7 @@ export default function ChangePasswordScreen() {
               />
             </div>
             {error && (
-              <p className="rounded-[10px] bg-rose-50 px-3 py-2 text-xs font-medium text-rose-600">
+              <p className="rounded-md bg-rose-50 px-3 py-2 text-xs font-medium text-rose-600">
                 {error}
               </p>
             )}

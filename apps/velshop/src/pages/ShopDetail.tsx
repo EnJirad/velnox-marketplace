@@ -237,7 +237,7 @@ export default function ShopDetail() {
             {coverUrl ? (
               <img src={coverUrl} alt="" className="size-full object-cover" />
             ) : (
-              <div className="size-full bg-gradient-to-r from-[#0f766e] via-[#10B981] to-[#34d399]" />
+              <div className="size-full bg-gradient-to-r from-[#0f766e] via-brand to-[#34d399]" />
             )}
           </div>
 
@@ -248,7 +248,7 @@ export default function ShopDetail() {
               {logoUrl ? (
                 <img src={logoUrl} alt={shop.name} className="size-full object-cover" />
               ) : (
-                <Store className="size-6 text-[#10B981] sm:size-7" />
+                <Store className="size-6 text-brand sm:size-7" />
               )}
             </span>
 
@@ -259,7 +259,7 @@ export default function ShopDetail() {
               </div>
 
               {/* Stats row */}
-              <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-slate-400 sm:mt-1.5 sm:text-xs">
+              <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-2xs text-slate-400 sm:mt-1.5 sm:text-xs">
                 {shop.rating != null && (
                   <span className="flex items-center gap-1">
                     <Star className="size-3 fill-amber-400 text-amber-400" />
@@ -287,7 +287,7 @@ export default function ShopDetail() {
                 disabled={chatStarting}
                 className="mt-2 h-8 gap-1.5 rounded-lg border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50"
               >
-                <MessageCircle className="size-3.5 text-[#10B981]" />
+                <MessageCircle className="size-3.5 text-brand" />
                 {chatStarting ? t("common.loading") : t("chat.chatWithShop")}
               </Button>
 
@@ -303,7 +303,7 @@ export default function ShopDetail() {
                     <button
                       type="button"
                       onClick={() => setDescExpanded(!descExpanded)}
-                      className="mt-0.5 flex items-center gap-0.5 text-[11px] font-medium text-[#10B981] hover:text-emerald-700"
+                      className="mt-0.5 flex items-center gap-0.5 text-2xs font-medium text-brand hover:text-emerald-700"
                     >
                       {descExpanded ? t("shopDetail.showLess") : t("shopDetail.showMore")}
                       {descExpanded ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />}
@@ -314,7 +314,7 @@ export default function ShopDetail() {
 
               {/* Announcement — compact */}
               {shop.announcement && (
-                <p className="mt-1.5 inline-flex rounded-full bg-amber-50 px-2.5 py-0.5 text-[11px] font-medium text-amber-700 sm:text-xs">
+                <p className="mt-1.5 inline-flex rounded-full bg-amber-50 px-2.5 py-0.5 text-2xs font-medium text-amber-700 sm:text-xs">
                   {shop.announcement}
                 </p>
               )}
@@ -336,12 +336,12 @@ export default function ShopDetail() {
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder={t("shopDetail.searchProducts")}
-                  className="h-8 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-700 placeholder:text-slate-400 focus:border-[#10B981] focus:outline-none focus:ring-1 focus:ring-[#10B981]/30 sm:w-48"
+                  className="h-8 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-700 placeholder:text-slate-400 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/30 sm:w-48"
                 />
                 <select
                   value={sortBy}
                   onChange={(e) => setSortBy(e.target.value)}
-                  className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-700 focus:border-[#10B981] focus:outline-none"
+                  className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-700 focus:border-brand focus:outline-none"
                 >
                   <option value="newest">{t("shopDetail.sortNewest")}</option>
                   <option value="popular">{t("shopDetail.sortPopular")}</option>
@@ -363,7 +363,7 @@ export default function ShopDetail() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="mt-1.5 text-[#10B981]"
+                  className="mt-1.5 text-brand"
                   onClick={() => setSearchQuery("")}
                 >
                   {t("shopDetail.clearSearch")}

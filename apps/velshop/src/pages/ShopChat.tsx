@@ -577,7 +577,7 @@ export default function ShopChat() {
                   {t("chat.messagesTitle")}
                 </h1>
                 {unreadTotal > 0 && (
-                  <span className="ml-auto rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-semibold text-sky-900">
+                  <span className="ml-auto rounded-full bg-sky-100 px-2 py-0.5 text-2xs font-semibold text-sky-900">
                     {unreadTotal > 99 ? "99+" : unreadTotal}
                   </span>
                 )}
@@ -682,7 +682,7 @@ export default function ShopChat() {
                     backLabel={t("chat.back")}
                     actions={
                       realtimeState !== "open" ? (
-                        <span className="ml-auto flex items-center gap-1.5 pr-1 text-[11px] font-medium text-amber-700">
+                        <span className="ml-auto flex items-center gap-1.5 pr-1 text-2xs font-medium text-amber-700">
                           <span className="size-1.5 animate-pulse rounded-full bg-amber-500" />
                           {t("realtime.reconnecting")}
                         </span>

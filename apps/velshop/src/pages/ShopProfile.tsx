@@ -205,7 +205,7 @@ export default function ShopProfile() {
     const Icon = row.icon;
     const body = (
       <>
-        <span className="flex size-10 shrink-0 items-center justify-center rounded-[12px] bg-slate-100 text-slate-500">
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
           <Icon className="size-[18px]" />
         </span>
         <span className="min-w-0 flex-1">
@@ -213,7 +213,7 @@ export default function ShopProfile() {
           <span className="mt-0.5 block truncate text-xs text-slate-400">{t(row.descKey)}</span>
         </span>
         {showBadge > 0 && (
-          <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-[#10B981] text-[11px] font-bold text-white">
+          <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-brand text-2xs font-bold text-white">
             {showBadge > 99 ? "99+" : showBadge}
           </span>
         )}
@@ -250,7 +250,7 @@ export default function ShopProfile() {
                 </div>
                 <Skeleton className="mt-4 h-6 w-44" />
                 <Skeleton className="mt-2 h-4 w-64" />
-                <Skeleton className="mt-6 h-10 w-36 rounded-[10px]" />
+                <Skeleton className="mt-6 h-10 w-36 rounded-md" />
               </div>
             </div>
             <Skeleton className="h-24 rounded-3xl" />
@@ -260,7 +260,7 @@ export default function ShopProfile() {
           <>
             {/* Identity header — cover · avatar · name/email/status */}
             <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-soft">
-              <div className="relative h-36 bg-gradient-to-r from-[#0f766e] via-[#10B981] to-[#34d399] sm:h-44">
+              <div className="relative h-36 bg-gradient-to-r from-[#0f766e] via-brand to-[#34d399] sm:h-44">
                 <CoverImage
                   src={coverSrc}
                   alt={t("profile.coverAlt", { name: displayName || "VelShop" })}
@@ -275,7 +275,7 @@ export default function ShopProfile() {
                       className={`flex size-24 shrink-0 items-center justify-center overflow-hidden rounded-full border-4 border-white shadow-sm ${
                         avatarSrc
                           ? "bg-transparent"
-                          : "bg-[#ECFDF5] text-3xl font-bold text-[#10B981]"
+                          : "bg-[#ECFDF5] text-3xl font-bold text-brand"
                       }`}
                     >
                       {avatarSrc ? (
@@ -309,12 +309,12 @@ export default function ShopProfile() {
                   </p>
                   {displayEmail && <p className="truncate text-sm text-slate-500">{displayEmail}</p>}
                   <div className="mt-2 flex flex-wrap items-center gap-2">
-                    <span className="inline-flex items-center gap-1 rounded-full bg-[#ECFDF5] px-2.5 py-1 text-[11px] font-medium text-emerald-700">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-[#ECFDF5] px-2.5 py-1 text-2xs font-medium text-emerald-700">
                       <ShieldCheck className="size-3" />
                       {t("profile.statusActive")}
                     </span>
                     {memberSince && (
-                      <span className="inline-flex items-center gap-1 text-[11px] text-slate-400">
+                      <span className="inline-flex items-center gap-1 text-2xs text-slate-400">
                         <CalendarDays className="size-3" />
                         {t("profile.memberSince", { date: formatMemberSince(memberSince) })}
                       </span>
@@ -390,7 +390,7 @@ export default function ShopProfile() {
                       className="flex flex-col items-center gap-1.5 px-1 py-3 text-center transition-colors hover:bg-slate-50 active:bg-slate-100"
                     >
                       <Icon className="size-5 text-slate-700" strokeWidth={1.75} />
-                      <span className="text-[11px] leading-tight text-slate-600">{t(tile.labelKey)}</span>
+                      <span className="text-2xs leading-tight text-slate-600">{t(tile.labelKey)}</span>
                     </Link>
                   );
                 })}
@@ -415,7 +415,7 @@ export default function ShopProfile() {
             </section>
 
             <p className="mt-6 flex items-center justify-center gap-1.5 text-center text-xs text-slate-400">
-              <ShoppingBag className="size-3.5 text-[#10B981]" />
+              <ShoppingBag className="size-3.5 text-brand" />
               {t("profile.accountNote")}
             </p>
           </>

@@ -233,7 +233,7 @@ export function ChatComposer({
           disabled={!canSend}
           aria-label={sendLabel}
           title={sendLabel}
-          className="flex size-11 shrink-0 items-center justify-center rounded-full text-[#10B981] transition-colors hover:bg-emerald-50 disabled:text-slate-300 disabled:hover:bg-transparent"
+          className="flex size-11 shrink-0 items-center justify-center rounded-full text-brand transition-colors hover:bg-emerald-50 disabled:text-slate-300 disabled:hover:bg-transparent"
         >
           {sending ? <Loader2 className="size-5 animate-spin text-slate-400" /> : <Send className="size-5" />}
         </button>

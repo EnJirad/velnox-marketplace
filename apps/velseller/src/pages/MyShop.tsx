@@ -334,7 +334,7 @@ export default function MyShop() {
                   : t("gate.sellerRejectedDesc")}
             </p>
             {reason && (rejected || suspended) && (
-              <p className="mt-4 rounded-[10px] bg-rose-50 px-3 py-2.5 text-sm font-medium text-rose-700">
+              <p className="mt-4 rounded-md bg-rose-50 px-3 py-2.5 text-sm font-medium text-rose-700">
                 {t("gate.sellerRejectedReason", { reason })}
               </p>
             )}
@@ -444,7 +444,7 @@ export default function MyShop() {
 
       <main className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-10">
         <p className="mb-3 flex items-center gap-1.5 text-sm font-medium text-slate-500">
-          <Package className="size-4 text-[#10B981]" aria-hidden="true" />
+          <Package className="size-4 text-brand" aria-hidden="true" />
           {t("sellerDash.shop.eyebrow")}
         </p>
 
@@ -471,13 +471,13 @@ export default function MyShop() {
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder={t("sellerDash.shop.searchPlaceholder")}
-                  className="h-11 rounded-[10px] border-slate-200 bg-white pl-9"
+                  className="h-11 rounded-md border-slate-200 bg-white pl-9"
                   aria-label={t("sellerDash.shop.searchAria")}
                   type="search"
                 />
               </div>
               <Button
-                className="h-11 shrink-0 gap-1.5 bg-[#10B981] text-white hover:bg-[#059669]"
+                className="h-11 shrink-0 gap-1.5 bg-brand text-white hover:bg-[#059669]"
                 onClick={() => {
                   setEditing(null);
                   setFormOpen(true);
@@ -501,7 +501,7 @@ export default function MyShop() {
                   onClick={() => setStatusFilter(filter.key)}
                   className={`inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
                     active
-                      ? "border-[#10B981] bg-[#10B981] text-white"
+                      ? "border-brand bg-brand text-white"
                       : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
                   }`}
                 >
@@ -536,7 +536,7 @@ export default function MyShop() {
           {products !== undefined && !productsFailed && counts.all === 0 && (
             <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-white p-10 text-center">
               <span className="mx-auto flex size-12 items-center justify-center rounded-xl bg-[#ECFDF5]">
-                <Package className="size-6 text-[#10B981]" aria-hidden="true" />
+                <Package className="size-6 text-brand" aria-hidden="true" />
               </span>
               <h3 className="mt-4 text-sm font-semibold text-slate-900">
                 {t("sellerDash.shop.emptyTitle")}
@@ -545,7 +545,7 @@ export default function MyShop() {
                 {t("sellerDash.shop.emptyDesc")}
               </p>
               <Button
-                className="mt-5 h-11 gap-1.5 bg-[#10B981] text-white hover:bg-[#059669]"
+                className="mt-5 h-11 gap-1.5 bg-brand text-white hover:bg-[#059669]"
                 onClick={() => {
                   setEditing(null);
                   setFormOpen(true);
@@ -600,11 +600,11 @@ export default function MyShop() {
                               <img
                                 src={product.primaryImage.thumbUrl || product.primaryImage.url}
                                 alt=""
-                                className="size-11 shrink-0 rounded-[10px] object-cover"
+                                className="size-11 shrink-0 rounded-md object-cover"
                                 loading="lazy"
                               />
                             ) : (
-                              <span className="flex size-11 shrink-0 items-center justify-center rounded-[10px] bg-slate-100">
+                              <span className="flex size-11 shrink-0 items-center justify-center rounded-md bg-slate-100">
                                 <ImageOff className="size-4 text-slate-300" aria-hidden="true" />
                               </span>
                             )}
@@ -695,11 +695,11 @@ export default function MyShop() {
                         <img
                           src={product.primaryImage.thumbUrl || product.primaryImage.url}
                           alt=""
-                          className="size-14 shrink-0 rounded-[10px] object-cover"
+                          className="size-14 shrink-0 rounded-md object-cover"
                           loading="lazy"
                         />
                       ) : (
-                        <span className="flex size-14 shrink-0 items-center justify-center rounded-[10px] bg-slate-100">
+                        <span className="flex size-14 shrink-0 items-center justify-center rounded-md bg-slate-100">
                           <ImageOff className="size-5 text-slate-300" aria-hidden="true" />
                         </span>
                       )}
@@ -728,7 +728,7 @@ export default function MyShop() {
                     <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3 min-w-0">
                       <Button
                         size="sm"
-                        className="h-11 flex-none gap-1.5 bg-[#10B981] text-white hover:bg-[#059669] disabled:bg-slate-200 disabled:text-slate-500 min-w-0 px-3"
+                        className="h-11 flex-none gap-1.5 bg-brand text-white hover:bg-[#059669] disabled:bg-slate-200 disabled:text-slate-500 min-w-0 px-3"
                         onClick={() => void handleTogglePublish(product)}
                         disabled={
                           togglingId === product.id ||

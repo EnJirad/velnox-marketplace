@@ -124,11 +124,11 @@ export default function Reorder() {
             <img
               src={s.product.primaryImage.thumbUrl || s.product.primaryImage.url}
               alt={s.product.name}
-              className="size-12 shrink-0 rounded-[10px] object-cover"
+              className="size-12 shrink-0 rounded-md object-cover"
               loading="lazy"
             />
           ) : (
-            <span className="flex size-12 shrink-0 items-center justify-center rounded-[10px] bg-slate-100">
+            <span className="flex size-12 shrink-0 items-center justify-center rounded-md bg-slate-100">
               <Package className="size-5 text-slate-300" />
             </span>
           )}
@@ -156,7 +156,7 @@ export default function Reorder() {
           </div>
         </div>
 
-        <div className="mt-3 grid grid-cols-2 gap-2 rounded-[10px] bg-slate-50 p-3 text-xs sm:grid-cols-4">
+        <div className="mt-3 grid grid-cols-2 gap-2 rounded-md bg-slate-50 p-3 text-xs sm:grid-cols-4">
           <div>
             <p className="text-slate-400">สต็อกคงเหลือ</p>
             <p className="mt-0.5 font-semibold tabular-nums text-slate-900">
@@ -229,7 +229,7 @@ export default function Reorder() {
       <main className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 sm:py-10">
         <div>
           <p className="flex items-center gap-1.5 text-sm font-medium text-slate-400">
-            <RefreshCw className="size-4 text-[#10B981]" />
+            <RefreshCw className="size-4 text-brand" />
             velseller · Smart Reorder
           </p>
           <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
@@ -244,7 +244,7 @@ export default function Reorder() {
         <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
           {stats.map((s) => (
             <div key={s.label} className="rounded-xl border border-slate-200 bg-white p-4">
-              <span className={`flex size-9 items-center justify-center rounded-[10px] ${s.chip}`}>
+              <span className={`flex size-9 items-center justify-center rounded-md ${s.chip}`}>
                 <s.icon className={`size-4.5 ${s.accent}`} />
               </span>
               <p className="mt-3 text-xl font-bold tabular-nums text-slate-900">{s.value}</p>
@@ -270,13 +270,13 @@ export default function Reorder() {
         {suggestions.length === 0 && (
           <div className="mt-10 flex flex-col items-center rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center">
             <span className="flex size-14 items-center justify-center rounded-2xl bg-[#ECFDF5]">
-              <TrendingUp className="size-7 text-[#10B981]" />
+              <TrendingUp className="size-7 text-brand" />
             </span>
             <h3 className="mt-5 text-lg font-semibold text-slate-900">ยังไม่มีสินค้าในร้าน</h3>
             <p className="mt-1.5 max-w-sm text-sm leading-6 text-slate-500">
               เพิ่มสินค้าและตั้งจุดสั่งซื้อซ้ำที่หน้า "ร้านของฉัน" — เมื่อมีออเดอร์จริง ระบบจะเริ่มคาดการณ์รอบถัดไปให้
             </p>
-            <Button className="mt-6 gap-1.5 h-11 bg-[#10B981] text-white hover:bg-[#059669]" asChild>
+            <Button className="mt-6 gap-1.5 h-11 bg-brand text-white hover:bg-[#059669]" asChild>
               <a href="/seller/shop">
                 <Store className="size-4" />
                 ไปที่ร้านของฉัน

@@ -84,7 +84,7 @@ export function ProgressDialog({ goal, open, onOpenChange }: ProgressDialogProps
           </div>
 
           {valid && (
-            <p className="rounded-[10px] bg-slate-50 px-3 py-2.5 text-sm text-slate-600">
+            <p className="rounded-md bg-slate-50 px-3 py-2.5 text-sm text-slate-600">
               ความคืบหน้าจะกลายเป็น{" "}
               <span className="font-semibold text-slate-900">
                 {formatNumber(nextValue)} {goal.unit}

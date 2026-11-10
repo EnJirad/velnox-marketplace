@@ -130,7 +130,7 @@ function ErrorDialog({
         </DialogHeader>
 
         <div className="rounded-md border border-amber-400/20 bg-amber-400/5 px-3 py-2.5">
-          <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-amber-200/70">
+          <div className="mb-1 text-2xs font-semibold uppercase tracking-wide text-amber-200/70">
             Error message
           </div>
           <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-zinc-200">
@@ -150,7 +150,7 @@ function ErrorDialog({
               </button>
             </CollapsibleTrigger>
             <CollapsibleContent>
-              <pre className="mt-2 max-h-60 overflow-auto whitespace-pre-wrap break-words rounded-md border border-zinc-800 bg-black/30 p-3 font-mono text-[11px] leading-relaxed text-zinc-400">
+              <pre className="mt-2 max-h-60 overflow-auto whitespace-pre-wrap break-words rounded-md border border-zinc-800 bg-black/30 p-3 font-mono text-2xs leading-relaxed text-zinc-400">
                 {technicalDetails}
               </pre>
             </CollapsibleContent>

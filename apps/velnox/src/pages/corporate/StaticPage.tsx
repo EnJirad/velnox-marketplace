@@ -43,7 +43,7 @@ function EcosystemCards() {
             </span>
             <ArrowUpRight className="size-4 text-slate-300 transition-colors group-hover:text-emerald-500" />
           </div>
-          <p className="mt-4 text-[11px] font-semibold uppercase tracking-wide text-emerald-600">
+          <p className="mt-4 text-2xs font-semibold uppercase tracking-wide text-emerald-600">
             {app.badge}
           </p>
           <h3 className="mt-1 text-lg font-bold tracking-tight text-slate-900">

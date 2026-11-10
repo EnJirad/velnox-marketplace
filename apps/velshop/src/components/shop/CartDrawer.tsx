@@ -40,7 +40,7 @@ export function CartDrawer({ open, onOpenChange }: CartDrawerProps) {
       <SheetContent className="flex w-full max-w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-md">
         <SheetHeader className="border-b border-slate-200 px-5 py-4 text-left">
           <SheetTitle className="flex items-center gap-2 text-base">
-            <ShoppingCart className="size-4 text-[#10B981]" />
+            <ShoppingCart className="size-4 text-brand" />
             {t("cart.title")}
             {count > 0 && (
               <span className="rounded-full bg-slate-900 px-2 py-0.5 text-xs font-semibold text-white">
@@ -124,7 +124,7 @@ export function CartDrawer({ open, onOpenChange }: CartDrawerProps) {
                   <div className="min-w-0 flex-1">
                     <p className="block min-w-0 max-w-full truncate text-sm font-medium text-slate-900" title={line.name} style={{ overflowWrap: "anywhere" }}>{line.name}</p>
                     {line.variantOptionLabels && (
-                      <p className="mt-0.5 text-xs text-[#10B981] font-medium">{line.variantOptionLabels}</p>
+                      <p className="mt-0.5 text-xs text-brand font-medium">{line.variantOptionLabels}</p>
                     )}
                     <p className="mt-0.5 text-xs text-slate-400">
                       {formatBaht(line.price)} {t("cart.perUnit", { unit: line.unit })}
@@ -192,7 +192,7 @@ export function CartDrawer({ open, onOpenChange }: CartDrawerProps) {
 
         <div className="flex items-center justify-center gap-2 border-t border-slate-100 bg-slate-50 px-5 py-3">
           <Logo />
-          <p className="text-[11px] text-slate-400">{t("cartDrawer.tagline")}</p>
+          <p className="text-2xs text-slate-400">{t("cartDrawer.tagline")}</p>
         </div>
       </SheetContent>
     </Sheet>

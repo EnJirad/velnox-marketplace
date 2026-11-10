@@ -1154,7 +1154,7 @@ export default function Center() {
       <main className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 sm:py-10">
         <div>
           <p className="flex items-center gap-1.5 text-sm font-medium text-slate-400">
-            <ShieldCheck className="size-4 text-[#10B981]" />
+            <ShieldCheck className="size-4 text-brand" />
             velcenter · ศูนย์กลางบริษัท
             {userRole && (
               <Badge className="ml-1 gap-1 rounded-full bg-sky-50 text-sky-700 ring-1 ring-inset ring-sky-600/15">
@@ -1192,7 +1192,7 @@ export default function Center() {
               <AlertTriangle className="size-4 shrink-0" />
               {t("center.queue.loadFailed")} {queueError}
             </p>
-            <Button variant="outline" size="sm" className="shrink-0 rounded-[10px]" onClick={retryQueues}>
+            <Button variant="outline" size="sm" className="shrink-0 rounded-md" onClick={retryQueues}>
               ลองใหม่
             </Button>
           </div>
@@ -1217,7 +1217,7 @@ export default function Center() {
           >
             {navOpen && (
               <div className="mb-2 flex items-center justify-between px-1 md:hidden">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                <p className="text-2xs font-semibold uppercase tracking-wide text-slate-400">
                   {t("velcenter.nav.sections")}
                 </p>
                 <button
@@ -1243,13 +1243,13 @@ export default function Center() {
                 in the drawer and the expanded rail; the collapsed rail keeps
                 them for screen readers only (R4) — each tab still has an
                 accessible name because the icon alone is not a name. */}
-            <TabsTrigger value="overview" onClick={() => selectTab("overview")} className="gap-1.5 rounded-[10px]">
+            <TabsTrigger value="overview" onClick={() => selectTab("overview")} className="gap-1.5 rounded-md">
               <TrendingUp className="size-4" /> <span className="nav-label">{t("velcenter.nav.overview")}</span>
             </TabsTrigger>
-            <TabsTrigger value="chat" onClick={() => selectTab("chat")} className="gap-1.5 rounded-[10px]">
+            <TabsTrigger value="chat" onClick={() => selectTab("chat")} className="gap-1.5 rounded-md">
               <MessageCircle className="size-4" /> <span className="nav-label">{t("velcenter.nav.chat")}</span>
             </TabsTrigger>
-            <TabsTrigger value="orders" onClick={() => selectTab("orders")} className="gap-1.5 rounded-[10px]">
+            <TabsTrigger value="orders" onClick={() => selectTab("orders")} className="gap-1.5 rounded-md">
               <ShoppingBag className="size-4" /> <span className="nav-label">{t("velcenter.nav.orders")}</span>
               {/*
                 The badge must not depend on how many rows happen to be loaded:
@@ -1258,61 +1258,61 @@ export default function Center() {
                 platform figure; the page-derived count is only the fallback.
               */}
               {(marketKpi?.pendingOrders ?? pendingOrders) > 0 && (
-                <span className="rounded-full bg-rose-500 px-1.5 text-[11px] font-bold text-white">
+                <span className="rounded-full bg-rose-500 px-1.5 text-2xs font-bold text-white">
                   {marketKpi?.pendingOrders ?? pendingOrders}
                 </span>
               )}
             </TabsTrigger>
 
-            <TabsTrigger value="products" onClick={() => selectTab("products")} className="gap-1.5 rounded-[10px]">
+            <TabsTrigger value="products" onClick={() => selectTab("products")} className="gap-1.5 rounded-md">
               <Package className="size-4" /> <span className="nav-label">{t("velcenter.nav.products")}</span>
               {pendingProducts > 0 && (
-                <span className="rounded-full bg-amber-500 px-1.5 text-[11px] font-bold text-white">
+                <span className="rounded-full bg-amber-500 px-1.5 text-2xs font-bold text-white">
                   {pendingProducts}
                 </span>
               )}
             </TabsTrigger>
-            <TabsTrigger value="sellers" onClick={() => selectTab("sellers")} className="gap-1.5 rounded-[10px]">
+            <TabsTrigger value="sellers" onClick={() => selectTab("sellers")} className="gap-1.5 rounded-md">
               <Store className="size-4" /> <span className="nav-label">{t("velcenter.nav.sellers")}</span>
               {pendingSellers > 0 && (
-                <span className="rounded-full bg-amber-500 px-1.5 text-[11px] font-bold text-white">
+                <span className="rounded-full bg-amber-500 px-1.5 text-2xs font-bold text-white">
                   {pendingSellers}
                 </span>
               )}
             </TabsTrigger>
             {canSee("categories") && (
-              <TabsTrigger value="categories" onClick={() => selectTab("categories")} className="gap-1.5 rounded-[10px]">
+              <TabsTrigger value="categories" onClick={() => selectTab("categories")} className="gap-1.5 rounded-md">
                 <Tag className="size-4" /> <span className="nav-label">{t("velcenter.nav.categories")}</span>
               </TabsTrigger>
             )}
 
             {canSee("staff") && (
-              <TabsTrigger value="staff" onClick={() => selectTab("staff")} className="gap-1.5 rounded-[10px]">
+              <TabsTrigger value="staff" onClick={() => selectTab("staff")} className="gap-1.5 rounded-md">
                 <Users className="size-4" /> <span className="nav-label">{t("velcenter.nav.staff")}</span>
               </TabsTrigger>
             )}
             {canSee("audit") && (
-              <TabsTrigger value="audit" onClick={() => selectTab("audit")} className="gap-1.5 rounded-[10px]">
+              <TabsTrigger value="audit" onClick={() => selectTab("audit")} className="gap-1.5 rounded-md">
                 <History className="size-4" /> <span className="nav-label">{t("velcenter.nav.auditLog")}</span>
               </TabsTrigger>
             )}
             {canSee("incidents") && (
-              <TabsTrigger value="incidents" onClick={() => selectTab("incidents")} className="gap-1.5 rounded-[10px]">
+              <TabsTrigger value="incidents" onClick={() => selectTab("incidents")} className="gap-1.5 rounded-md">
                 <AlertTriangle className="size-4" /> <span className="nav-label">{t("velcenter.nav.paymentIncidents")}</span>
               </TabsTrigger>
             )}
             {canSee("tracking") && (
-              <TabsTrigger value="tracking" onClick={() => selectTab("tracking")} className="gap-1.5 rounded-[10px]">
+              <TabsTrigger value="tracking" onClick={() => selectTab("tracking")} className="gap-1.5 rounded-md">
                 <Truck className="size-4" /> <span className="nav-label">การติดตามพัสดุ</span>
               </TabsTrigger>
             )}
             {canSee("marketing") && (
-              <TabsTrigger value="marketing" onClick={() => selectTab("marketing")} className="gap-1.5 rounded-[10px]">
+              <TabsTrigger value="marketing" onClick={() => selectTab("marketing")} className="gap-1.5 rounded-md">
                 <Megaphone className="size-4" /> <span className="nav-label">{t("velcenter.nav.marketing")}</span>
               </TabsTrigger>
             )}
             {canSee("settings") && (
-              <TabsTrigger value="settings" onClick={() => selectTab("settings")} className="gap-1.5 rounded-[10px]">
+              <TabsTrigger value="settings" onClick={() => selectTab("settings")} className="gap-1.5 rounded-md">
                 <Settings className="size-4" /> <span className="nav-label">ตั้งค่าระบบ</span>
               </TabsTrigger>
             )}
@@ -1384,7 +1384,7 @@ export default function Center() {
             <Card className="mt-6 border-slate-200 shadow-none">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-base">
-                  <Sparkles className="size-4 text-[#10B981]" />
+                  <Sparkles className="size-4 text-brand" />
                   สรุปภาพรวมร้านค้า
                 </CardTitle>
               </CardHeader>
@@ -1434,7 +1434,7 @@ export default function Center() {
             ) : ordersData.length === 0 ? (
               <div className="flex flex-col items-center rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center">
                 <span className="flex size-14 items-center justify-center rounded-2xl bg-[#ECFDF5]">
-                  <ShoppingBag className="size-7 text-[#10B981]" />
+                  <ShoppingBag className="size-7 text-brand" />
                 </span>
                 <h2 className="mt-5 text-lg font-semibold text-slate-900">ยังไม่มีออเดอร์</h2>
                 <p className="mt-1.5 max-w-sm text-sm leading-6 text-slate-500">
@@ -1502,7 +1502,7 @@ export default function Center() {
                                 onValueChange={(v) => handleOrderStatus(order.id, v)}
                                 disabled={busyOrderId === order.id}
                               >
-                                <SelectTrigger className="ml-auto h-9 w-36 rounded-[10px] border-slate-200 text-sm">
+                                <SelectTrigger className="ml-auto h-9 w-36 rounded-md border-slate-200 text-sm">
                                   <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -1557,7 +1557,7 @@ export default function Center() {
                             onValueChange={(v) => handleOrderStatus(order.id, v)}
                             disabled={busyOrderId === order.id}
                           >
-                            <SelectTrigger className="h-8 w-32 shrink-0 rounded-[10px] border-slate-200 text-xs">
+                            <SelectTrigger className="h-8 w-32 shrink-0 rounded-md border-slate-200 text-xs">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
@@ -1576,7 +1576,7 @@ export default function Center() {
                         )}
                       </div>
 
-                      <div className="mt-3 rounded-[10px] bg-slate-50 px-3 py-2.5">
+                      <div className="mt-3 rounded-md bg-slate-50 px-3 py-2.5">
                         {order.items.slice(0, 2).map((item) => (
                           <p key={item.id} className="truncate text-sm text-slate-600">
                             {item.productName}{" "}
@@ -1604,7 +1604,7 @@ export default function Center() {
                 <div className="mt-6 flex justify-center">
                   <Button
                     variant="outline"
-                    className="min-w-44 gap-1.5 rounded-[10px] border-slate-200 text-slate-700"
+                    className="min-w-44 gap-1.5 rounded-md border-slate-200 text-slate-700"
                     onClick={() => void loadMoreOrders()}
                     disabled={ordersLoadingMore}
                   >
@@ -1633,7 +1633,7 @@ export default function Center() {
 
           <TabsContent value="products" className="mt-6">
             <div className="mb-4 flex items-center gap-2 text-sm text-slate-500">
-              <Package className="size-4 text-[#10B981]" />
+              <Package className="size-4 text-brand" />
               ตรวจสอบสินค้าที่พ่อค้าส่งมา — อนุมัติแล้วจะแสดงที่หน้าร้าน velshop
             </div>
             <ProductModerationQueue />
@@ -1642,7 +1642,7 @@ export default function Center() {
           {/* ============ Sellers — application review (Neon, spec §36) ============ */}
           <TabsContent value="sellers" className="mt-6">
             <div className="mb-4 flex items-center gap-2 text-sm text-slate-500">
-              <Store className="size-4 text-[#10B981]" />
+              <Store className="size-4 text-brand" />
               ตรวจสอบใบสมัครและการยืนยันร้านค้า
             </div>
             <SellerVerificationQueue />
@@ -1667,7 +1667,7 @@ export default function Center() {
                     <AlertTriangle className="size-4 shrink-0" />
                     โหลดรายชื่อผู้ใช้ไม่สำเร็จ: {peopleError}
                   </p>
-                  <Button variant="outline" size="sm" className="shrink-0 rounded-[10px]" onClick={() => void loadPeople()}>
+                  <Button variant="outline" size="sm" className="shrink-0 rounded-md" onClick={() => void loadPeople()}>
                     ลองใหม่
                   </Button>
                 </div>
@@ -1675,14 +1675,14 @@ export default function Center() {
 
               {canSeeDirectory ? (
               <Tabs value={peopleSegment} onValueChange={(v) => setPeopleSegment(v as "staff" | "customer")}>
-                <TabsList className="w-full justify-start overflow-x-auto rounded-[12px] border border-slate-200 bg-white p-1 sm:w-auto">
-                  <TabsTrigger value="staff" className="gap-1.5 rounded-[10px]">
+                <TabsList className="w-full justify-start overflow-x-auto rounded-lg border border-slate-200 bg-white p-1 sm:w-auto">
+                  <TabsTrigger value="staff" className="gap-1.5 rounded-md">
                     <ShieldCheck className="size-4" /> พนักงาน
-                    <span className="rounded-full bg-slate-100 px-1.5 text-[11px] font-bold text-slate-600">{peopleCounts.staff}</span>
+                    <span className="rounded-full bg-slate-100 px-1.5 text-2xs font-bold text-slate-600">{peopleCounts.staff}</span>
                   </TabsTrigger>
-                  <TabsTrigger value="customer" className="gap-1.5 rounded-[10px]">
+                  <TabsTrigger value="customer" className="gap-1.5 rounded-md">
                     <ShoppingBag className="size-4" /> ลูกค้า
-                    <span className="rounded-full bg-slate-100 px-1.5 text-[11px] font-bold text-slate-600">{peopleCounts.customer}</span>
+                    <span className="rounded-full bg-slate-100 px-1.5 text-2xs font-bold text-slate-600">{peopleCounts.customer}</span>
                   </TabsTrigger>
                 </TabsList>
 
@@ -1746,7 +1746,7 @@ export default function Center() {
                                 }
                                 disabled={busyUserId === u._id}
                               >
-                                <SelectTrigger className="h-9 w-40 rounded-[10px] border-slate-200 text-sm">
+                                <SelectTrigger className="h-9 w-40 rounded-md border-slate-200 text-sm">
                                   <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -1774,7 +1774,7 @@ export default function Center() {
                                 }
                                 disabled={busyUserId === u._id}
                               >
-                                <SelectTrigger className="h-9 w-40 rounded-[10px] border-slate-200 text-sm">
+                                <SelectTrigger className="h-9 w-40 rounded-md border-slate-200 text-sm">
                                   <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -1840,7 +1840,7 @@ export default function Center() {
                             }
                             disabled={busyUserId === u._id}
                           >
-                            <SelectTrigger className="h-10 w-full rounded-[10px] border-slate-200 text-sm">
+                            <SelectTrigger className="h-10 w-full rounded-md border-slate-200 text-sm">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
@@ -1856,7 +1856,7 @@ export default function Center() {
                             onValueChange={(v) => handleSetUserAccess(u._id, role, v)}
                             disabled={busyUserId === u._id}
                           >
-                            <SelectTrigger className="h-10 w-full rounded-[10px] border-slate-200 text-sm">
+                            <SelectTrigger className="h-10 w-full rounded-md border-slate-200 text-sm">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
@@ -1874,7 +1874,7 @@ export default function Center() {
                 })}
               </div>
                       <p className="mt-4 flex items-center gap-1.5 text-xs text-slate-400">
-                        <Users className="size-3.5 shrink-0 text-[#10B981]" />
+                        <Users className="size-3.5 shrink-0 text-brand" />
                         พนักงาน (staff) ดูตัวเลขธุรกิจได้แต่แตะข้อมูลไม่ได้ · ผู้ดูแลฝ่าย (admin) จัดการข้อมูลได้แต่จัดการพนักงานไม่ได้
                       </p>
                     </>
@@ -1908,7 +1908,7 @@ export default function Center() {
                     <CardHeader className="flex-col items-start gap-3 space-y-0 sm:flex-row sm:items-center sm:justify-between">
                       <div className="min-w-0">
                         <CardTitle className="flex items-center gap-2 text-base">
-                          <ShoppingBag className="size-4 text-[#10B981]" />
+                          <ShoppingBag className="size-4 text-brand" />
                           บัญชีลูกค้า
                         </CardTitle>
                         <p className="mt-1 text-xs leading-5 text-slate-400">
@@ -1918,7 +1918,7 @@ export default function Center() {
                       <Button
                         variant="outline"
                         size="sm"
-                        className="shrink-0 gap-1.5 rounded-[10px] border-slate-200 text-slate-600"
+                        className="shrink-0 gap-1.5 rounded-md border-slate-200 text-slate-600"
                         onClick={() => void loadPeople()}
                       >
                         <RefreshCw className={`size-3.5 ${customerUsers === null ? "animate-spin" : ""}`} />
@@ -1932,7 +1932,7 @@ export default function Center() {
                           value={customerSearch}
                           onChange={(e) => setCustomerSearch(e.target.value)}
                           placeholder="ค้นหาชื่อหรืออีเมลลูกค้า..."
-                          className="rounded-[10px] pl-9"
+                          className="rounded-md pl-9"
                         />
                       </div>
 
@@ -1945,7 +1945,7 @@ export default function Center() {
                       ) : filteredCustomers.length === 0 ? (
                         <div className="flex flex-col items-center rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center">
                           <span className="flex size-12 items-center justify-center rounded-2xl bg-[#ECFDF5]">
-                            <ShoppingBag className="size-6 text-[#10B981]" />
+                            <ShoppingBag className="size-6 text-brand" />
                           </span>
                           <p className="mt-4 text-sm font-semibold text-slate-900">
                             {customerSearch ? "ไม่พบลูกค้าที่ค้นหา" : "ยังไม่มีบัญชีลูกค้า"}
@@ -1998,7 +1998,7 @@ export default function Center() {
                                     {c.status === "active" ? "ใช้งาน" : c.status}
                                   </Badge>
                                 </div>
-                                <p className="mt-2 text-[11px] text-slate-400">สมัครเมื่อ {formatThaiDate(c.createdAt)}</p>
+                                <p className="mt-2 text-2xs text-slate-400">สมัครเมื่อ {formatThaiDate(c.createdAt)}</p>
                               </div>
                             ))}
                           </div>
@@ -2058,7 +2058,7 @@ export default function Center() {
                     <AlertTriangle className="size-4 shrink-0" />
                     โหลดการตั้งค่าไม่สำเร็จ: {settingsError}
                   </p>
-                  <Button variant="outline" size="sm" className="shrink-0 rounded-[10px]" onClick={() => void loadSettings()}>
+                  <Button variant="outline" size="sm" className="shrink-0 rounded-md" onClick={() => void loadSettings()}>
                     ลองใหม่
                   </Button>
                 </div>
@@ -2079,7 +2079,7 @@ export default function Center() {
                           type="button"
                           onClick={() => setSettingsSection(section.id)}
                           aria-current={active ? "page" : undefined}
-                          className={`flex min-h-11 items-center gap-2 rounded-[10px] px-3 py-2 text-left text-sm font-medium transition-colors lg:w-full ${
+                          className={`flex min-h-11 items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-medium transition-colors lg:w-full ${
                             active ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"
                           }`}
                         >
@@ -2097,7 +2097,7 @@ export default function Center() {
                     <Card className="border-slate-200 shadow-none">
                       <CardHeader>
                         <CardTitle className="flex items-center gap-2 text-base">
-                          <Store className="size-4 text-[#10B981]" />
+                          <Store className="size-4 text-brand" />
                           ข้อมูลบริษัท / แพลตฟอร์ม
                         </CardTitle>
                         <p className="mt-1 text-xs leading-5 text-slate-400">
@@ -2143,7 +2143,7 @@ export default function Center() {
                                 onChange={(e) => setForm((f) => ({ ...f, announcement: e.target.value }))}
                                 placeholder="เช่น สินค้าใหม่เข้าคลังแล้ว!"
                               />
-                              <p className="text-[11px] text-slate-400">
+                              <p className="text-2xs text-slate-400">
                                 ประกาศนี้แสดงในหน้าร้านค้าแต่ละร้านเท่านั้น — แบนเนอร์หน้าแรกอยู่ที่แท็บ การตลาด
                               </p>
                             </div>
@@ -2176,7 +2176,7 @@ export default function Center() {
                     <Card className="border-slate-200 shadow-none">
                       <CardHeader>
                         <CardTitle className="flex items-center gap-2 text-base">
-                          <Package className="size-4 text-[#10B981]" />
+                          <Package className="size-4 text-brand" />
                           ตลาด & การอนุมัติสินค้า
                         </CardTitle>
                         <p className="mt-1 text-xs leading-5 text-slate-400">
@@ -2215,7 +2215,7 @@ export default function Center() {
                     <Card className="border-slate-200 shadow-none">
                       <CardHeader>
                         <CardTitle className="flex items-center gap-2 text-base">
-                          <Coins className="size-4 text-[#10B981]" />
+                          <Coins className="size-4 text-brand" />
                           ค่าธรรมเนียมผู้ขาย (Seller & Commission)
                         </CardTitle>
                         <p className="mt-1 text-xs leading-5 text-slate-400">
@@ -2232,19 +2232,19 @@ export default function Center() {
                                 <p className="mt-1 text-2xl font-bold tabular-nums text-slate-900">
                                   {((settingsMeta.commission.sellerRate ?? 0) * 100).toFixed(1)}%
                                 </p>
-                                <p className="mt-0.5 text-[11px] text-slate-400">หักจากยอดขายแต่ละรายการ</p>
+                                <p className="mt-0.5 text-2xs text-slate-400">หักจากยอดขายแต่ละรายการ</p>
                               </div>
                               <div className="rounded-xl border border-slate-200 bg-white p-4">
                                 <p className="text-xs text-slate-400">ความคุ้มครองการคืนสินค้า</p>
                                 <p className="mt-1 text-2xl font-bold tabular-nums text-slate-900">
                                   {((settingsMeta.commission.returnCoverage ?? 0) * 100).toFixed(0)}%
                                 </p>
-                                <p className="mt-0.5 text-[11px] text-slate-400">ของยอดขาย ครอบคลุมด้วยค่าธรรมเนียม</p>
+                                <p className="mt-0.5 text-2xs text-slate-400">ของยอดขาย ครอบคลุมด้วยค่าธรรมเนียม</p>
                               </div>
                               <div className="rounded-xl border border-slate-200 bg-white p-4">
                                 <p className="text-xs text-slate-400">สกุลเงิน</p>
                                 <p className="mt-1 text-2xl font-bold text-slate-900">{settingsMeta.commission.currency ?? "THB"}</p>
-                                <p className="mt-0.5 text-[11px] text-slate-400">สกุลเงินที่ระบบใช้คำนวณ</p>
+                                <p className="mt-0.5 text-2xs text-slate-400">สกุลเงินที่ระบบใช้คำนวณ</p>
                               </div>
                             </div>
                             <p className="mt-4 flex items-start gap-2 rounded-xl bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-700">
@@ -2265,7 +2265,7 @@ export default function Center() {
                     <Card className="border-slate-200 shadow-none">
                       <CardHeader>
                         <CardTitle className="flex items-center gap-2 text-base">
-                          <Globe className="size-4 text-[#10B981]" />
+                          <Globe className="size-4 text-brand" />
                           ภาษา & ท้องถิ่น
                         </CardTitle>
                         <p className="mt-1 text-xs leading-5 text-slate-400">
@@ -2301,7 +2301,7 @@ export default function Center() {
                     <Card className="border-slate-200 shadow-none">
                       <CardHeader>
                         <CardTitle className="flex items-center gap-2 text-base">
-                          <ImageIcon className="size-4 text-[#10B981]" />
+                          <ImageIcon className="size-4 text-brand" />
                           ไฟล์ & สื่อ (Media)
                         </CardTitle>
                         <p className="mt-1 text-xs leading-5 text-slate-400">
@@ -2322,7 +2322,7 @@ export default function Center() {
                             <p className="text-xs text-slate-400">ประเภทไฟล์ที่อนุญาต</p>
                             <div className="mt-2 flex flex-wrap gap-1">
                               {(settingsMeta?.media?.allowedTypes ?? []).map((type) => (
-                                <Badge key={type} className="rounded-full bg-slate-100 text-[11px] text-slate-600 ring-1 ring-inset ring-slate-600/10">
+                                <Badge key={type} className="rounded-full bg-slate-100 text-2xs text-slate-600 ring-1 ring-inset ring-slate-600/10">
                                   {type.replace("image/", "")}
                                 </Badge>
                               ))}
@@ -2341,7 +2341,7 @@ export default function Center() {
                     <Card className="border-slate-200 shadow-none">
                       <CardHeader>
                         <CardTitle className="flex items-center gap-2 text-base">
-                          <KeyRound className="size-4 text-[#10B981]" />
+                          <KeyRound className="size-4 text-brand" />
                           สิทธิ์การเข้าถึง (Permissions)
                         </CardTitle>
                         <p className="mt-1 text-xs leading-5 text-slate-400">
@@ -2358,7 +2358,7 @@ export default function Center() {
                                 <li key={perm.code} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5">
                                   <p className="text-sm font-medium text-slate-900">{perm.label}</p>
                                   <p className="mt-0.5 text-xs text-slate-400">{perm.description}</p>
-                                  <p className="mt-1 font-mono text-[11px] text-slate-300">{perm.code}</p>
+                                  <p className="mt-1 font-mono text-2xs text-slate-300">{perm.code}</p>
                                 </li>
                               ))}
                             </ul>

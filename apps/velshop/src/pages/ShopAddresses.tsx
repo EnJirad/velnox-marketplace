@@ -450,7 +450,7 @@ export default function ShopAddresses() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="flex items-center gap-1.5 text-sm font-medium text-slate-400">
-              <MapPin className="size-4 text-[#10B981]" />
+              <MapPin className="size-4 text-brand" />
               {t("addresses.eyebrow")}
             </p>
             <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">{t("addresses.title")}</h1>
@@ -557,7 +557,7 @@ export default function ShopAddresses() {
         <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <MapPin className="size-4 text-[#10B981]" />
+              <MapPin className="size-4 text-brand" />
               {editingId ? t("addresses.dialogEditTitle") : t("addresses.dialogTitle")}
             </DialogTitle>
             <DialogDescription>{t("addresses.dialogDesc")}</DialogDescription>
@@ -572,7 +572,7 @@ export default function ShopAddresses() {
                   value={form.label}
                   onChange={(e) => updateField("label", e.target.value)}
                   placeholder={t("addresses.labelPlaceholder")}
-                  className="rounded-[10px] border-slate-200"
+                  className="rounded-md border-slate-200"
                 />
               </div>
               <div className="grid gap-2">
@@ -585,7 +585,7 @@ export default function ShopAddresses() {
                   onChange={(e) => updateField("recipientName", e.target.value)}
                   onBlur={() => touchField("recipientName")}
                   placeholder={t("addresses.recipientPlaceholder")}
-                  className={`rounded-[10px] ${
+                  className={`rounded-md ${
                     touched.recipientName && errors.recipientName
                       ? "border-red-500 focus-visible:ring-red-500"
                       : "border-slate-200"
@@ -607,7 +607,7 @@ export default function ShopAddresses() {
                 onChange={(e) => updateField("phone", e.target.value)}
                 onBlur={() => touchField("phone")}
                 placeholder={t("addresses.phonePlaceholder")}
-                className={`rounded-[10px] ${
+                className={`rounded-md ${
                   touched.phone && errors.phone
                     ? "border-red-500 focus-visible:ring-red-500"
                     : "border-slate-200"
@@ -627,7 +627,7 @@ export default function ShopAddresses() {
                 onChange={(e) => updateField("line1", e.target.value)}
                 onBlur={() => touchField("line1")}
                 placeholder={t("addresses.line1Placeholder")}
-                className={`rounded-[10px] ${
+                className={`rounded-md ${
                   touched.line1 && errors.line1
                     ? "border-red-500 focus-visible:ring-red-500"
                     : "border-slate-200"
@@ -647,7 +647,7 @@ export default function ShopAddresses() {
                   value={form.subdistrict}
                   onChange={(e) => updateField("subdistrict", e.target.value)}
                   onBlur={() => touchField("subdistrict")}
-                  className={`rounded-[10px] ${
+                  className={`rounded-md ${
                     touched.subdistrict && errors.subdistrict
                       ? "border-red-500 focus-visible:ring-red-500"
                       : "border-slate-200"
@@ -663,7 +663,7 @@ export default function ShopAddresses() {
                   id="addr-district"
                   value={form.district}
                   onChange={(e) => updateField("district", e.target.value)}
-                  className="rounded-[10px] border-slate-200"
+                  className="rounded-md border-slate-200"
                 />
               </div>
               <div className="grid gap-2">
@@ -675,7 +675,7 @@ export default function ShopAddresses() {
                   value={form.province}
                   onChange={(e) => updateField("province", e.target.value)}
                   onBlur={() => touchField("province")}
-                  className={`rounded-[10px] ${
+                  className={`rounded-md ${
                     touched.province && errors.province
                       ? "border-red-500 focus-visible:ring-red-500"
                       : "border-slate-200"
@@ -696,7 +696,7 @@ export default function ShopAddresses() {
                   onBlur={() => touchField("postalCode")}
                   placeholder="10110"
                   maxLength={5}
-                  className={`rounded-[10px] ${
+                  className={`rounded-md ${
                     touched.postalCode && errors.postalCode
                       ? "border-red-500 focus-visible:ring-red-500"
                       : "border-slate-200"
@@ -713,7 +713,7 @@ export default function ShopAddresses() {
               <div
                 id="addr-map-section"
                 tabIndex={-1}
-                className={`rounded-[10px] ${
+                className={`rounded-md ${
                   touched.gps && errors.gps
                     ? "ring-2 ring-red-500 ring-offset-1"
                     : ""
@@ -751,7 +751,7 @@ export default function ShopAddresses() {
                 type="checkbox"
                 checked={form.isDefault}
                 onChange={(e) => updateField("isDefault", e.target.checked)}
-                className="size-4 rounded border-slate-300 text-[#10B981]"
+                className="size-4 rounded border-slate-300 text-brand"
               />
               {t("addresses.isDefault")}
             </label>

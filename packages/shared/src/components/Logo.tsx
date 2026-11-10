@@ -15,7 +15,7 @@ export function LogoMark({ className }: { className?: string }) {
   return (
     <span
       className={cn(
-        "relative flex size-9 items-center justify-center rounded-[10px] border border-slate-200 bg-white",
+        "relative flex size-9 items-center justify-center rounded-md border border-slate-200 bg-white",
         className,
       )}
       aria-hidden="true"
@@ -50,7 +50,7 @@ export function Logo({ className, dark = false, markOnly = false, wordmarkClassN
             wordmarkClassName,
           )}
         >
-          Vel<span className="text-[#10B981]">nox</span>
+          Vel<span className="text-brand">nox</span>
         </span>
       )}
     </span>

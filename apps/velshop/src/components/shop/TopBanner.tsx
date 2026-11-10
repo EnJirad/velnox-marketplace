@@ -13,7 +13,7 @@ export function TopBanner({ onDismiss }: { onDismiss?: () => void }) {
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 sm:px-6">
-      <div className="mt-3 rounded-2xl bg-[#10B981] text-white">
+      <div className="mt-3 rounded-2xl bg-brand text-white">
         <div className="flex items-center justify-between gap-3 px-4 py-3.5 sm:px-6 sm:py-4">
           <div className="flex min-w-0 items-center gap-3">
             <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/15">
@@ -23,7 +23,7 @@ export function TopBanner({ onDismiss }: { onDismiss?: () => void }) {
               <p className="truncate text-sm font-semibold leading-tight sm:text-base">
                 {t("thaimartUi.topBanner.title", { platform: "Velnox" })}
               </p>
-              <p className="mt-0.5 flex items-center gap-1.5 truncate text-[11px] opacity-90 sm:text-xs">
+              <p className="mt-0.5 flex items-center gap-1.5 truncate text-2xs opacity-90 sm:text-xs">
                 <ShieldCheck className="size-3 shrink-0" />
                 <span className="truncate">{t("thaimartUi.topBanner.subtitle")}</span>
               </p>

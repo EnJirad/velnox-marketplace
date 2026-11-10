@@ -100,7 +100,7 @@ export function GoalCard({ goal, onEdit, onDelete, onRecordProgress }: GoalCardP
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <span
-            className={`flex size-9 shrink-0 items-center justify-center rounded-[10px] ring-1 ring-inset ${meta.chip}`}
+            className={`flex size-9 shrink-0 items-center justify-center rounded-md ring-1 ring-inset ${meta.chip}`}
           >
             <Icon className={`size-4 ${meta.iconClass}`} aria-hidden="true" />
           </span>
@@ -182,7 +182,7 @@ export function GoalCard({ goal, onEdit, onDelete, onRecordProgress }: GoalCardP
         >
           <div
             className={`h-full rounded-full transition-[width] duration-500 ${
-              achieved ? "bg-emerald-500" : "bg-[#10B981]"
+              achieved ? "bg-emerald-500" : "bg-brand"
             }`}
             style={{ width: `${percent}%` }}
           />
@@ -218,7 +218,7 @@ export function GoalCard({ goal, onEdit, onDelete, onRecordProgress }: GoalCardP
       <div className="mt-auto">
         <Button
           variant="outline"
-          className="h-11 w-full gap-1.5 border-slate-200 bg-white text-slate-700 hover:border-[#10B981] hover:bg-[#ECFDF5] hover:text-emerald-700"
+          className="h-11 w-full gap-1.5 border-slate-200 bg-white text-slate-700 hover:border-brand hover:bg-[#ECFDF5] hover:text-emerald-700"
           onClick={() => onRecordProgress(goal)}
         >
           <Plus className="size-4" aria-hidden="true" />

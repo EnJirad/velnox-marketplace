@@ -73,7 +73,7 @@ export function ShopHeader() {
     return (
       <Link
         to={to}
-        className={`rounded-[10px] px-3 py-2 text-sm font-medium transition-colors ${
+        className={`rounded-md px-3 py-2 text-sm font-medium transition-colors ${
           active
             ? "bg-slate-100 text-slate-900"
             : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
@@ -87,14 +87,14 @@ export function ShopHeader() {
   return (
     <header className="sticky top-0 z-40">
       {/* Mobile brand bar — the reference app shell */}
-      <div className="bg-[#10B981] md:hidden">
+      <div className="bg-brand md:hidden">
         <div className="mx-auto flex h-14 w-full items-center gap-2 px-3">
           <Link
             to="/"
             aria-label={t("header.ariaHome", { name: "VelShop" })}
             className="flex size-9 shrink-0 items-center justify-center"
           >
-            <LogoMark className="size-8 rounded-[10px] bg-white" />
+            <LogoMark className="size-8 rounded-md bg-white" />
           </Link>
 
           {showSearch ? (
@@ -112,7 +112,7 @@ export function ShopHeader() {
                 <button
                   type="submit"
                   aria-label={t("header.ariaSearch")}
-                  className="absolute right-1 flex size-8 cursor-pointer items-center justify-center rounded-full text-slate-500 transition-colors hover:text-[#10B981]"
+                  className="absolute right-1 flex size-8 cursor-pointer items-center justify-center rounded-full text-slate-500 transition-colors hover:text-brand"
                 >
                   <Search className="size-[18px]" />
                 </button>
@@ -132,7 +132,7 @@ export function ShopHeader() {
           >
             <ShoppingCart className="size-6" />
             {count > 0 && (
-              <span className="absolute -right-0.5 -top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-white px-1 text-[11px] font-bold leading-none text-[#047857] shadow-sm">
+              <span className="absolute -right-0.5 -top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-white px-1 text-2xs font-bold leading-none text-[#047857] shadow-sm">
                 {count > 99 ? "99+" : count}
               </span>
             )}
@@ -145,7 +145,7 @@ export function ShopHeader() {
           >
             <MessageCircle className="size-6" />
             {chatUnread != null && chatUnread > 0 && (
-              <span className="absolute -right-0.5 -top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-white px-1 text-[11px] font-bold leading-none text-[#047857] shadow-sm">
+              <span className="absolute -right-0.5 -top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-white px-1 text-2xs font-bold leading-none text-[#047857] shadow-sm">
                 {chatUnread > 99 ? "99+" : chatUnread}
               </span>
             )}
@@ -180,13 +180,13 @@ export function ShopHeader() {
               variant="ghost"
               size="icon"
               data-cart-icon="true"
-              className="relative size-10 cursor-pointer rounded-[10px] text-slate-600 hover:bg-slate-100"
+              className="relative size-10 cursor-pointer rounded-md text-slate-600 hover:bg-slate-100"
               onClick={openCart}
               aria-label={t("header.ariaCart")}
             >
               <ShoppingCart className="size-5" />
               {count > 0 && (
-                <span className="absolute right-0 top-0 flex size-5 items-center justify-center rounded-full bg-[#10B981] text-[11px] font-bold text-white">
+                <span className="absolute right-0 top-0 flex size-5 items-center justify-center rounded-full bg-brand text-2xs font-bold text-white">
                   {count > 99 ? "99+" : count}
                 </span>
               )}
@@ -195,7 +195,7 @@ export function ShopHeader() {
             {isLoading ? null : isAuthenticated ? (
               <Link
                 to="/profile"
-                className="flex size-10 items-center justify-center rounded-[10px] text-slate-600 transition-colors hover:bg-slate-100"
+                className="flex size-10 items-center justify-center rounded-md text-slate-600 transition-colors hover:bg-slate-100"
                 aria-label={t("header.ariaProfile")}
               >
                 <User className="size-5" />

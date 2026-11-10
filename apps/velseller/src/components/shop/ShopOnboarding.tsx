@@ -168,7 +168,7 @@ export function ShopOnboarding({ onOpened }: ShopOnboardingProps) {
     <main className="mx-auto w-full max-w-2xl px-4 py-10 sm:px-6 sm:py-14">
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-float sm:p-8">
         <span className="flex size-12 items-center justify-center rounded-xl bg-[#ECFDF5]">
-          <Store className="size-6 text-[#10B981]" aria-hidden="true" />
+          <Store className="size-6 text-brand" aria-hidden="true" />
         </span>
         <h1 className="mt-5 text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">
           {t("sellerDash.shop.onboardTitle")}
@@ -208,7 +208,7 @@ export function ShopOnboarding({ onOpened }: ShopOnboardingProps) {
                   value={form.shopName}
                   onChange={set("shopName")}
                   placeholder={t("sellerDash.shop.onboardNamePh")}
-                  className="h-11 rounded-[10px]"
+                  className="h-11 rounded-md"
                   maxLength={255}
                   autoComplete="organization"
                 />
@@ -221,7 +221,7 @@ export function ShopOnboarding({ onOpened }: ShopOnboardingProps) {
                   value={form.slug}
                   onChange={set("slug")}
                   placeholder="my-shop"
-                  className="h-11 rounded-[10px]"
+                  className="h-11 rounded-md"
                   aria-describedby="shop-slug-hint"
                   autoCapitalize="none"
                   spellCheck={false}
@@ -239,7 +239,7 @@ export function ShopOnboarding({ onOpened }: ShopOnboardingProps) {
                   value={form.description}
                   onChange={set("description")}
                   placeholder={t("sellerDash.shop.onboardDescPh")}
-                  className="rounded-[10px]"
+                  className="rounded-md"
                   maxLength={2000}
                 />
               </div>
@@ -251,7 +251,7 @@ export function ShopOnboarding({ onOpened }: ShopOnboardingProps) {
                     id="shop-category"
                     value={form.category}
                     onChange={set("category")}
-                    className="h-11 rounded-[10px]"
+                    className="h-11 rounded-md"
                     maxLength={100}
                     placeholder={t("sellerDash.shop.fieldCategoryPh")}
                     aria-describedby="shop-category-hint"
@@ -268,7 +268,7 @@ export function ShopOnboarding({ onOpened }: ShopOnboardingProps) {
                     onChange={set("phone")}
                     inputMode="tel"
                     maxLength={20}
-                    className="h-11 rounded-[10px] tabular-nums"
+                    className="h-11 rounded-md tabular-nums"
                     autoComplete="tel"
                   />
                 </div>
@@ -285,7 +285,7 @@ export function ShopOnboarding({ onOpened }: ShopOnboardingProps) {
                     value={form.line1}
                     onChange={set("line1")}
                     maxLength={255}
-                    className="h-11 rounded-[10px]"
+                    className="h-11 rounded-md"
                     autoComplete="address-line1"
                   />
                 </div>
@@ -297,7 +297,7 @@ export function ShopOnboarding({ onOpened }: ShopOnboardingProps) {
                       value={form.subdistrict}
                       onChange={set("subdistrict")}
                       maxLength={100}
-                      className="h-11 rounded-[10px]"
+                      className="h-11 rounded-md"
                     />
                   </div>
                   <div className="grid gap-2">
@@ -307,7 +307,7 @@ export function ShopOnboarding({ onOpened }: ShopOnboardingProps) {
                       value={form.district}
                       onChange={set("district")}
                       maxLength={100}
-                      className="h-11 rounded-[10px]"
+                      className="h-11 rounded-md"
                     />
                   </div>
                   <div className="grid gap-2">
@@ -317,7 +317,7 @@ export function ShopOnboarding({ onOpened }: ShopOnboardingProps) {
                       value={form.city}
                       onChange={set("city")}
                       maxLength={100}
-                      className="h-11 rounded-[10px]"
+                      className="h-11 rounded-md"
                       autoComplete="address-level1"
                     />
                   </div>
@@ -329,7 +329,7 @@ export function ShopOnboarding({ onOpened }: ShopOnboardingProps) {
                       onChange={set("postalCode")}
                       inputMode="numeric"
                       maxLength={5}
-                      className="h-11 rounded-[10px] tabular-nums"
+                      className="h-11 rounded-md tabular-nums"
                       autoComplete="postal-code"
                       aria-invalid={postalInvalid || undefined}
                       aria-describedby={postalInvalid ? "shop-postal-error" : undefined}
@@ -359,7 +359,7 @@ export function ShopOnboarding({ onOpened }: ShopOnboardingProps) {
                     value={form.firstName}
                     onChange={set("firstName")}
                     maxLength={100}
-                    className="h-11 rounded-[10px]"
+                    className="h-11 rounded-md"
                     autoComplete="given-name"
                   />
                 </div>
@@ -370,7 +370,7 @@ export function ShopOnboarding({ onOpened }: ShopOnboardingProps) {
                     value={form.lastName}
                     onChange={set("lastName")}
                     maxLength={100}
-                    className="h-11 rounded-[10px]"
+                    className="h-11 rounded-md"
                     autoComplete="family-name"
                   />
                 </div>
@@ -384,7 +384,7 @@ export function ShopOnboarding({ onOpened }: ShopOnboardingProps) {
                   onChange={set("phone")}
                   inputMode="tel"
                   maxLength={20}
-                  className="h-11 rounded-[10px] tabular-nums"
+                  className="h-11 rounded-md tabular-nums"
                   autoComplete="tel"
                 />
               </div>
@@ -422,7 +422,7 @@ export function ShopOnboarding({ onOpened }: ShopOnboardingProps) {
           )}
 
           {error && (
-            <p role="alert" className="rounded-[10px] bg-rose-50 px-3 py-2.5 text-sm font-medium text-rose-700">
+            <p role="alert" className="rounded-md bg-rose-50 px-3 py-2.5 text-sm font-medium text-rose-700">
               {error}
             </p>
           )}
@@ -445,7 +445,7 @@ export function ShopOnboarding({ onOpened }: ShopOnboardingProps) {
             )}
             <Button
               type="submit"
-              className="h-11 flex-1 gap-1.5 bg-[#10B981] text-white hover:bg-[#059669]"
+              className="h-11 flex-1 gap-1.5 bg-brand text-white hover:bg-[#059669]"
               disabled={busy || (step === 1 ? !stepOneValid : !stepTwoValid)}
             >
               {busy && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}

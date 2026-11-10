@@ -174,7 +174,7 @@ export default function PaymentIncidentTab() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="ค้นหา…"
-            className="h-10 rounded-[10px] border-slate-200"
+            className="h-10 rounded-md border-slate-200"
           />
         </div>
         <label className="flex items-center gap-2 pb-2 text-[13px] text-slate-700">
@@ -191,7 +191,7 @@ export default function PaymentIncidentTab() {
           variant="outline"
           onClick={() => void load()}
           disabled={loading}
-          className="h-10 gap-1.5 rounded-[10px]"
+          className="h-10 gap-1.5 rounded-md"
         >
           {loading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
           รีเฟรช
@@ -199,14 +199,14 @@ export default function PaymentIncidentTab() {
       </div>
 
       {schemaMissing && (
-        <p className="rounded-[10px] border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] text-amber-800">
+        <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] text-amber-800">
           ยังไม่ได้ติดตั้งตาราง payment_incidents — ระบบยังบันทึกเหตุการณ์นี้ไว้ใน log
           เท่านั้น กรุณารัน <code>db/run-sqleditor.sql</code>
         </p>
       )}
 
       {error && (
-        <p className="rounded-[10px] border border-rose-200 bg-rose-50 px-3 py-2 text-[13px] text-rose-700">
+        <p className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-[13px] text-rose-700">
           {error}
         </p>
       )}
@@ -247,7 +247,7 @@ export default function PaymentIncidentTab() {
                     <div className="font-medium text-slate-800">
                       {row.orderNumber ?? row.orderId.slice(0, 8)}
                     </div>
-                    <div className="text-[11px] text-slate-400">
+                    <div className="text-2xs text-slate-400">
                       ออเดอร์ตอนบันทึก: {row.orderStatus ?? "—"}
                       {row.currentOrderStatus ? ` · ปัจจุบัน: ${row.currentOrderStatus}` : ""}
                     </div>
@@ -258,7 +258,7 @@ export default function PaymentIncidentTab() {
                   <TableCell className="whitespace-nowrap text-[13px] font-medium text-slate-800">
                     {row.amount != null ? `${row.amount.toFixed(2)} ${row.currency ?? ""}` : "—"}
                   </TableCell>
-                  <TableCell className="max-w-[180px] truncate font-mono text-[11px] text-slate-500">
+                  <TableCell className="max-w-[180px] truncate font-mono text-2xs text-slate-500">
                     {row.providerPaymentIntentId ?? "—"}
                   </TableCell>
                   <TableCell>
@@ -280,7 +280,7 @@ export default function PaymentIncidentTab() {
                         variant="outline"
                         disabled={busyId === row.id}
                         onClick={() => void resolve(row.id)}
-                        className="h-8 gap-1.5 rounded-[8px]"
+                        className="h-8 gap-1.5 rounded-sm"
                       >
                         {busyId === row.id ? (
                           <Loader2 className="size-3.5 animate-spin" />

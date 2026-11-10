@@ -10,7 +10,7 @@ import { useState } from "react";
 import { cn } from "@velnox/shared/lib/utils";
 
 const SIZES = {
-  sm: "size-9 text-[11px]",
+  sm: "size-9 text-2xs",
   md: "size-11 text-xs",
   lg: "size-12 text-sm",
 } as const;
@@ -77,7 +77,7 @@ export function ChatAvatar({
           role="img"
           aria-label="online"
           className={cn(
-            "absolute -bottom-0.5 -right-0.5 rounded-full border-2 border-white bg-[#10B981]",
+            "absolute -bottom-0.5 -right-0.5 rounded-full border-2 border-white bg-brand",
             DOT_SIZES[size],
           )}
         />

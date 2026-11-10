@@ -123,12 +123,12 @@ export default function IncomeCommissionDetail() {
                 { icon: BadgePercent, label: "ค่าธรรมเนียมเฉลี่ย/ชิ้น", value: report.grossCount > 0 ? formatBaht(Math.round(report.commission / report.grossCount)) : "-", sub: report.grossCount > 0 ? `จาก ${report.grossCount.toLocaleString("th-TH")} ชิ้น` : "", color: "text-slate-600", bg: "bg-slate-50" },
               ].map(({ icon: Icon, label, value, sub, color, bg }) => (
                 <div key={label} className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
-                  <span className={`flex size-9 items-center justify-center rounded-[10px] ${bg} ${color} mb-3`}>
+                  <span className={`flex size-9 items-center justify-center rounded-md ${bg} ${color} mb-3`}>
                     <Icon className="size-4.5" />
                   </span>
                   <p className="text-xs text-slate-500">{label}</p>
                   <p className={`mt-1 text-xl font-bold tabular-nums tracking-tight ${color}`}>{value}</p>
-                  {sub && <p className="mt-0.5 text-[11px] text-slate-400">{sub}</p>}
+                  {sub && <p className="mt-0.5 text-2xs text-slate-400">{sub}</p>}
                 </div>
               ))}
             </section>
@@ -160,14 +160,14 @@ export default function IncomeCommissionDetail() {
                 <div className="flex items-end gap-1.5 h-32 sm:h-40" role="img" aria-label={`${periodLabels[period]} commission chart`}>
                   {periodData.map((d, i) => (
                     <div key={i} className="flex-1 flex flex-col items-center gap-1 h-full justify-end">
-                      <span className="text-[11px] font-semibold tabular-nums text-slate-900">
+                      <span className="text-2xs font-semibold tabular-nums text-slate-900">
                         -{formatBaht(d.commission)}
                       </span>
                       <div className="w-full flex flex-col-reverse rounded-t-md">
                         <div className="w-full rounded-t-md bg-slate-400 transition-[width]"
                           style={{ height: `${Math.min((d.commission / (maxVal || 1)) * 100, 100)}%` }} />
                       </div>
-                      <span className="text-[11px] text-slate-400 truncate w-full text-center">{d.label}</span>
+                      <span className="text-2xs text-slate-400 truncate w-full text-center">{d.label}</span>
                     </div>
                   ))}
                 </div>
@@ -207,7 +207,7 @@ export default function IncomeCommissionDetail() {
                           </div>
                           <div className="text-right shrink-0">
                             <p className="text-sm font-semibold tabular-nums text-slate-900">{formatBaht(item.quantity * item.unitPrice)}</p>
-                            <p className="text-[11px] text-slate-400">-{formatBaht(commissionOf(item.quantity * item.unitPrice, report.commissionRate))}</p>
+                            <p className="text-2xs text-slate-400">-{formatBaht(commissionOf(item.quantity * item.unitPrice, report.commissionRate))}</p>
                           </div>
                         </div>
                       ))}

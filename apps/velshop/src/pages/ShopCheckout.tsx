@@ -200,7 +200,7 @@ function AddressPickerCard({ a, active, onClick, t }: {
   const gps = a.latitude != null && a.longitude != null;
   return (
     <button type="button" onClick={onClick}
-      className={`w-full overflow-hidden rounded-xl border-2 p-4 text-left transition-colors ${active ? "border-[#10B981] bg-[#F0FDF9]" : "border-slate-200 bg-white hover:border-slate-300"}`}
+      className={`w-full overflow-hidden rounded-xl border-2 p-4 text-left transition-colors ${active ? "border-brand bg-[#F0FDF9]" : "border-slate-200 bg-white hover:border-slate-300"}`}
       aria-pressed={active}
     >
       <div className="flex items-center justify-between gap-2 overflow-hidden">
@@ -209,7 +209,7 @@ function AddressPickerCard({ a, active, onClick, t }: {
           {a.isDefault && <Badge className="rounded-full bg-slate-100 text-slate-500 ring-1 ring-inset ring-slate-600/10 hover:bg-slate-100">{t("checkout.defaultBadge")}</Badge>}
           {!gps && <Badge className="rounded-full bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-600/15 hover:bg-amber-50">{t("checkout.noGpsBadge")}</Badge>}
         </p>
-        <span className={`size-4 shrink-0 rounded-full border-2 ${active ? "border-[#10B981] bg-[#10B981]" : "border-slate-300 bg-white"}`} />
+        <span className={`size-4 shrink-0 rounded-full border-2 ${active ? "border-brand bg-brand" : "border-slate-300 bg-white"}`} />
       </div>
       <p className="mt-1 min-w-0 truncate text-sm leading-5 text-slate-600" title={formatAddress(a)} style={{ overflowWrap: "anywhere" }}>{formatAddress(a)}</p>
       <p className="mt-0.5 min-w-0 truncate text-xs text-slate-400" title={`${a.recipientName} · ${a.phone}`} style={{ overflowWrap: "anywhere" }}>{a.recipientName} · {a.phone}</p>
@@ -268,7 +268,7 @@ function PriceSummary({
         <button
           type="button"
           onClick={onRetry}
-          className="inline-flex min-h-8 shrink-0 items-center rounded-md px-1 text-xs font-semibold text-[#0f766e] underline decoration-dotted underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#10B981]/40"
+          className="inline-flex min-h-8 shrink-0 items-center rounded-md px-1 text-xs font-semibold text-[#0f766e] underline decoration-dotted underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
         >
           {status === "error" ? t("checkout.shippingRetry") : t("checkout.shippingPickAddress")}
         </button>
@@ -299,7 +299,7 @@ function PriceSummary({
         <span className={labelClass}>
           {t("checkout.shipping")}
           {quote && quote.shops.length > 1 && (
-            <span className="ml-1 text-[11px] text-slate-400">{t("checkout.shippingPerShop", { count: quote.shops.length })}</span>
+            <span className="ml-1 text-2xs text-slate-400">{t("checkout.shippingPerShop", { count: quote.shops.length })}</span>
           )}
         </span>
         {shippingValue}
@@ -309,7 +309,7 @@ function PriceSummary({
         <span className={totalClass}>{quote ? formatBaht(Number(quote.total)) : dash}</span>
       </div>
       {error && (
-        <p role="alert" className="rounded-lg bg-rose-50 px-2.5 py-2 text-[11px] leading-4 text-rose-700">
+        <p role="alert" className="rounded-lg bg-rose-50 px-2.5 py-2 text-2xs leading-4 text-rose-700">
           {error}
         </p>
       )}
@@ -793,7 +793,7 @@ export default function ShopCheckout() {
         <main className="mx-auto w-full max-w-2xl px-4 py-14 sm:px-6">
           <div className="flex flex-col items-center text-center">
             <span className="flex size-16 items-center justify-center rounded-full bg-[#ECFDF5]">
-              <CheckCircle2 className="size-8 text-[#10B981]" />
+              <CheckCircle2 className="size-8 text-brand" />
             </span>
             <h1 className="mt-5 text-2xl font-bold tracking-tight text-slate-900">{t("checkout.successTitle")}</h1>
             <p className="mt-2 text-sm text-slate-500">{t("checkout.successDesc")}</p>
@@ -811,7 +811,7 @@ export default function ShopCheckout() {
               {result.orders.map((o) => (
                 <div key={o.orderId} className="flex min-w-0 items-center justify-between gap-3 text-sm">
                   <span className="flex min-w-0 items-center gap-1.5 text-slate-600">
-                    <Store className="size-3.5 shrink-0 text-[#10B981]" />
+                    <Store className="size-3.5 shrink-0 text-brand" />
                     <span className="min-w-0 truncate">{o.shopName || t("checkout.shopPending")}</span>
                   </span>
                   <span className="flex shrink-0 items-center gap-2">
@@ -929,23 +929,23 @@ export default function ShopCheckout() {
               <div className="flex items-center gap-3 px-4 py-3">
                 <AlertCircle className="size-4 shrink-0 text-rose-400" />
                 <p className="min-w-0 flex-1 text-xs text-slate-600">{t("checkout.addressLoadFailed")}</p>
-                <button type="button" className="shrink-0 text-xs font-medium text-[#10B981]" onClick={() => { setAddressError(false); setAddresses(null); void loadAddresses(); }}>{t("common.retry")}</button>
+                <button type="button" className="shrink-0 text-xs font-medium text-brand" onClick={() => { setAddressError(false); setAddresses(null); void loadAddresses(); }}>{t("common.retry")}</button>
               </div>
             ) : (addresses ?? []).length === 0 ? (
               <div className="flex items-center gap-3 px-4 py-3">
                 <MapPin className="size-4 shrink-0 text-slate-300" />
                 <p className="min-w-0 flex-1 text-xs text-slate-500">{t("checkout.noAddress")}</p>
-                <Link to="/addresses" className="shrink-0 text-xs font-medium text-[#10B981]">{t("checkout.addAddress")}</Link>
+                <Link to="/addresses" className="shrink-0 text-xs font-medium text-brand">{t("checkout.addAddress")}</Link>
               </div>
             ) : (
               <button type="button" onClick={() => setAddressSheetOpen(true)} className="w-full px-4 py-3 text-left" aria-haspopup="dialog">
                 <div className="flex items-center justify-between gap-2">
                   <p className="flex min-w-0 items-center gap-1.5 text-xs font-semibold text-slate-500">
-                    <MapPin className="size-3.5 shrink-0 text-[#10B981]" />
+                    <MapPin className="size-3.5 shrink-0 text-brand" />
                     {t("checkout.compactAddress")}
-                    {selectedAddress?.isDefault && <Badge className="ml-1 rounded-full bg-slate-100 px-1.5 py-0 text-[11px] text-slate-500">{t("checkout.defaultBadge")}</Badge>}
+                    {selectedAddress?.isDefault && <Badge className="ml-1 rounded-full bg-slate-100 px-1.5 py-0 text-2xs text-slate-500">{t("checkout.defaultBadge")}</Badge>}
                   </p>
-                  <span className="flex shrink-0 items-center gap-0.5 text-xs font-medium text-[#10B981]">
+                  <span className="flex shrink-0 items-center gap-0.5 text-xs font-medium text-brand">
                     {t("checkout.changeAddress")}<ChevronDown className="size-3" />
                   </span>
                 </div>
@@ -998,7 +998,7 @@ export default function ShopCheckout() {
                   )}
                   <div className="min-w-0 flex-1">
                     <p className="min-w-0 truncate text-sm font-medium text-slate-900" title={line.name} style={{ overflowWrap: "anywhere" }}>{line.name}</p>
-                    {line.variantOptionLabels && <p className="min-w-0 truncate text-xs text-[#10B981]">{line.variantOptionLabels}</p>}
+                    {line.variantOptionLabels && <p className="min-w-0 truncate text-xs text-brand">{line.variantOptionLabels}</p>}
                     <p className="text-xs text-slate-400">× {line.qty}</p>
                   </div>
                   <span className="shrink-0 text-sm font-medium tabular-nums text-slate-900">{formatBaht(line.qty * line.price)}</span>
@@ -1025,8 +1025,8 @@ export default function ShopCheckout() {
                     className={`flex w-full items-center gap-3 py-2.5 text-left transition-colors ${active ? "text-slate-900" : "text-slate-500"}`}
                     aria-checked={active} role="radio"
                   >
-                    <span className={`flex size-4 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${active ? "border-[#10B981]" : "border-slate-300"}`}>
-                      {active && <span className="size-2 rounded-full bg-[#10B981]" />}
+                    <span className={`flex size-4 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${active ? "border-brand" : "border-slate-300"}`}>
+                      {active && <span className="size-2 rounded-full bg-brand" />}
                     </span>
                     <span className="flex min-w-0 flex-1 items-center gap-2">
                       <Icon className="size-4 shrink-0 text-slate-400" />
@@ -1043,7 +1043,7 @@ export default function ShopCheckout() {
                   <span className="flex size-4 shrink-0 items-center justify-center rounded-full border-2 border-slate-200" />
                   <span className="flex min-w-0 flex-1 items-center gap-2">
                     <span className="text-sm font-medium">{t(payKey(m.id))}</span>
-                    <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">{t("paymentMethods.comingSoon")}</span>
+                    <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-2xs font-semibold uppercase tracking-wide text-slate-400">{t("paymentMethods.comingSoon")}</span>
                   </span>
                 </div>
               ))}
@@ -1068,7 +1068,7 @@ export default function ShopCheckout() {
               itemCount={checkoutCount}
               t={t}
             />
-            <p className="mt-2 text-center text-[11px] leading-5 text-slate-400">{t("checkout.priceNote")}</p>
+            <p className="mt-2 text-center text-2xs leading-5 text-slate-400">{t("checkout.priceNote")}</p>
           </section>
         </div>
 
@@ -1079,10 +1079,10 @@ export default function ShopCheckout() {
             <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-6">
               <div className="flex items-center justify-between gap-2">
                 <h2 className="flex min-w-0 items-center gap-2 text-base font-bold tracking-tight text-slate-900">
-                  <MapPin className="size-4 shrink-0 text-[#10B981]" />
+                  <MapPin className="size-4 shrink-0 text-brand" />
                   <span className="min-w-0 truncate" style={{ overflowWrap: "anywhere" }}>{t("checkout.addressTitle")}</span>
                 </h2>
-                <Button variant="ghost" size="sm" className="gap-1 text-xs text-[#10B981] hover:bg-[#ECFDF5]" asChild>
+                <Button variant="ghost" size="sm" className="gap-1 text-xs text-brand hover:bg-[#ECFDF5]" asChild>
                   <Link to="/addresses">{t("checkout.manage")}</Link>
                 </Button>
               </div>
@@ -1116,7 +1116,7 @@ export default function ShopCheckout() {
             {/* Payment card */}
             <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-6">
               <h2 className="flex min-w-0 items-center gap-2 text-base font-bold tracking-tight text-slate-900">
-                <CreditCard className="size-4 shrink-0 text-[#10B981]" />
+                <CreditCard className="size-4 shrink-0 text-brand" />
                 <span className="min-w-0 truncate" style={{ overflowWrap: "anywhere" }}>{t("checkout.paymentTitle")}</span>
               </h2>
               <div className="mt-4 grid min-w-0 gap-2.5 sm:grid-cols-2">
@@ -1125,10 +1125,10 @@ export default function ShopCheckout() {
                   const active = paymentMethod === m.id;
                   return (
                     <button key={m.id} type="button" onClick={() => setPaymentMethod(m.id)}
-                      className={`flex items-start gap-3 rounded-xl border-2 p-4 text-left transition-colors ${active ? "border-[#10B981] bg-[#F0FDF9]" : "border-slate-200 bg-white hover:border-slate-300"}`}
+                      className={`flex items-start gap-3 rounded-xl border-2 p-4 text-left transition-colors ${active ? "border-brand bg-[#F0FDF9]" : "border-slate-200 bg-white hover:border-slate-300"}`}
                       aria-pressed={active}
                     >
-                      <span className={`flex size-9 shrink-0 items-center justify-center rounded-[10px] ${active ? "bg-[#10B981] text-white" : "bg-slate-100 text-slate-500"}`}>
+                      <span className={`flex size-9 shrink-0 items-center justify-center rounded-md ${active ? "bg-brand text-white" : "bg-slate-100 text-slate-500"}`}>
                         <Icon className="size-4" />
                       </span>
                       <span>
@@ -1142,12 +1142,12 @@ export default function ShopCheckout() {
                   <div key={m.id} aria-disabled="true" aria-pressed={false}
                     className="flex items-start gap-3 rounded-xl border-2 border-slate-200 border-dashed bg-slate-50 p-4 text-left opacity-70"
                   >
-                    <span className="flex size-9 shrink-0 items-center justify-center rounded-[10px] bg-slate-100 text-slate-400">
+                    <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-slate-100 text-slate-400">
                       {(() => { const Icon = PAYMENT_METHOD_ICONS[m.id] ?? Banknote; return <Icon className="size-4" />; })()}
                     </span>
                     <span>
                       <span className="block text-sm font-semibold text-slate-500">{t(payKey(m.id))}</span>
-                      <span className="mt-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-400">{t("paymentMethods.comingSoon")}</span>
+                      <span className="mt-1 block text-2xs font-semibold uppercase tracking-wide text-slate-400">{t("paymentMethods.comingSoon")}</span>
                     </span>
                   </div>
                 ))}
@@ -1174,20 +1174,20 @@ export default function ShopCheckout() {
                 {grouped.map(([shopName, shopLines]) => (
                   <div key={shopName}>
                     <p className="flex min-w-0 items-center gap-1.5 truncate text-xs font-semibold text-slate-500">
-                      <Store className="size-3.5 shrink-0 text-[#10B981]" />
+                      <Store className="size-3.5 shrink-0 text-brand" />
                       <span className="min-w-0 truncate">{shopName}</span>
                     </p>
                     <div className="mt-2 space-y-3">
                       {shopLines.map((line) => (
                         <div key={line.id} className="flex min-w-0 items-center gap-3 text-sm">
                           {line.imageUrl ? (
-                            <img src={line.imageUrl} alt={line.name} className="size-12 shrink-0 rounded-[10px] border border-slate-100 object-cover" loading="lazy" />
+                            <img src={line.imageUrl} alt={line.name} className="size-12 shrink-0 rounded-md border border-slate-100 object-cover" loading="lazy" />
                           ) : (
-                            <span className="flex size-12 shrink-0 items-center justify-center rounded-[10px] bg-slate-50"><ShoppingBag className="size-4 text-slate-300" /></span>
+                            <span className="flex size-12 shrink-0 items-center justify-center rounded-md bg-slate-50"><ShoppingBag className="size-4 text-slate-300" /></span>
                           )}
                           <div className="min-w-0 flex-1">
                             <span className="block min-w-0 truncate font-medium text-slate-700" title={line.name} style={{ overflowWrap: "anywhere" }}>{line.name}</span>
-                            {line.variantOptionLabels && <span className="block min-w-0 truncate text-xs text-[#10B981]">{line.variantOptionLabels}</span>}
+                            {line.variantOptionLabels && <span className="block min-w-0 truncate text-xs text-brand">{line.variantOptionLabels}</span>}
                             <span className="block min-w-0 truncate text-xs text-slate-400">{formatBaht(line.price)} / {line.unit} × {line.qty}</span>
                           </div>
                           <span className="shrink-0 font-medium tabular-nums text-slate-900">{formatBaht(line.qty * line.price)}</span>
@@ -1211,7 +1211,7 @@ export default function ShopCheckout() {
               <Button className="mt-5 w-full gap-1.5 bg-slate-900 text-white hover:bg-slate-800" onClick={handleSubmit} disabled={submitting || checkoutCount === 0 || addresses === null || !quoteReady || (methodOptions !== null && enabledMethods.length === 0)} aria-busy={submitting}>
                 {submitting ? (<><Loader2 className="size-4 animate-spin" />{isStripeMethod ? t("checkout.preparingPayment") : t("checkout.submitting")}</>) : (<><ShieldCheck className="size-4" />{t("checkout.submit", { total: quote ? formatBaht(Number(quote.total)) : "—" })}</>)}
               </Button>
-              <p className="mt-3 text-center text-[11px] leading-5 text-slate-400">{t("checkout.priceNote")}</p>
+              <p className="mt-3 text-center text-2xs leading-5 text-slate-400">{t("checkout.priceNote")}</p>
             </div>
           </div>
         </div>
@@ -1222,7 +1222,7 @@ export default function ShopCheckout() {
         <div className="fixed inset-x-0 bottom-[calc(5rem+env(safe-area-inset-bottom))] z-30 px-3 lg:hidden">
           <div className="mx-auto flex w-full max-w-md items-center justify-between gap-2 rounded-2xl border border-slate-200/80 bg-white/95 p-2.5 shadow-overlay backdrop-blur sm:p-3">
             <div className="min-w-0 shrink-0">
-              <p className="text-[11px] text-slate-400">{t("checkout.total")}</p>
+              <p className="text-2xs text-slate-400">{t("checkout.total")}</p>
               <p className="text-lg font-bold tabular-nums tracking-tight text-slate-900">{quote ? formatBaht(Number(quote.total)) : "—"}</p>
             </div>
             <Button className="h-11 flex-1 gap-1.5 rounded-xl bg-slate-900 text-white hover:bg-slate-800" style={{ minWidth: 0, flexShrink: 1 }} onClick={handleSubmit} disabled={submitting || checkoutCount === 0 || addresses === null || !quoteReady || (methodOptions !== null && enabledMethods.length === 0)} aria-busy={submitting}>

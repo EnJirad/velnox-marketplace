@@ -239,7 +239,7 @@ export default function TrackingTab() {
             <div className="w-40">
               <label className="mb-1 block text-xs font-medium text-slate-500">ขนส่ง</label>
               <Select value={carrier} onValueChange={setCarrier}>
-                <SelectTrigger className="h-10 w-full rounded-[10px] border-slate-200 bg-white text-sm">
+                <SelectTrigger className="h-10 w-full rounded-md border-slate-200 bg-white text-sm">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="bg-white">
@@ -255,7 +255,7 @@ export default function TrackingTab() {
             <div className="w-44">
               <label className="mb-1 block text-xs font-medium text-slate-500">สถานะ</label>
               <Select value={status} onValueChange={setStatus}>
-                <SelectTrigger className="h-10 w-full rounded-[10px] border-slate-200 bg-white text-sm">
+                <SelectTrigger className="h-10 w-full rounded-md border-slate-200 bg-white text-sm">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="bg-white">
@@ -312,12 +312,12 @@ export default function TrackingTab() {
                     >
                       <TableCell className="font-mono text-xs">
                         {s.orderNumber ?? s.orderId.slice(0, 8)}
-                        {s.shopName ? <span className="ml-1 block text-[11px] text-slate-400">{s.shopName}</span> : null}
+                        {s.shopName ? <span className="ml-1 block text-2xs text-slate-400">{s.shopName}</span> : null}
                       </TableCell>
                       <TableCell className="text-sm">
                         {s.carrier}
                         {s.carrierCode ? (
-                          <Badge className="ml-1.5 rounded-full bg-slate-100 font-mono text-[11px] text-slate-500">
+                          <Badge className="ml-1.5 rounded-full bg-slate-100 font-mono text-2xs text-slate-500">
                             {s.carrierCode}
                           </Badge>
                         ) : null}
@@ -388,7 +388,7 @@ export default function TrackingTab() {
                       <div className="flex flex-col items-center">
                         <span
                           className={`mt-1 size-2.5 shrink-0 rounded-full ${
-                            i === 0 ? "bg-[#10B981]" : "bg-slate-300"
+                            i === 0 ? "bg-brand" : "bg-slate-300"
                           }`}
                         />
                         {i < all.length - 1 && <span className="w-px flex-1 bg-slate-200" />}
@@ -396,7 +396,7 @@ export default function TrackingTab() {
                       <div className="pb-4">
                         <p className="text-sm font-medium text-slate-900">{label(e.status)}</p>
                         {e.description && <p className="mt-0.5 text-xs text-slate-500">{e.description}</p>}
-                        <p className="mt-0.5 text-[11px] text-slate-400">
+                        <p className="mt-0.5 text-2xs text-slate-400">
                           {e.location ? `${e.location} · ` : ""}
                           {e.occurredAt ? formatIsoDateTime(e.occurredAt) : ""}
                           {e.originalStatus ? ` · ดั้งเดิม: ${e.originalStatus}` : ""}

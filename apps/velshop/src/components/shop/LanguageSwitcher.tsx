@@ -28,10 +28,10 @@ export function LanguageSwitcher({ variant = "desktop", tone = "default" }: Lang
       <DropdownMenuTrigger
         aria-label={t("header.ariaLanguage")}
         className={cn(
-          "inline-flex h-10 cursor-pointer items-center gap-1 rounded-[10px] px-2.5 text-sm font-medium outline-none transition-colors",
+          "inline-flex h-10 cursor-pointer items-center gap-1 rounded-md px-2.5 text-sm font-medium outline-none transition-colors",
           tone === "brand"
             ? "text-white hover:bg-white/15 hover:text-white focus-visible:ring-2 focus-visible:ring-white data-[state=open]:bg-white/15"
-            : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-[#10B981] data-[state=open]:bg-slate-100",
+            : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-brand data-[state=open]:bg-slate-100",
         )}
       >
         {variant === "mobile" ? (
@@ -52,7 +52,7 @@ export function LanguageSwitcher({ variant = "desktop", tone = "default" }: Lang
             onSelect={() => setLang(option.code as Language)}
           >
             <span className="flex-1">{option.label}</span>
-            {lang === option.code && <Check className="size-4 text-[#10B981]" />}
+            {lang === option.code && <Check className="size-4 text-brand" />}
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>

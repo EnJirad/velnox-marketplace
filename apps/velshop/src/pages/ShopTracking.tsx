@@ -175,7 +175,7 @@ export default function ShopTracking() {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="flex items-center gap-1.5 text-sm font-medium text-slate-400">
-                  <Truck className="size-4 text-[#10B981]" />
+                  <Truck className="size-4 text-brand" />
                   {t("tracking.eyebrow", { no: order.orderNumber })}
                 </p>
                 <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">{t("tracking.title")}</h1>
@@ -204,26 +204,26 @@ export default function ShopTracking() {
                     <section key={s.id} className="rounded-2xl border border-slate-200 bg-white p-6">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
-                          <span className="flex size-9 items-center justify-center rounded-[10px] bg-[#ECFDF5]">
-                            <Truck className="size-4 text-[#10B981]" />
+                          <span className="flex size-9 items-center justify-center rounded-md bg-[#ECFDF5]">
+                            <Truck className="size-4 text-brand" />
                           </span>
                           <div>
                               <p className="flex items-center gap-1.5 text-sm font-semibold text-slate-900">
                                 {s.carrier}
                                 {s.carrierCode && (
-                                  <span className="rounded-full bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] font-medium text-slate-500">
+                                  <span className="rounded-full bg-slate-100 px-1.5 py-0.5 font-mono text-2xs font-medium text-slate-500">
                                     {s.carrierCode}
                                   </span>
                                 )}
                               </p>
                               <p className="font-mono text-xs text-slate-500">{s.trackingNumber ?? t("tracking.noTrackingNo")}</p>
                               {s.lastCheckedAt && (
-                                <p className="mt-0.5 text-[11px] text-slate-400">
+                                <p className="mt-0.5 text-2xs text-slate-400">
                                   {t("tracking.lastChecked", { time: formatIsoDateTime(s.lastCheckedAt) })}
                                 </p>
                               )}
                               {s.lastError && (
-                                <p className="mt-0.5 text-[11px] text-amber-600">
+                                <p className="mt-0.5 text-2xs text-amber-600">
                                   {t("tracking.carrierError", { code: s.lastError })}
                                 </p>
                               )}
@@ -231,7 +231,7 @@ export default function ShopTracking() {
                         </div>
                         <div className="flex items-center gap-2">
                           <Badge className="gap-1.5 rounded-full bg-[#ECFDF5] text-emerald-700 ring-1 ring-inset ring-emerald-600/15 hover:bg-[#ECFDF5]">
-                            <span className="size-1.5 rounded-full bg-[#10B981]" />
+                            <span className="size-1.5 rounded-full bg-brand" />
                             {trackingLabel(s.status)}
                           </Badge>
                           <Button
@@ -269,7 +269,7 @@ export default function ShopTracking() {
                               <div className="flex flex-col items-center">
                                 <span
                                   className={`mt-1 flex size-6 items-center justify-center rounded-full ${
-                                    done ? "bg-[#10B981] text-white" : "bg-slate-100 text-slate-400"
+                                    done ? "bg-brand text-white" : "bg-slate-100 text-slate-400"
                                   }`}
                                 >
                                   {done ? <CheckCircle2 className="size-3.5" /> : <span className="size-2 rounded-full bg-slate-300" />}
@@ -281,7 +281,7 @@ export default function ShopTracking() {
                                   {trackingLabel(e.status)}
                                 </p>
                                 {e.description && <p className="mt-0.5 text-xs text-slate-500">{e.description}</p>}
-                                <p className="mt-0.5 flex items-center gap-1 text-[11px] text-slate-400">
+                                <p className="mt-0.5 flex items-center gap-1 text-2xs text-slate-400">
                                   {e.location && (
                                     <>
                                       <MapPin className="size-3" />

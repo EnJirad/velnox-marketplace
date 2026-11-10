@@ -148,15 +148,15 @@ export default function Income() {
                 { href: "/seller/income/payout", icon: Wallet, label: t("sellerDash.income.kpiPayout"), value: formatBaht(payout), sub: t("sellerDash.income.kpiPayoutSub"), color: "text-emerald-700", bg: "bg-emerald-50" },
               ].map(({ href, icon: Icon, label, value, sub, color, bg }) => (
                 <Link key={label} to={href} className="group rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 transition-[transform,border-color,box-shadow] hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-md">
-                  <span className={`flex size-9 items-center justify-center rounded-[10px] ${bg} ${color} mb-3`}>
+                  <span className={`flex size-9 items-center justify-center rounded-md ${bg} ${color} mb-3`}>
                     <Icon className="size-4.5" />
                   </span>
                   <p className="text-xs text-slate-500">{label}</p>
                   <p className={`mt-1 text-xl font-bold tabular-nums tracking-tight ${color.includes("emerald") ? "text-emerald-700" : color.includes("amber") ? "text-amber-700" : "text-slate-900"}`}>
                     {value}
                   </p>
-                  <p className="mt-0.5 text-[11px] text-slate-400">{sub}</p>
-                  <p className="mt-2 flex items-center gap-1 text-[11px] font-semibold text-emerald-600 opacity-0 transition-opacity group-hover:opacity-100">
+                  <p className="mt-0.5 text-2xs text-slate-400">{sub}</p>
+                  <p className="mt-2 flex items-center gap-1 text-2xs font-semibold text-emerald-600 opacity-0 transition-opacity group-hover:opacity-100">
                     ดูรายละเอียด <ChevronRight className="size-3" />
                   </p>
                 </Link>
@@ -198,7 +198,7 @@ export default function Income() {
                           the column simply clipped — a tall period showed no bar.
                           A 6px floor keeps a small day visible instead of a
                           hairline. */}
-                      <span className="mb-1 text-[11px] font-semibold tabular-nums text-slate-900">
+                      <span className="mb-1 text-2xs font-semibold tabular-nums text-slate-900">
                         {formatBaht(d.value).replace("฿", "")}
                       </span>
                       <div className="flex w-full flex-1 items-end" style={{ minHeight: 0 }}>
@@ -209,7 +209,7 @@ export default function Income() {
                           }}
                         />
                       </div>
-                      <span className="mt-1 w-full truncate text-center text-[11px] text-slate-400">{d.label}</span>
+                      <span className="mt-1 w-full truncate text-center text-2xs text-slate-400">{d.label}</span>
                     </div>
                   ))}
                 </div>
@@ -222,7 +222,7 @@ export default function Income() {
               <button onClick={() => setShowReturnDetail(!showReturnDetail)}
                 className="flex w-full items-center justify-between gap-3 text-left cursor-pointer">
                 <div className="flex items-center gap-2.5">
-                  <span className="flex size-8 items-center justify-center rounded-[10px] bg-amber-50 text-amber-700">
+                  <span className="flex size-8 items-center justify-center rounded-md bg-amber-50 text-amber-700">
                     <TrendingDown className="size-4" />
                   </span>
                   <div>
@@ -250,7 +250,7 @@ export default function Income() {
                       <div className="h-full rounded-full bg-emerald-500/80 transition-[width]"
                         style={{ width: `${Math.min(returnRate * 5 * 100, 100)}%` }} />
                     </div>
-                    <div className="flex justify-between text-[11px] text-slate-400 mt-1">
+                    <div className="flex justify-between text-2xs text-slate-400 mt-1">
                       <span>0%</span>
                       <span className="font-semibold text-amber-600">เกณฑ์ {pct(returnCoverage)}</span>
                       <span>50%+</span>
@@ -265,7 +265,7 @@ export default function Income() {
                         <div key={i} className="flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50/50 p-3">
                           <div className="min-w-0 flex-1">
                             <p className="text-xs font-medium text-slate-700 truncate">{item.productName}</p>
-                            <p className="text-[11px] text-slate-400">
+                            <p className="text-2xs text-slate-400">
                               จำนวน {item.quantity} × {formatBaht(item.unitPrice)} = {formatBaht(item.returnAmount)}
                             </p>
                           </div>
@@ -332,7 +332,7 @@ export default function Income() {
                             </div>
                             <div className="text-right shrink-0">
                               <p className="text-sm font-semibold tabular-nums text-slate-900">{formatBaht(item.quantity * item.unitPrice)}</p>
-                              <p className="text-[11px] text-slate-400">ค่าธรรมเนียม -{formatBaht(commissionOf(item.quantity * item.unitPrice, commissionRate))}</p>
+                              <p className="text-2xs text-slate-400">ค่าธรรมเนียม -{formatBaht(commissionOf(item.quantity * item.unitPrice, commissionRate))}</p>
                             </div>
                           </div>
                         ))}

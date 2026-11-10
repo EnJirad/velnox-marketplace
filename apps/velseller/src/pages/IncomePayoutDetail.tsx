@@ -130,12 +130,12 @@ export default function IncomePayoutDetail() {
                 { icon: TrendingDown, label: t("sellerDash.income.kpiReturns"), value: `-${formatBaht(report.returns)}`, sub: t("sellerDash.income.kpiReturnsSub", { rate: `${(report.returnRate * 100).toLocaleString("th-TH", { maximumFractionDigits: 1 })}%`, count: report.returnCount }), color: "text-amber-600", bg: "bg-amber-50" },
               ].map(({ icon: Icon, label, value, sub, color, bg }) => (
                 <div key={label} className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
-                  <span className={`flex size-9 items-center justify-center rounded-[10px] ${bg} ${color} mb-3`}>
+                  <span className={`flex size-9 items-center justify-center rounded-md ${bg} ${color} mb-3`}>
                     <Icon className="size-4.5" />
                   </span>
                   <p className="text-xs text-slate-500">{label}</p>
                   <p className={`mt-1 text-xl font-bold tabular-nums tracking-tight ${color}`}>{value}</p>
-                  {sub && <p className="mt-0.5 text-[11px] text-slate-400">{sub}</p>}
+                  {sub && <p className="mt-0.5 text-2xs text-slate-400">{sub}</p>}
                 </div>
               ))}
             </section>
@@ -172,7 +172,7 @@ export default function IncomePayoutDetail() {
                         const retH = (d.returns / (maxVal || 1)) * 100;
                         return (
                           <div key={i} className="flex-1 flex flex-col items-center gap-1 h-full justify-end">
-                            <span className="text-[11px] font-semibold tabular-nums text-emerald-700">
+                            <span className="text-2xs font-semibold tabular-nums text-emerald-700">
                               {formatBaht(d.payout)}
                             </span>
                             <div className="w-full flex flex-col-reverse rounded-t-md overflow-hidden" style={{ height: `${grossH}%` }}>
@@ -183,12 +183,12 @@ export default function IncomePayoutDetail() {
                               <div className="w-full bg-slate-400 transition-all"
                                 style={{ height: `${commH}%` }} />
                             </div>
-                            <span className="text-[11px] text-slate-400 truncate w-full text-center">{d.label}</span>
+                            <span className="text-2xs text-slate-400 truncate w-full text-center">{d.label}</span>
                           </div>
                         );
                       })}
                     </div>
-                    <div className="mt-3 flex flex-wrap items-center gap-4 text-[11px] text-slate-500">
+                    <div className="mt-3 flex flex-wrap items-center gap-4 text-2xs text-slate-500">
                       <span className="flex items-center gap-1"><span className="size-2.5 rounded-sm bg-emerald-500" /> {t("sellerDash.income.payoutDetail.colNet")}</span>
                       <span className="flex items-center gap-1"><span className="size-2.5 rounded-sm bg-amber-400" /> {t("sellerDash.income.payoutDetail.colReturns")}</span>
                       <span className="flex items-center gap-1"><span className="size-2.5 rounded-sm bg-slate-400" /> {t("sellerDash.income.payoutDetail.colFee")}</span>

@@ -184,7 +184,7 @@ export function ResumePaymentButton({
   const buttonClass =
     variant === "primary"
       ? "gap-1.5 bg-slate-900 text-white hover:bg-slate-800"
-      : "gap-1.5 border-[#10B981]/30 bg-[#F0FDF9] text-[#10B981] hover:bg-[#D1FAE5]";
+      : "gap-1.5 border-brand/30 bg-[#F0FDF9] text-brand hover:bg-[#D1FAE5]";
 
   return (
     <>
@@ -233,13 +233,13 @@ export function ResumePaymentButton({
                     aria-pressed={isSelected}
                     className={`flex items-center gap-3 rounded-xl border p-3 text-left transition-colors ${
                       isSelected
-                        ? "border-[#10B981] bg-[#F0FDF9] ring-1 ring-[#10B981]/30"
+                        ? "border-brand bg-[#F0FDF9] ring-1 ring-brand/30"
                         : "border-slate-200 bg-white hover:border-slate-300"
                     }`}
                   >
                     <span
-                      className={`flex size-9 shrink-0 items-center justify-center rounded-[10px] ${
-                        isSelected ? "bg-[#10B981] text-white" : "bg-slate-100 text-slate-500"
+                      className={`flex size-9 shrink-0 items-center justify-center rounded-md ${
+                        isSelected ? "bg-brand text-white" : "bg-slate-100 text-slate-500"
                       }`}
                     >
                       <Icon className="size-4" />
@@ -247,7 +247,7 @@ export function ResumePaymentButton({
                     <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-900">
                       {t(`paymentMethods.${rail.toLowerCase()}`)}
                     </span>
-                    {isSelected && <Check className="size-4 shrink-0 text-[#10B981]" />}
+                    {isSelected && <Check className="size-4 shrink-0 text-brand" />}
                   </button>
                 );
               })}
@@ -264,7 +264,7 @@ export function ResumePaymentButton({
               {t("common.cancel")}
             </Button>
             <Button
-              className="gap-1.5 bg-[#10B981] text-white hover:bg-emerald-600"
+              className="gap-1.5 bg-brand text-white hover:bg-emerald-600"
               disabled={paying || selected === null}
               onClick={() => selected && void startPayment(selected)}
             >

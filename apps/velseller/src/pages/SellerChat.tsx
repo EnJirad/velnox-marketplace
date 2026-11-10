@@ -565,7 +565,7 @@ export default function SellerChat() {
                   {t("chat.messagesTitle")}
                 </h2>
                 {unreadTotal > 0 && (
-                  <span className="ml-auto rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-semibold text-sky-900">
+                  <span className="ml-auto rounded-full bg-sky-100 px-2 py-0.5 text-2xs font-semibold text-sky-900">
                     {unreadTotal > 99 ? "99+" : unreadTotal}
                   </span>
                 )}

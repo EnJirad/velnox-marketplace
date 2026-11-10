@@ -209,11 +209,11 @@ export function SellerNotificationBell() {
         aria-label={unread > 0 ? t("notifications.ariaOpenWithCount", { count: unread }) : t("notifications.ariaOpen")}
         aria-haspopup="true"
         aria-expanded={open}
-        className="relative flex size-10 cursor-pointer items-center justify-center rounded-[10px] text-slate-600 transition-colors hover:bg-slate-100"
+        className="relative flex size-10 cursor-pointer items-center justify-center rounded-md text-slate-600 transition-colors hover:bg-slate-100"
       >
         <Bell className="size-5" />
         {unread > 0 && (
-          <span className="absolute right-0 top-0 flex size-5 items-center justify-center rounded-full bg-[#EF4444] text-[11px] font-bold text-white">
+          <span className="absolute right-0 top-0 flex size-5 items-center justify-center rounded-full bg-[#EF4444] text-2xs font-bold text-white">
             {unread > 99 ? "99+" : unread}
           </span>
         )}
@@ -232,11 +232,11 @@ export function SellerNotificationBell() {
         >
           <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
             <p className="flex items-center gap-1.5 text-sm font-bold text-slate-900">
-              <Bell className="size-4 text-[#10B981]" />
+              <Bell className="size-4 text-brand" />
               {t("notifications.title")}
             </p>
             {unread > 0 && (
-              <span className="rounded-full bg-[#ECFDF5] px-2 py-0.5 text-[11px] font-semibold text-[#047857]">
+              <span className="rounded-full bg-[#ECFDF5] px-2 py-0.5 text-2xs font-semibold text-[#047857]">
                 {t("notifications.unread", { count: unread })}
               </span>
             )}
@@ -249,7 +249,7 @@ export function SellerNotificationBell() {
               <button
                 type="button"
                 onClick={() => void load()}
-                className="mt-3 inline-flex items-center gap-1 rounded-[10px] border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
+                className="mt-3 inline-flex items-center gap-1 rounded-md border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
               >
                 {t("common.retry")}
               </button>
@@ -284,12 +284,12 @@ export function SellerNotificationBell() {
                       }`}
                     >
                       <span
-                        className={`mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-[10px] ${
+                        className={`mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md ${
                           needsFix
                             ? "bg-amber-100 text-amber-600"
                             : n.isRead
                               ? "bg-slate-100 text-slate-400"
-                              : "bg-[#10B981] text-white"
+                              : "bg-brand text-white"
                         }`}
                       >
                         <Icon className="size-4" />
@@ -297,19 +297,19 @@ export function SellerNotificationBell() {
                       <span className="min-w-0 flex-1">
                         <span className="block text-[13px] font-semibold text-slate-900">{n.title}</span>
                         {reason && (
-                          <span className="mt-1 inline-block rounded-md bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-700">
+                          <span className="mt-1 inline-block rounded-md bg-amber-50 px-1.5 py-0.5 text-2xs font-medium text-amber-700">
                             {reason}
                           </span>
                         )}
                         {n.message && (
                           <span className="mt-1 line-clamp-2 block text-xs leading-5 text-slate-500">{n.message}</span>
                         )}
-                        <span className="mt-1 flex items-center gap-2 text-[11px] text-slate-400">
+                        <span className="mt-1 flex items-center gap-2 text-2xs text-slate-400">
                           {formatRelativeTime(n.createdAt, lang, t)}
-                          {needsFix && <span className="font-medium text-[#10B981]">· {t("notifications.tapToFix")}</span>}
+                          {needsFix && <span className="font-medium text-brand">· {t("notifications.tapToFix")}</span>}
                         </span>
                       </span>
-                      {!n.isRead && <span className="mt-1.5 size-2 shrink-0 rounded-full bg-[#10B981]" />}
+                      {!n.isRead && <span className="mt-1.5 size-2 shrink-0 rounded-full bg-brand" />}
                     </button>
                   );
                 })}

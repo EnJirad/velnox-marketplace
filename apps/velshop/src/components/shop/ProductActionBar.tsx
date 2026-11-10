@@ -175,7 +175,7 @@ export function ProductActionBar({
       <button
         type="button"
         onClick={handleShare}
-        className="flex items-center gap-1 rounded-full text-slate-400 hover:bg-slate-100 hover:text-[#10B981] transition-colors"
+        className="flex items-center gap-1 rounded-full text-slate-400 hover:bg-slate-100 hover:text-brand transition-colors"
         aria-label={t("product.share")}
       >
         <Share2 className="flex-shrink-0" style={{ width: iconSize, height: iconSize }} />
@@ -186,7 +186,7 @@ export function ProductActionBar({
       <button
         type="button"
         onClick={handleComment}
-        className="flex items-center gap-1 rounded-full text-slate-400 hover:bg-slate-100 hover:text-[#10B981] transition-colors"
+        className="flex items-center gap-1 rounded-full text-slate-400 hover:bg-slate-100 hover:text-brand transition-colors"
         aria-label={t("product.comment")}
       >
         <MessageCircle className="flex-shrink-0" style={{ width: iconSize, height: iconSize }} />

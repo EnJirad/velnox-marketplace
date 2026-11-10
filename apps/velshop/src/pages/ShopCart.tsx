@@ -175,7 +175,7 @@ export default function ShopCart() {
             <button
               type="button"
               onClick={reload}
-              className="ml-auto rounded-[10px] border border-amber-300 px-3 py-1.5 text-xs font-semibold text-amber-800 transition-colors hover:bg-amber-100"
+              className="ml-auto rounded-md border border-amber-300 px-3 py-1.5 text-xs font-semibold text-amber-800 transition-colors hover:bg-amber-100"
             >
               {t("common.retry")}
             </button>
@@ -251,7 +251,7 @@ export default function ShopCart() {
                       aria-label={`${t("cartPage.selectAll")} · ${group.shopName}`}
                       className="relative size-5 after:absolute after:-inset-3 after:content-['']"
                     />
-                    <Store className="size-4 shrink-0 text-[#10B981]" />
+                    <Store className="size-4 shrink-0 text-brand" />
                     <p className="min-w-0 truncate text-sm font-semibold text-slate-900">
                       {group.shopName}
                     </p>
@@ -287,11 +287,11 @@ export default function ShopCart() {
                             <img
                               src={line.imageUrl}
                               alt={line.name}
-                              className="size-16 shrink-0 rounded-[10px] border border-slate-100 object-cover"
+                              className="size-16 shrink-0 rounded-md border border-slate-100 object-cover"
                               loading="lazy"
                             />
                           ) : (
-                            <span className="flex size-16 shrink-0 items-center justify-center rounded-[10px] bg-slate-50">
+                            <span className="flex size-16 shrink-0 items-center justify-center rounded-md bg-slate-50">
                               <ImageOff className="size-5 text-slate-300" />
                             </span>
                           )}
@@ -300,19 +300,19 @@ export default function ShopCart() {
                           <div className="min-w-0 flex-1">
                             <Link
                               to={`/products/${line.productId}`}
-                              className="block min-w-0 max-w-full truncate text-sm font-semibold text-slate-900 hover:text-[#10B981]"
+                              className="block min-w-0 max-w-full truncate text-sm font-semibold text-slate-900 hover:text-brand"
                               title={line.name}
                               style={{ overflowWrap: "anywhere" }}
                             >
                               {line.name}
                             </Link>
                             {line.variantOptionLabels && (
-                              <p className="mt-0.5 text-xs font-medium text-[#10B981]">
+                              <p className="mt-0.5 text-xs font-medium text-brand">
                                 {line.variantOptionLabels}
                               </p>
                             )}
                             {line.wholesale && line.packSize != null && (
-                              <p className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-[#ECFDF5] px-2 py-0.5 text-[11px] font-semibold text-[#047857]">
+                              <p className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-[#ECFDF5] px-2 py-0.5 text-2xs font-semibold text-[#047857]">
                                 {t("cart.wholesaleBadge", {
                                   packs: line.packs ?? 0,
                                   size: line.packSize,
@@ -393,19 +393,19 @@ export default function ShopCart() {
               onClick={() => setSummaryOpen(true)}
               aria-haspopup="dialog"
               aria-label={t("cartPage.orderSummary")}
-              className="min-w-0 flex-1 rounded-xl px-2 py-0.5 text-left transition-colors hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-[#10B981] focus-visible:outline-none"
+              className="min-w-0 flex-1 rounded-xl px-2 py-0.5 text-left transition-colors hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-brand focus-visible:outline-none"
             >
-              <p className="truncate text-[11px] text-slate-500">
+              <p className="truncate text-2xs text-slate-500">
                 {t("cartPage.selectedItems", { count: summary.itemCount })}
               </p>
               <p className="truncate text-lg font-bold tabular-nums tracking-tight text-slate-900">
                 {formatBaht(summary.total)}
               </p>
-              <p className="truncate text-[11px] text-slate-400">
+              <p className="truncate text-2xs text-slate-400">
                 {t("cart.subtotal")} {formatBaht(summary.subtotal)} · {t("cart.discount")}{" "}
                 {formatBaht(summary.discount)} · {t("cart.shipping")} {formatBaht(summary.shipping)}
               </p>
-              <span className="mt-0.5 flex items-center gap-1 text-[11px] font-medium text-[#10B981]">
+              <span className="mt-0.5 flex items-center gap-1 text-2xs font-medium text-brand">
                 {t("cartPage.orderSummary")}
                 <ChevronUp className="size-3" />
               </span>
@@ -452,7 +452,7 @@ export default function ShopCart() {
                 {shopSummaries.map((shop) => (
                   <section key={shop.key} className="overflow-hidden rounded-xl border border-slate-200">
                     <div className="flex min-w-0 items-center gap-2 border-b border-slate-100 bg-slate-50 px-4 py-2.5">
-                      <Store className="size-3.5 shrink-0 text-[#10B981]" />
+                      <Store className="size-3.5 shrink-0 text-brand" />
                       <p className="min-w-0 truncate text-xs font-semibold text-slate-700">
                         {shop.shopName}
                       </p>
@@ -466,7 +466,7 @@ export default function ShopCart() {
                           <div className="min-w-0">
                             <p className="truncate text-sm font-medium text-slate-900">{line.name}</p>
                             {line.variantOptionLabels && (
-                              <p className="mt-0.5 truncate text-xs text-[#10B981]">
+                              <p className="mt-0.5 truncate text-xs text-brand">
                                 {line.variantOptionLabels}
                               </p>
                             )}
@@ -474,7 +474,7 @@ export default function ShopCart() {
                               {formatBaht(line.price)} × {line.qty}
                             </p>
                             {line.wholesale && line.packSize != null && (
-                              <p className="mt-0.5 text-[11px] font-semibold text-[#047857]">
+                              <p className="mt-0.5 text-2xs font-semibold text-[#047857]">
                                 {t("cart.wholesaleBadge", {
                                   packs: line.packs ?? 0,
                                   size: line.packSize,
@@ -531,8 +531,8 @@ export default function ShopCart() {
                 {t("cartPage.checkoutAll")}
               </Button>
             )}
-            <p className="flex items-center justify-center gap-1 text-center text-[11px] text-slate-400">
-              <ShieldCheck className="size-3.5 text-[#10B981]" />
+            <p className="flex items-center justify-center gap-1 text-center text-2xs text-slate-400">
+              <ShieldCheck className="size-3.5 text-brand" />
               {t("cartPage.checkoutNote")}
             </p>
           </div>

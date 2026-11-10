@@ -419,7 +419,7 @@ function Auth() {
                       value={name}
                       onChange={(e) => setName(e.target.value)}
                       placeholder={t("auth.register.name")}
-                      className="h-12 w-full rounded-[10px] border border-slate-200 bg-white pl-10 pr-3 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#10B981]/40"
+                      className="h-12 w-full rounded-md border border-slate-200 bg-white pl-10 pr-3 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand/40"
                       autoComplete="name"
                       required
                       disabled={busy}
@@ -440,7 +440,7 @@ function Auth() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder={t(`auth.${mode}.email`)}
-                    className="h-12 w-full rounded-[10px] border border-slate-200 bg-white pl-10 pr-3 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#10B981]/40"
+                    className="h-12 w-full rounded-md border border-slate-200 bg-white pl-10 pr-3 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand/40"
                     autoComplete="email"
                     required
                     disabled={busy}
@@ -456,7 +456,7 @@ function Auth() {
                   {mode === "login" && (
                     <a
                       href="/forgot-password"
-                      className="text-sm font-medium text-[#10B981] hover:underline"
+                      className="text-sm font-medium text-brand hover:underline"
                     >
                       {t("auth.login.forgotPassword")}
                     </a>
@@ -470,7 +470,7 @@ function Auth() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder={t(`auth.${mode}.password`)}
-                    className="h-12 w-full rounded-[10px] border border-slate-200 bg-white pl-10 pr-12 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#10B981]/40"
+                    className="h-12 w-full rounded-md border border-slate-200 bg-white pl-10 pr-12 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand/40"
                     autoComplete={mode === "login" ? "current-password" : "new-password"}
                     required
                     disabled={busy}
@@ -503,7 +503,7 @@ function Auth() {
               {/* Submit Button */}
               <Button
                 type="submit"
-                className="h-12 w-full rounded-[10px] bg-[#10B981] text-white text-[15px] font-medium hover:bg-[#059669] disabled:opacity-50"
+                className="h-12 w-full rounded-md bg-brand text-white text-[15px] font-medium hover:bg-[#059669] disabled:opacity-50"
                 disabled={busy || !turnstileToken}
               >
                 {submitting ? (
@@ -535,7 +535,7 @@ function Auth() {
                       value={memberIdentifier}
                       onChange={(e) => setMemberIdentifier(e.target.value)}
                       placeholder={t("auth.memberIdentifierPlaceholder")}
-                      className="h-10 rounded-[10px] border border-slate-200 bg-white px-3 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#10B981]/40"
+                      className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand/40"
                       autoComplete="username"
                       required
                     />
@@ -544,13 +544,13 @@ function Auth() {
                       value={memberPassword}
                       onChange={(e) => setMemberPassword(e.target.value)}
                       placeholder={t("auth.memberPasswordPlaceholder")}
-                      className="h-10 rounded-[10px] border border-slate-200 bg-white px-3 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#10B981]/40"
+                      className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand/40"
                       autoComplete="current-password"
                       required
                     />
                     <Button
                       type="submit"
-                      className="h-10 w-full rounded-[10px] bg-[#10B981] text-white hover:bg-[#059669]"
+                      className="h-10 w-full rounded-md bg-brand text-white hover:bg-[#059669]"
                       disabled={memberLoading || !memberIdentifier.trim() || !memberPassword}
                     >
                       {memberLoading ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
@@ -582,11 +582,11 @@ function Auth() {
             {/* Terms & Privacy */}
             <p className="text-center text-xs leading-5 text-slate-400">
               {t("auth.terms")}{" "}
-              <a href={`${SITE_URLS.corporate}/terms`} target="_blank" rel="noopener noreferrer" className="underline hover:text-[#10B981]">
+              <a href={`${SITE_URLS.corporate}/terms`} target="_blank" rel="noopener noreferrer" className="underline hover:text-brand">
                 {t("auth.termsLink")}
               </a>
               {" · "}
-              <a href={`${SITE_URLS.corporate}/privacy`} target="_blank" rel="noopener noreferrer" className="underline hover:text-[#10B981]">
+              <a href={`${SITE_URLS.corporate}/privacy`} target="_blank" rel="noopener noreferrer" className="underline hover:text-brand">
                 {t("auth.privacyLink")}
               </a>
             </p>
@@ -606,7 +606,7 @@ function Auth() {
               <button
                 type="button"
                 onClick={() => { setMode(mode === "login" ? "register" : "login"); setError(null); }}
-                className="ml-1 font-medium text-[#10B981] hover:underline"
+                className="ml-1 font-medium text-brand hover:underline"
               >
                 {mode === "login" ? t("auth.register.title") : t("auth.login.title")}
               </button>
@@ -616,7 +616,7 @@ function Auth() {
           <div className="rounded-b-lg border-t bg-muted px-6 py-3 text-center text-xs text-slate-400">
             <p className="flex items-center justify-center gap-1">
               {t("auth.securedBy")}{" "}
-              <a href="https://freebuff.com" target="_blank" rel="noopener noreferrer" className="underline hover:text-[#10B981]">
+              <a href="https://freebuff.com" target="_blank" rel="noopener noreferrer" className="underline hover:text-brand">
                 freebuff.com
               </a>
             </p>

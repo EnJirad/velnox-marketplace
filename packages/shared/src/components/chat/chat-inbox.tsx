@@ -89,7 +89,7 @@ export function ChatFilterTabs({
             {filter === "unread" && count > 0 && (
               <span
                 className={cn(
-                  "rounded-full px-1.5 text-[11px] font-semibold leading-4",
+                  "rounded-full px-1.5 text-2xs font-semibold leading-4",
                   selected ? "bg-white/70 text-sky-900" : "bg-slate-200 text-slate-600",
                 )}
               >
@@ -140,7 +140,7 @@ export function ChatConversationRow({
       <span className="min-w-0 flex-1">
         <span className="flex items-baseline justify-between gap-2">
           <span className="truncate text-[15px] font-semibold leading-5 text-slate-900">{name}</span>
-          <span className="shrink-0 text-[11px] tabular-nums text-slate-400">{timeLabel}</span>
+          <span className="shrink-0 text-2xs tabular-nums text-slate-400">{timeLabel}</span>
         </span>
         <span className="mt-0.5 flex items-center justify-between gap-2">
           <span
@@ -153,12 +153,12 @@ export function ChatConversationRow({
           </span>
           <span className="flex shrink-0 items-center gap-1.5">
             {support && (
-              <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-700">
+              <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-2xs font-semibold text-emerald-700">
                 Support
               </span>
             )}
             {unread > 0 && (
-              <span className="min-w-5 rounded-full bg-sky-100 px-1.5 py-0.5 text-center text-[11px] font-semibold tabular-nums text-sky-900">
+              <span className="min-w-5 rounded-full bg-sky-100 px-1.5 py-0.5 text-center text-2xs font-semibold tabular-nums text-sky-900">
                 {unread > 99 ? "99+" : unread}
               </span>
             )}

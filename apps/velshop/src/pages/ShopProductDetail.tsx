@@ -101,7 +101,7 @@ function ProductTitle({ name, t }: { name: string; t: (k: string) => string }) {
         {name}
       </h1>
       {needsExpand && (
-        <span className="mt-1 inline-flex shrink-0 items-center gap-1 text-sm font-medium text-[#10B981] transition-colors">
+        <span className="mt-1 inline-flex shrink-0 items-center gap-1 text-sm font-medium text-brand transition-colors">
           {expanded ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
         </span>
       )}
@@ -121,7 +121,7 @@ function ExpandableDescription({ text, t }: { text: string; t: (k: string, v?: R
         <p className="whitespace-pre-line text-sm leading-6 text-slate-600">{text}</p>
       </div>
       {needsExpand && (
-        <button type="button" onClick={() => setExpanded((v) => !v)} className="mt-2 inline-flex items-center gap-1 text-sm font-medium text-[#10B981] transition-colors hover:text-[#059669]">
+        <button type="button" onClick={() => setExpanded((v) => !v)} className="mt-2 inline-flex items-center gap-1 text-sm font-medium text-brand transition-colors hover:text-[#059669]">
           {expanded ? t("productDetail.hideDetails") : t("productDetail.seeAllDetails")}
           {expanded ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
         </button>
@@ -147,7 +147,7 @@ function ProductCarousel({ title, viewAllLink, products, emptyText, t }: {
       <div className="flex items-center justify-between">
         <h3 className="text-base font-bold text-slate-900">{title}</h3>
         <div className="flex items-center gap-2">
-          {viewAllLink && <Link to={viewAllLink} className="text-xs font-medium text-[#10B981] transition-colors hover:text-[#059669]">{t("productDetail.viewAll")}</Link>}
+          {viewAllLink && <Link to={viewAllLink} className="text-xs font-medium text-brand transition-colors hover:text-[#059669]">{t("productDetail.viewAll")}</Link>}
           <button type="button" onClick={() => scroll("left")} className="flex size-7 items-center justify-center rounded-full border border-slate-200 text-slate-400 transition-colors hover:border-slate-300 hover:text-slate-600" aria-label="Scroll left">
             <ChevronDown className="size-3.5 -rotate-90" />
           </button>
@@ -1152,7 +1152,7 @@ export default function ShopProductDetail() {
                       the 3/9 counter stay). Two sets made the gallery look busy
                       and the overlay ate the photo. */}
                   {validGallery.length > 1 && (
-                    <span className="pointer-events-none absolute bottom-2 right-2 hidden rounded-full bg-black/55 px-2 py-0.5 text-[11px] font-medium tabular-nums text-white backdrop-blur sm:inline-flex">
+                    <span className="pointer-events-none absolute bottom-2 right-2 hidden rounded-full bg-black/55 px-2 py-0.5 text-2xs font-medium tabular-nums text-white backdrop-blur sm:inline-flex">
                       {activeValidIndex + 1} / {validGallery.length}
                     </span>
                   )}
@@ -1180,7 +1180,7 @@ export default function ShopProductDetail() {
                     aria-selected={i === activeValidIndex}
                     aria-label={t("productDetail.imageAlt", { n: i + 1 })}
                     onClick={() => goToImage(i)}
-                    className={"h-1.5 rounded-full transition-[width,background-color] duration-300 " + (i === activeValidIndex ? "w-5 bg-[#10B981]" : "w-1.5 bg-slate-200 hover:bg-slate-300")}
+                    className={"h-1.5 rounded-full transition-[width,background-color] duration-300 " + (i === activeValidIndex ? "w-5 bg-brand" : "w-1.5 bg-slate-200 hover:bg-slate-300")}
                   />
                 ))}
               </div>
@@ -1202,7 +1202,7 @@ export default function ShopProductDetail() {
                         type="button"
                         data-thumb-index={i}
                         onClick={() => goToImage(i)}
-                        className={"size-16 shrink-0 overflow-hidden rounded-[10px] border-2 bg-white transition-colors " + (isActive ? "border-[#10B981] ring-1 ring-[#10B981]/20" : "border-slate-200 hover:border-slate-300")}
+                        className={"size-16 shrink-0 overflow-hidden rounded-md border-2 bg-white transition-colors " + (isActive ? "border-brand ring-1 ring-brand/20" : "border-slate-200 hover:border-slate-300")}
                         aria-label={t("productDetail.imageAlt", { n: i + 1 })}
                         aria-current={isActive ? "true" : undefined}
                       >
@@ -1279,12 +1279,12 @@ export default function ShopProductDetail() {
                 <div className="flex flex-1 items-center gap-1.5 overflow-hidden">
                   {compactThumbnails.map((thumb: { id: string; label: string; imageUrl: string | null; groupId: string; selected: boolean }) => (
                     <span
-                      key={thumb.id}                        className={`size-10 shrink-0 overflow-hidden rounded-lg border transition-colors ${thumb.selected ? "border-[#10B981] ring-1 ring-[#10B981]/30" : "border-slate-200"}`}
+                      key={thumb.id}                        className={`size-10 shrink-0 overflow-hidden rounded-lg border transition-colors ${thumb.selected ? "border-brand ring-1 ring-brand/30" : "border-slate-200"}`}
                     >
                       {thumb.imageUrl ? (
                         <img src={thumb.imageUrl} alt={thumb.label} className="size-full object-cover" />
                       ) : (
-                        <span className="flex size-full items-center justify-center text-[11px] font-medium text-slate-600">{thumb.label}</span>
+                        <span className="flex size-full items-center justify-center text-2xs font-medium text-slate-600">{thumb.label}</span>
                       )}
                     </span>
                   ))}
@@ -1343,9 +1343,9 @@ export default function ShopProductDetail() {
         <section className="mt-8">
           <div className="flex border-b border-slate-200">
             {tabs.map((tab) => (
-              <button key={tab.key} type="button" onClick={() => setActiveTab(tab.key)} className={`flex-1 px-4 py-3 text-center text-sm font-semibold transition-colors ${activeTab === tab.key ? "border-b-2 border-[#10B981] text-slate-900" : "text-slate-400 hover:text-slate-600"}`}>
+              <button key={tab.key} type="button" onClick={() => setActiveTab(tab.key)} className={`flex-1 px-4 py-3 text-center text-sm font-semibold transition-colors ${activeTab === tab.key ? "border-b-2 border-brand text-slate-900" : "text-slate-400 hover:text-slate-600"}`}>
                 {tab.label}
-                {tab.key === "reviews" && reviewSummary.total > 0 && <span className="ml-1.5 rounded-full bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-slate-500">{reviewSummary.total}</span>}
+                {tab.key === "reviews" && reviewSummary.total > 0 && <span className="ml-1.5 rounded-full bg-slate-100 px-1.5 py-0.5 text-2xs font-medium tabular-nums text-slate-500">{reviewSummary.total}</span>}
               </button>
             ))}
           </div>
@@ -1386,7 +1386,7 @@ export default function ShopProductDetail() {
                 ) : reviewsError ? (
                   <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-10 text-center">
                     <p className="text-sm text-slate-500">{t("productDetail.reviewsFailed")}</p>
-                    <button type="button" onClick={() => { setReviewsError(false); setReviewsLoading(true); void load(); }} className="mt-3 inline-flex items-center gap-1 rounded-[10px] border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50">
+                    <button type="button" onClick={() => { setReviewsError(false); setReviewsLoading(true); void load(); }} className="mt-3 inline-flex items-center gap-1 rounded-md border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50">
                       <RefreshCw className="size-3.5" />
                       {t("productDetail.reviewsRetry")}
                     </button>
@@ -1420,7 +1420,7 @@ export default function ShopProductDetail() {
                           aria-label={t("productDetail.reviewCommentAria")}
                           rows={3}
                           maxLength={2000}
-                          className="mt-3 w-full resize-none rounded-[10px] border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                          className="mt-3 w-full resize-none rounded-md border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
                         />
                         <div className="mt-3 flex flex-wrap items-center gap-2">
                           <Button
@@ -1493,10 +1493,10 @@ export default function ShopProductDetail() {
                                   <p className="mt-0.5 truncate text-xs font-medium text-slate-500">{r.customerName ?? t("productDetail.customer")}</p>
                                 </div>
                               </div>
-                              <span className="shrink-0 text-[11px] text-slate-400">{formatRelativeTime(r.createdAt, lang, t)}</span>
+                              <span className="shrink-0 text-2xs text-slate-400">{formatRelativeTime(r.createdAt, lang, t)}</span>
                             </div>
                             {r.verifiedPurchase && (
-                              <p className="mt-2 flex items-center gap-1 text-[11px] font-medium text-emerald-700">
+                              <p className="mt-2 flex items-center gap-1 text-2xs font-medium text-emerald-700">
                                 <BadgeCheck className="size-3.5" />
                                 {t("productDetail.verifiedPurchase")}
                               </p>
@@ -1523,7 +1523,7 @@ export default function ShopProductDetail() {
                             type="button"
                             onClick={() => void loadMoreReviews()}
                             disabled={reviewsLoadingMore}
-                            className="mx-auto flex items-center gap-1.5 text-sm font-medium text-[#10B981] transition-colors hover:text-[#059669] disabled:opacity-50"
+                            className="mx-auto flex items-center gap-1.5 text-sm font-medium text-brand transition-colors hover:text-[#059669] disabled:opacity-50"
                           >
                             {reviewsLoadingMore ? <Loader2 className="size-3.5 animate-spin" /> : <ChevronDown className="size-3.5" />}
                             {t("productDetail.loadMoreReviews")}
@@ -1598,7 +1598,7 @@ export default function ShopProductDetail() {
                     onError={handleSheetPreviewError}
                   />
                 ) : (
-                  <span className="flex size-full flex-col items-center justify-center gap-1.5 bg-slate-50 px-2 text-center"><ImageOff className="size-8 text-slate-300" /><span className="text-[11px] font-medium text-slate-400">{(t as any)("productDetail.noImage") ?? "no image"}</span></span>
+                  <span className="flex size-full flex-col items-center justify-center gap-1.5 bg-slate-50 px-2 text-center"><ImageOff className="size-8 text-slate-300" /><span className="text-2xs font-medium text-slate-400">{(t as any)("productDetail.noImage") ?? "no image"}</span></span>
                 )}
               </div>
               <div className="min-w-0 flex-1">
@@ -1679,9 +1679,9 @@ export default function ShopProductDetail() {
                         }
                         const isImageGroup = group.displayType === "image";
                         const valStockLabel = !valueInStock ? (
-                          <span className={`${compactSheet ? "text-[11px]" : "text-[11px]"} text-red-400`}>{t("productDetail.stockOut")}</span>
+                          <span className={`${compactSheet ? "text-2xs" : "text-2xs"} text-red-400`}>{t("productDetail.stockOut")}</span>
                         ) : valueStock > 0 ? (
-                          <span className={`${compactSheet ? "text-[11px]" : "text-[11px]"} ${valueStock <= 5 ? "text-amber-600" : "text-slate-400"}`}>
+                          <span className={`${compactSheet ? "text-2xs" : "text-2xs"} ${valueStock <= 5 ? "text-amber-600" : "text-slate-400"}`}>
                             {valueStock <= 5 ? t("productDetail.stockLeft", { count: valueStock }) : t("productDetail.stockPieces", { count: valueStock })}
                           </span>
                         ) : null;
@@ -1696,7 +1696,7 @@ export default function ShopProductDetail() {
                               onClick={() => handleOptionSelect(group.id, val.id)}
                               className={`${compactSheet ? "w-[88px] min-h-[96px] p-1.5" : "w-[112px] min-h-[128px] p-2"} flex flex-col items-center justify-center gap-1.5 rounded-xl border transition-colors ${
                                 isSelected
-                                  ? "border-[#10B981] bg-[#ECFDF5] ring-1 ring-[#10B981]/30"
+                                  ? "border-brand bg-[#ECFDF5] ring-1 ring-brand/30"
                                   : valueInStock
                                     ? "border-slate-200 bg-white hover:border-slate-300 active:bg-slate-50"
                                     : "border-slate-100 bg-slate-50 opacity-40"
@@ -1706,11 +1706,11 @@ export default function ShopProductDetail() {
                               {val.imageUrl || optionValueImageMap[val.id] ? (
                                 <img src={val.imageUrl || optionValueImageMap[val.id]} alt="" className={`${compactSheet ? "size-14" : "size-[72px]"} rounded-lg object-contain bg-slate-50`} loading="lazy" />
                               ) : (
-                                <span className={`${compactSheet ? "size-14 text-[11px]" : "size-[72px] text-sm"} flex items-center justify-center rounded-lg bg-slate-100 font-semibold text-slate-500`}>
+                                <span className={`${compactSheet ? "size-14 text-2xs" : "size-[72px] text-sm"} flex items-center justify-center rounded-lg bg-slate-100 font-semibold text-slate-500`}>
                                   {(val.label || val.value).slice(0, 3)}
                                 </span>
                               )}
-                              <span className={`max-w-full truncate ${compactSheet ? "text-[11px]" : "text-xs"} font-medium ${isSelected ? "text-[#10B981]" : valueInStock ? "text-slate-700" : "text-slate-400 line-through"}`}>
+                              <span className={`max-w-full truncate ${compactSheet ? "text-2xs" : "text-xs"} font-medium ${isSelected ? "text-brand" : valueInStock ? "text-slate-700" : "text-slate-400 line-through"}`}>
                                 {val.label || val.value}
                               </span>
                               {valStockLabel}
@@ -1725,9 +1725,9 @@ export default function ShopProductDetail() {
                             type="button"
                             disabled={!valueInStock}
                             onClick={() => handleOptionSelect(group.id, val.id)}
-                            className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 ${compactSheet ? "text-[11px]" : "text-xs"} font-medium transition-colors ${
+                            className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 ${compactSheet ? "text-2xs" : "text-xs"} font-medium transition-colors ${
                               isSelected
-                                ? "border-[#10B981] bg-[#ECFDF5] text-[#10B981] ring-1 ring-[#10B981]/30"
+                                ? "border-brand bg-[#ECFDF5] text-brand ring-1 ring-brand/30"
                                 : valueInStock
                                   ? "border-slate-200 bg-white text-slate-700 hover:border-slate-300 active:bg-slate-50"
                                   : "border-slate-100 bg-slate-50 text-slate-400 opacity-50"

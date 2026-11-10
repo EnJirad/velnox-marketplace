@@ -24,7 +24,7 @@ export function TypingDots({ label, className }: { label?: string; className?: s
         <span className="velnox-typing-dot size-1.5 rounded-full bg-slate-400" />
         <span className="velnox-typing-dot size-1.5 rounded-full bg-slate-400" />
       </span>
-      {label ? <span className="text-[11px] text-slate-400">{label}</span> : null}
+      {label ? <span className="text-2xs text-slate-400">{label}</span> : null}
       <style>{`
         .velnox-typing-dot {
           animation: velnox-typing 1.2s infinite ease-in-out;

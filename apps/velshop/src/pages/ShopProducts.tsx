@@ -342,9 +342,9 @@ export default function ShopProducts() {
               key={c.id}
               type="button"
               onClick={() => updateParam("category", c.id === "all" ? null : c.id)}
-              className={`rounded-full px-3 py-2 text-xs font-medium transition-colors lg:w-full lg:rounded-[10px] lg:text-left ${
+              className={`rounded-full px-3 py-2 text-xs font-medium transition-colors lg:w-full lg:rounded-md lg:text-left ${
                 category === c.id
-                  ? "border border-[#10B981] bg-[#10B981] text-white"
+                  ? "border border-brand bg-brand text-white"
                   : "border border-transparent bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900"
               }`}
             >
@@ -359,7 +359,7 @@ export default function ShopProducts() {
         <button
           type="button"
           onClick={() => updateParam("verified", verifiedOnly ? null : "true")}
-          className={`flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-xs font-medium transition-colors ${
+          className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-xs font-medium transition-colors ${
             verifiedOnly
               ? "bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/15"
               : "border border-slate-200 bg-white text-slate-500 hover:border-emerald-300 hover:text-emerald-700"
@@ -377,7 +377,7 @@ export default function ShopProducts() {
           {t("products.shop")}
         </p>
         <Select value={shopId || "all"} onValueChange={(val) => updateParam("shop", val === "all" ? null : val)}>
-          <SelectTrigger className="mt-3 h-10 w-full rounded-[10px] border-slate-200 text-sm">
+          <SelectTrigger className="mt-3 h-10 w-full rounded-md border-slate-200 text-sm">
             <SelectValue placeholder={t("products.allShops")} />
           </SelectTrigger>
           <SelectContent>
@@ -401,7 +401,7 @@ export default function ShopProducts() {
             value={minPrice}
             onChange={(e) => updateParam("min", e.target.value || null)}
             placeholder={t("products.minPrice")}
-            className="h-10 rounded-[10px] border-slate-200 text-sm"
+            className="h-10 rounded-md border-slate-200 text-sm"
           />
           <span className="text-slate-300">–</span>
           <Input
@@ -410,7 +410,7 @@ export default function ShopProducts() {
             value={maxPrice}
             onChange={(e) => updateParam("max", e.target.value || null)}
             placeholder={t("products.maxPrice")}
-            className="h-10 rounded-[10px] border-slate-200 text-sm"
+            className="h-10 rounded-md border-slate-200 text-sm"
           />
         </div>
       </div>
@@ -420,7 +420,7 @@ export default function ShopProducts() {
         <Checkbox
           checked={inStock}
           onCheckedChange={(v) => updateParam("inStock", v ? "1" : null)}
-          className="border-slate-300 data-[state=checked]:bg-[#10B981] data-[state=checked]:border-[#10B981]"
+          className="border-slate-300 data-[state=checked]:bg-brand data-[state=checked]:border-brand"
         />
         {t("products.inStockOnly")}
       </label>
@@ -446,7 +446,7 @@ export default function ShopProducts() {
       <section className="border-b border-slate-100 bg-white">
         <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
           <p className="flex items-center gap-1.5 text-sm font-medium text-slate-400">
-            <Search className="size-4 text-[#10B981]" />
+            <Search className="size-4 text-brand" />
             {t("products.eyebrow")}
           </p>
           <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
@@ -459,7 +459,7 @@ export default function ShopProducts() {
               value={queryInput}
               onChange={(e) => setQueryInput(e.target.value)}
               placeholder={t("products.searchPlaceholder")}
-              className="h-11 rounded-[12px] border-slate-200 bg-white pl-10 pr-9"
+              className="h-11 rounded-lg border-slate-200 bg-white pl-10 pr-9"
             />
             {queryInput && (
               <button
@@ -509,7 +509,7 @@ export default function ShopProducts() {
                       <SlidersHorizontal className="size-4" />
                       {t("products.filters")}
                       {activeFilterCount > 0 && (
-                        <span className="flex size-5 items-center justify-center rounded-full bg-[#10B981] text-[11px] font-bold text-white">
+                        <span className="flex size-5 items-center justify-center rounded-full bg-brand text-2xs font-bold text-white">
                           {activeFilterCount}
                         </span>
                       )}
@@ -518,10 +518,10 @@ export default function ShopProducts() {
                   <SheetContent side="left" className="flex w-[320px] flex-col bg-white p-0">
                     <SheetHeader className="border-b border-slate-100 px-5 py-4">
                       <SheetTitle className="flex items-center gap-2 text-slate-900">
-                        <Filter className="size-4 text-[#10B981]" />
+                        <Filter className="size-4 text-brand" />
                         {t("products.filterTitle")}
                         {activeFilterCount > 0 && (
-                          <span className="ml-1 flex size-5 items-center justify-center rounded-full bg-[#10B981] text-[11px] font-bold text-white">
+                          <span className="ml-1 flex size-5 items-center justify-center rounded-full bg-brand text-2xs font-bold text-white">
                             {activeFilterCount}
                           </span>
                         )}
@@ -547,7 +547,7 @@ export default function ShopProducts() {
                 </Sheet>
 
                 <Select value={sortBy} onValueChange={(val) => updateParam("sort", val)}>
-                  <SelectTrigger className="h-10 w-[180px] rounded-[10px] border-slate-200 text-sm">
+                  <SelectTrigger className="h-10 w-[180px] rounded-md border-slate-200 text-sm">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>

@@ -168,7 +168,7 @@ export function ImageUploader({ product, onChange }: ImageUploaderProps) {
           >
             <ImagePlus className="size-3.5" />
             รูปสินค้า
-            <span className="ml-0.5 text-[11px] text-slate-400">{galleryImages.length}</span>
+            <span className="ml-0.5 text-2xs text-slate-400">{galleryImages.length}</span>
           </button>
           <button
             type="button"
@@ -181,7 +181,7 @@ export function ImageUploader({ product, onChange }: ImageUploaderProps) {
           >
             <FileImage className="size-3.5" />
             รูปรายละเอียด
-            <span className="ml-0.5 text-[11px] text-slate-400">{detailImages.length}</span>
+            <span className="ml-0.5 text-2xs text-slate-400">{detailImages.length}</span>
           </button>
         </div>
         <Badge className="gap-1 rounded-full bg-[#ECFDF5] text-emerald-700 ring-1 ring-inset ring-emerald-600/15 hover:bg-[#ECFDF5]">
@@ -206,8 +206,8 @@ export function ImageUploader({ product, onChange }: ImageUploaderProps) {
             return (
               <div
                 key={image.id}
-                className={`group relative overflow-hidden rounded-[10px] border-2 ${
-                  isPrimary ? "border-[#10B981]" : "border-slate-200"
+                className={`group relative overflow-hidden rounded-md border-2 ${
+                  isPrimary ? "border-brand" : "border-slate-200"
                 }`}
               >
                 <div className="aspect-square w-full overflow-hidden bg-slate-50">
@@ -219,7 +219,7 @@ export function ImageUploader({ product, onChange }: ImageUploaderProps) {
                   />
                 </div>
                 {isPrimary && (
-                  <span className="absolute left-1.5 top-1.5 flex items-center gap-1 rounded-full bg-[#10B981] px-2 py-0.5 text-[11px] font-semibold text-white">
+                  <span className="absolute left-1.5 top-1.5 flex items-center gap-1 rounded-full bg-brand px-2 py-0.5 text-2xs font-semibold text-white">
                     <Star className="size-2.5 fill-current" />
                     หลัก
                   </span>
@@ -294,11 +294,11 @@ export function ImageUploader({ product, onChange }: ImageUploaderProps) {
             if (e.dataTransfer.files.length > 0) handleFiles(e.dataTransfer.files);
           }}
           disabled={uploading}
-          className="flex w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-[10px] border-2 border-dashed border-slate-300 bg-slate-50/50 px-4 py-8 text-center transition-colors hover:border-[#10B981]/60 hover:bg-[#ECFDF5]/50 disabled:cursor-not-allowed disabled:opacity-60"
+          className="flex w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed border-slate-300 bg-slate-50/50 px-4 py-8 text-center transition-colors hover:border-brand/60 hover:bg-[#ECFDF5]/50 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {uploading ? (
             <>
-              <Loader2 className="size-5 animate-spin text-[#10B981]" />
+              <Loader2 className="size-5 animate-spin text-brand" />
               <p className="text-sm font-medium text-slate-600">กำลังอัปโหลด...</p>
             </>
           ) : (

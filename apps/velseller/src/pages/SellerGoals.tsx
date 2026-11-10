@@ -175,7 +175,7 @@ export default function SellerGoals() {
             </p>
           </div>
           <Button
-            className="h-11 shrink-0 gap-1.5 bg-[#10B981] text-white hover:bg-[#059669]"
+            className="h-11 shrink-0 gap-1.5 bg-brand text-white hover:bg-[#059669]"
             onClick={() => {
               setEditingGoal(null);
               setFormOpen(true);
@@ -193,7 +193,7 @@ export default function SellerGoals() {
             className="mt-7 flex flex-col gap-4 rounded-xl border border-rose-200 bg-rose-50/60 p-5 sm:flex-row sm:items-center sm:justify-between"
           >
             <div className="flex items-start gap-3">
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-[10px] bg-white text-rose-600 ring-1 ring-inset ring-rose-200">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-white text-rose-600 ring-1 ring-inset ring-rose-200">
                 <AlertTriangle className="size-4" aria-hidden="true" />
               </span>
               <div>
@@ -279,7 +279,7 @@ export default function SellerGoals() {
               ) : (
                 <div className="mt-4 flex flex-col items-center rounded-xl border border-dashed border-slate-300 bg-white px-6 py-14 text-center">
                   <span className="flex size-14 items-center justify-center rounded-2xl bg-[#ECFDF5]">
-                    <Target className="size-7 text-[#10B981]" aria-hidden="true" />
+                    <Target className="size-7 text-brand" aria-hidden="true" />
                   </span>
                   <h3 className="mt-5 text-lg font-semibold text-slate-900">
                     {t("sellerDash.goals.emptyTitle")}
@@ -288,7 +288,7 @@ export default function SellerGoals() {
                     {t("sellerDash.goals.emptyDesc")}
                   </p>
                   <Button
-                    className="mt-6 h-11 gap-1.5 bg-[#10B981] text-white hover:bg-[#059669]"
+                    className="mt-6 h-11 gap-1.5 bg-brand text-white hover:bg-[#059669]"
                     onClick={() => {
                       setEditingGoal(null);
                       setFormOpen(true);
@@ -437,7 +437,7 @@ function SummaryStat({
           aria-label={label}
         >
           <div
-            className="h-full rounded-full bg-[#10B981] transition-[width] duration-500"
+            className="h-full rounded-full bg-brand transition-[width] duration-500"
             style={{ width: `${Math.min(progress, 100)}%` }}
           />
         </div>

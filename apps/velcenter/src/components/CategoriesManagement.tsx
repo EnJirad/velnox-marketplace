@@ -564,7 +564,7 @@ export default function CategoriesManagement() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <h2 className="flex items-center gap-2 text-lg font-bold text-slate-900 truncate">
-            <FolderTree className="size-5 text-[#10B981] flex-shrink-0" />
+            <FolderTree className="size-5 text-brand flex-shrink-0" />
             {t("velcenter.categories.title")}
           </h2>
           <p className="mt-1 text-sm text-slate-500 truncate">
@@ -581,7 +581,7 @@ export default function CategoriesManagement() {
               className="w-full pl-9 text-sm"
             />
           </div>
-          <Button onClick={() => openCreateDialog()} className="gap-1.5 bg-[#10B981] text-white hover:bg-emerald-600 w-full sm:w-auto">
+          <Button onClick={() => openCreateDialog()} className="gap-1.5 bg-brand text-white hover:bg-emerald-600 w-full sm:w-auto">
             <Plus className="size-4" />
             {t("velcenter.categories.addButton")}
           </Button>
@@ -698,7 +698,7 @@ export default function CategoriesManagement() {
               ) : (
                 /* Compact upload strip - PNG/JPG/WEBP/SVG */
                 <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 flex-shrink-0 rounded-[8px] border border-slate-200 bg-slate-50 overflow-hidden flex items-center justify-center">
+                  <div className="w-12 h-12 flex-shrink-0 rounded-sm border border-slate-200 bg-slate-50 overflow-hidden flex items-center justify-center">
                     {form.iconRaw ? (
                       form.iconRaw.startsWith("data:image/svg") ? (
                         <img src={form.iconRaw} alt="" className="w-full h-full object-contain p-1" />
@@ -753,7 +753,7 @@ export default function CategoriesManagement() {
               {uploadError && (
                 <p className="text-xs text-red-600 mt-1">{uploadError}</p>
               )}
-              <p className="text-[11px] text-slate-400">{t("velcenter.categories.formIconUploadHint")}</p>
+              <p className="text-2xs text-slate-400">{t("velcenter.categories.formIconUploadHint")}</p>
             </div>
             <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="grid min-w-0 gap-2">
@@ -813,7 +813,7 @@ export default function CategoriesManagement() {
             <Button variant="outline" onClick={() => setDialogOpen(false)}>
               ยกเลิก
             </Button>
-            <Button onClick={() => void handleSave()} disabled={saving} className="gap-1.5 bg-[#10B981] text-white hover:bg-emerald-600">
+            <Button onClick={() => void handleSave()} disabled={saving} className="gap-1.5 bg-brand text-white hover:bg-emerald-600">
               {saving && <Loader2 className="size-4 animate-spin" />}
               {editingCategory ? "บันทึก" : "สร้าง"}
             </Button>
@@ -1007,7 +1007,7 @@ function CategoryDetails({
                     </span>
                     <Badge
                       variant={child.is_active ? "default" : "outline"}
-                      className={`text-[11px] ${child.is_active ? "bg-emerald-100 text-emerald-700" : "text-slate-400"}`}
+                      className={`text-2xs ${child.is_active ? "bg-emerald-100 text-emerald-700" : "text-slate-400"}`}
                     >
                       {child.is_active ? t("velcenter.categories.detailsActive") : t("velcenter.categories.detailsInactive")}
                     </Badge>

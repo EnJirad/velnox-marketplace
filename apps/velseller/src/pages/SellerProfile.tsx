@@ -259,22 +259,22 @@ export default function SellerProfile() {
               </h2>
               <div className="space-y-3">
                 <div className="grid gap-1.5"><Label className="text-xs text-slate-500">ชื่อร้านค้า</Label>
-                  <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} className="h-10 rounded-[10px] border-slate-200" /></div>
+                  <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} className="h-10 rounded-md border-slate-200" /></div>
                 <div className="grid gap-1.5"><Label className="text-xs text-slate-500">คำอธิบาย</Label>
                   <textarea value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} rows={3}
-                    className="rounded-[10px] border border-slate-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-500/20" /></div>
+                    className="rounded-md border border-slate-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-500/20" /></div>
                 <div className="grid gap-1.5"><Label className="text-xs text-slate-500">เบอร์โทร</Label>
-                  <Input value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} placeholder="081-234-5678" className="h-10 rounded-[10px] border-slate-200" /></div>
+                  <Input value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} placeholder="081-234-5678" className="h-10 rounded-md border-slate-200" /></div>
                 <div className="grid gap-1.5"><Label className="text-xs text-slate-500">ที่อยู่</Label>
-                  <Input value={form.line1} onChange={(e) => setForm((f) => ({ ...f, line1: e.target.value }))} placeholder="บ้านเลขที่ / ถนน" className="h-10 rounded-[10px] border-slate-200" />
+                  <Input value={form.line1} onChange={(e) => setForm((f) => ({ ...f, line1: e.target.value }))} placeholder="บ้านเลขที่ / ถนน" className="h-10 rounded-md border-slate-200" />
                   <div className="grid grid-cols-2 gap-2">
-                    <Input value={form.subdistrict} onChange={(e) => setForm((f) => ({ ...f, subdistrict: e.target.value }))} placeholder="ตำบล" className="h-10 rounded-[10px] border-slate-200" />
-                    <Input value={form.district} onChange={(e) => setForm((f) => ({ ...f, district: e.target.value }))} placeholder="อำเภอ" className="h-10 rounded-[10px] border-slate-200" />
-                    <Input value={form.city} onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))} placeholder="จังหวัด" className="h-10 rounded-[10px] border-slate-200" />
-                    <Input value={form.postalCode} onChange={(e) => setForm((f) => ({ ...f, postalCode: e.target.value }))} placeholder="รหัสไปรษณีย์" className="h-10 rounded-[10px] border-slate-200" />
+                    <Input value={form.subdistrict} onChange={(e) => setForm((f) => ({ ...f, subdistrict: e.target.value }))} placeholder="ตำบล" className="h-10 rounded-md border-slate-200" />
+                    <Input value={form.district} onChange={(e) => setForm((f) => ({ ...f, district: e.target.value }))} placeholder="อำเภอ" className="h-10 rounded-md border-slate-200" />
+                    <Input value={form.city} onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))} placeholder="จังหวัด" className="h-10 rounded-md border-slate-200" />
+                    <Input value={form.postalCode} onChange={(e) => setForm((f) => ({ ...f, postalCode: e.target.value }))} placeholder="รหัสไปรษณีย์" className="h-10 rounded-md border-slate-200" />
                   </div>
                 </div>
-                <Button onClick={handleSave} disabled={saving} className="w-full h-11 gap-1.5 bg-slate-900 text-white hover:bg-slate-800 rounded-[10px]">
+                <Button onClick={handleSave} disabled={saving} className="w-full h-11 gap-1.5 bg-slate-900 text-white hover:bg-slate-800 rounded-md">
                   {saving && <Loader2 className="size-4 animate-spin" />}<Save className="size-4" />บันทึก
                 </Button>
               </div>
@@ -289,13 +289,13 @@ export default function SellerProfile() {
                 external ? (
                   <a key={label} href={to} target="_blank" rel="noopener noreferrer"
                     className="flex items-center gap-3 px-4 py-3.5 transition-colors hover:bg-slate-50">
-                    <span className="flex size-9 shrink-0 items-center justify-center rounded-[10px] bg-slate-100 text-slate-600"><Icon className="size-4" /></span>
+                    <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-slate-100 text-slate-600"><Icon className="size-4" /></span>
                     <div className="min-w-0 flex-1"><p className="text-sm font-medium text-slate-900">{label}</p><p className="text-xs text-slate-400 truncate">{desc}</p></div>
                     <ArrowUpRight className="size-4 text-slate-400 shrink-0" />
                   </a>
                 ) : (
                   <Link key={label} to={to} className="flex items-center gap-3 px-4 py-3.5 transition-colors hover:bg-slate-50">
-                    <span className="flex size-9 shrink-0 items-center justify-center rounded-[10px] bg-slate-100 text-slate-600"><Icon className="size-4" /></span>
+                    <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-slate-100 text-slate-600"><Icon className="size-4" /></span>
                     <div className="min-w-0 flex-1"><p className="text-sm font-medium text-slate-900">{label}</p><p className="text-xs text-slate-400">{desc}</p></div>
                     <ChevronRight className="size-4 text-slate-400 shrink-0" />
                   </Link>
@@ -414,7 +414,7 @@ export default function SellerProfile() {
             {/* Logout */}
             <div className="pt-4">
               <Button variant="outline" onClick={handleSignOut}
-                className="w-full h-11 gap-2 border-red-200 text-red-600 hover:bg-red-50 rounded-[10px]">
+                className="w-full h-11 gap-2 border-red-200 text-red-600 hover:bg-red-50 rounded-md">
                 <LogOut className="size-4" />ออกจากระบบ
               </Button>
             </div>
@@ -427,7 +427,7 @@ export default function SellerProfile() {
             {/* 3% Fee card */}
             <section className="rounded-2xl border border-emerald-200 bg-emerald-50/40 p-5">
               <div className="flex items-start gap-3">
-                <span className="flex size-10 shrink-0 items-center justify-center rounded-[10px] bg-emerald-100 text-emerald-700">
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-md bg-emerald-100 text-emerald-700">
                   <BadgePercent className="size-5" />
                 </span>
                 <div>
@@ -446,7 +446,7 @@ export default function SellerProfile() {
             {/* Return policy card */}
             <section className="rounded-2xl border border-amber-200 bg-amber-50/40 p-5">
               <div className="flex items-start gap-3">
-                <span className="flex size-10 shrink-0 items-center justify-center rounded-[10px] bg-amber-100 text-amber-700">
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-md bg-amber-100 text-amber-700">
                   <AlertTriangle className="size-5" />
                 </span>
                 <div>
@@ -466,7 +466,7 @@ export default function SellerProfile() {
             {/* Verification info */}
             <section className="rounded-2xl border border-sky-200 bg-sky-50/40 p-5">
               <div className="flex items-start gap-3">
-                <span className="flex size-10 shrink-0 items-center justify-center rounded-[10px] bg-sky-100 text-sky-700">
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-md bg-sky-100 text-sky-700">
                   <ShieldCheck className="size-5" />
                 </span>
                 <div>

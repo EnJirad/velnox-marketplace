@@ -178,11 +178,11 @@ export function NotificationBell() {
         }
         aria-haspopup="true"
         aria-expanded={open}
-        className="relative flex size-10 cursor-pointer items-center justify-center rounded-[10px] text-slate-600 transition-colors hover:bg-slate-100"
+        className="relative flex size-10 cursor-pointer items-center justify-center rounded-md text-slate-600 transition-colors hover:bg-slate-100"
       >
         <Bell className="size-5" />
         {unread > 0 && (
-          <span className="absolute right-0 top-0 flex size-5 items-center justify-center rounded-full bg-[#10B981] text-[11px] font-bold text-white">
+          <span className="absolute right-0 top-0 flex size-5 items-center justify-center rounded-full bg-brand text-2xs font-bold text-white">
             {unread > 99 ? "99+" : unread}
           </span>
         )}
@@ -203,13 +203,13 @@ export function NotificationBell() {
           {/* Header */}
           <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
             <p className="flex items-center gap-1.5 text-sm font-bold text-slate-900">
-              <Bell className="size-4 text-[#10B981]" />
+              <Bell className="size-4 text-brand" />
               {t("notifications.title")}
             </p>
             <Link
               to="/notifications"
               onClick={() => setOpen(false)}
-              className="flex items-center gap-0.5 text-xs font-medium text-[#10B981] transition-colors hover:text-[#059669]"
+              className="flex items-center gap-0.5 text-xs font-medium text-brand transition-colors hover:text-[#059669]"
             >
               {t("notifications.viewAll")}
               <ChevronRight className="size-3" />
@@ -224,7 +224,7 @@ export function NotificationBell() {
               <button
                 type="button"
                 onClick={() => void load()}
-                className="mt-3 inline-flex items-center gap-1 rounded-[10px] border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
+                className="mt-3 inline-flex items-center gap-1 rounded-md border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
               >
                 {t("common.retry")}
               </button>
@@ -258,8 +258,8 @@ export function NotificationBell() {
                       }`}
                     >
                       <span
-                        className={`mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-[10px] ${
-                          n.isRead ? "bg-slate-100 text-slate-400" : "bg-[#10B981] text-white"
+                        className={`mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md ${
+                          n.isRead ? "bg-slate-100 text-slate-400" : "bg-brand text-white"
                         }`}
                       >
                         <Icon className="size-4" />
@@ -269,11 +269,11 @@ export function NotificationBell() {
                         {n.message && (
                           <span className="mt-0.5 line-clamp-2 block text-xs leading-5 text-slate-500">{n.message}</span>
                         )}
-                        <span className="mt-0.5 block text-[11px] text-slate-400">
+                        <span className="mt-0.5 block text-2xs text-slate-400">
                           {formatRelativeTime(n.createdAt, lang, t)}
                         </span>
                       </span>
-                      {!n.isRead && <span className="mt-1.5 size-2 shrink-0 rounded-full bg-[#10B981]" />}
+                      {!n.isRead && <span className="mt-1.5 size-2 shrink-0 rounded-full bg-brand" />}
                     </button>
                   );
                 })}

@@ -124,7 +124,7 @@ const STATUS_LABELS: Record<string, { label: string; color: string }> = {
 function StatusBadge({ status }: { status: string }) {
   const meta = STATUS_LABELS[status] ?? { label: status, color: "bg-slate-100 text-slate-600 ring-slate-600/10" };
   return (
-    <Badge className={`shrink-0 gap-1 rounded-full text-[11px] font-medium ring-1 ring-inset ${meta.color}`}>
+    <Badge className={`shrink-0 gap-1 rounded-full text-2xs font-medium ring-1 ring-inset ${meta.color}`}>
       {meta.label}
     </Badge>
   );
@@ -174,7 +174,7 @@ function Section({
       {icon}
       <span className="truncate">{title}</span>
       {typeof count === "number" && (
-        <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-500">
+        <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-2xs font-semibold text-slate-500">
           {count}
         </span>
       )}
@@ -263,7 +263,7 @@ function ImageGallery({ images, primaryImage }: { images: { id: string; url: str
               type="button"
               onClick={() => setSelected(i)}
               aria-label={`รูปที่ ${i + 1}`}
-              className={`size-14 shrink-0 snap-start overflow-hidden rounded-lg border-2 transition-colors sm:size-16 ${i === selected ? "border-[#10B981]" : "border-slate-200 hover:border-slate-300"}`}
+              className={`size-14 shrink-0 snap-start overflow-hidden rounded-lg border-2 transition-colors sm:size-16 ${i === selected ? "border-brand" : "border-slate-200 hover:border-slate-300"}`}
             >
               <img src={img.url} alt={img.alt} className="size-full object-cover" />
             </button>
@@ -304,16 +304,16 @@ function ProductSummaryCard({ detail }: { detail: ProductDetail }) {
       </p>
       <div className="mt-3 flex flex-wrap items-end justify-between gap-2 border-t border-slate-100 pt-3">
         <div className="min-w-0">
-          <p className="text-[11px] text-slate-400">ราคา</p>
+          <p className="text-2xs text-slate-400">ราคา</p>
           <p className="text-xl font-bold tabular-nums text-slate-900">
             {formatBaht(detail.product.price)}
             <span className="ml-1 text-xs font-normal text-slate-400">/ {detail.product.unit}</span>
           </p>
           {detail.product.compare_at_price ? (
-            <p className="text-[11px] text-slate-400 line-through">{formatBaht(detail.product.compare_at_price)}</p>
+            <p className="text-2xs text-slate-400 line-through">{formatBaht(detail.product.compare_at_price)}</p>
           ) : null}
         </div>
-        <span className="inline-flex max-w-full items-center gap-1 truncate rounded-full bg-[#ECFDF5] px-2.5 py-1 text-[11px] font-medium text-emerald-700 ring-1 ring-inset ring-emerald-600/15">
+        <span className="inline-flex max-w-full items-center gap-1 truncate rounded-full bg-[#ECFDF5] px-2.5 py-1 text-2xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-600/15">
           <Tag className="size-3 shrink-0" />
           {category ?? "ไม่ระบุหมวดหมู่"}
         </span>
@@ -326,15 +326,15 @@ function StockGrid({ inventory }: { inventory: ProductDetail["inventory"] }) {
   return (
     <div className="grid grid-cols-3 gap-2">
       <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5">
-        <p className="text-[11px] text-slate-400">คงเหลือ</p>
+        <p className="text-2xs text-slate-400">คงเหลือ</p>
         <p className="mt-0.5 text-lg font-bold tabular-nums text-slate-900">{inventory.quantity}</p>
       </div>
       <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5">
-        <p className="text-[11px] text-slate-400">สงวนไว้</p>
+        <p className="text-2xs text-slate-400">สงวนไว้</p>
         <p className="mt-0.5 text-lg font-bold tabular-nums text-slate-900">{inventory.reserved}</p>
       </div>
       <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5">
-        <p className="text-[11px] text-slate-400">จุดสั่งซื้อซ้ำ</p>
+        <p className="text-2xs text-slate-400">จุดสั่งซื้อซ้ำ</p>
         <p className="mt-0.5 text-lg font-bold tabular-nums text-slate-900">{inventory.reorder_level}</p>
       </div>
     </div>
@@ -397,10 +397,10 @@ function ModerationHistoryList({ history }: { history: ProductDetail["moderation
         <li key={h.id} className="rounded-xl border border-slate-200 bg-white px-3 py-2">
           <div className="flex items-center justify-between gap-3">
             <span className="min-w-0 truncate text-xs font-medium text-slate-700">{h.action}</span>
-            <span className="shrink-0 text-[11px] text-slate-400">{new Date(h.created_at).toLocaleDateString()}</span>
+            <span className="shrink-0 text-2xs text-slate-400">{new Date(h.created_at).toLocaleDateString()}</span>
           </div>
-          {h.reason && <p className="mt-0.5 break-words text-[11px] text-slate-500">{h.reason}</p>}
-          {h.moderator_name && <p className="mt-0.5 text-[11px] text-slate-400">— {h.moderator_name}</p>}
+          {h.reason && <p className="mt-0.5 break-words text-2xs text-slate-500">{h.reason}</p>}
+          {h.moderator_name && <p className="mt-0.5 text-2xs text-slate-400">— {h.moderator_name}</p>}
         </li>
       ))}
     </ol>
@@ -414,11 +414,11 @@ function OptionGroupsList({ groups }: { groups: ProductDetail["optionGroups"] })
         <div key={group.id} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5">
           <div className="flex flex-wrap items-center gap-2">
             <p className="min-w-0 truncate text-sm font-medium text-slate-900">{group.name}</p>
-            <Badge className="rounded-full bg-slate-100 text-[11px] text-slate-600 ring-1 ring-inset ring-slate-600/10">
+            <Badge className="rounded-full bg-slate-100 text-2xs text-slate-600 ring-1 ring-inset ring-slate-600/10">
               {group.display_type}
             </Badge>
             {group.required && (
-              <Badge className="rounded-full bg-amber-50 text-[11px] text-amber-700 ring-1 ring-inset ring-amber-600/15">
+              <Badge className="rounded-full bg-amber-50 text-2xs text-amber-700 ring-1 ring-inset ring-amber-600/15">
                 จำเป็น
               </Badge>
             )}
@@ -426,7 +426,7 @@ function OptionGroupsList({ groups }: { groups: ProductDetail["optionGroups"] })
           {group.values.length > 0 ? (
             <div className="mt-2 flex flex-wrap gap-1">
               {group.values.map((v) => (
-                <Badge key={v.id} className="rounded-full bg-slate-50 text-[11px] text-slate-600 ring-1 ring-inset ring-slate-200">
+                <Badge key={v.id} className="rounded-full bg-slate-50 text-2xs text-slate-600 ring-1 ring-inset ring-slate-200">
                   {v.label || v.value}
                 </Badge>
               ))}
@@ -466,17 +466,17 @@ function VariantList({ variants }: { variants: ProductDetail["variants"] }) {
                         <img key={img.id} src={img.url} alt={img.alt || v.name} className="size-8 rounded-md border border-white object-cover" />
                       ))}
                       {v.images.length > 3 && (
-                        <span className="flex size-8 items-center justify-center rounded-md bg-slate-100 text-[11px] text-slate-500">+{v.images.length - 3}</span>
+                        <span className="flex size-8 items-center justify-center rounded-md bg-slate-100 text-2xs text-slate-500">+{v.images.length - 3}</span>
                       )}
                     </div>
                   ) : (
-                    <span className="text-[11px] text-slate-300">ไม่มีรูป</span>
+                    <span className="text-2xs text-slate-300">ไม่มีรูป</span>
                   )}
                 </td>
                 <td className="px-3 py-2">
                   <span className="font-medium text-slate-900">{v.name}</span>
                   {Object.keys(v.options ?? {}).length > 0 && (
-                    <span className="mt-0.5 block text-[11px] text-slate-400">
+                    <span className="mt-0.5 block text-2xs text-slate-400">
                       {Object.entries(v.options).map(([k, val]) => `${k}: ${val}`).join(" · ")}
                     </span>
                   )}
@@ -497,7 +497,7 @@ function VariantList({ variants }: { variants: ProductDetail["variants"] }) {
               {v.images && v.images.length > 0 ? (
                 <img src={v.images[0].url} alt={v.images[0].alt || v.name} className="size-12 shrink-0 rounded-lg object-cover" />
               ) : (
-                <div className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-[11px] text-slate-400">ไม่มีรูป</div>
+                <div className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-2xs text-slate-400">ไม่มีรูป</div>
               )}
               <div className="min-w-0 flex-1">
                 <div className="flex items-start justify-between gap-2">
@@ -523,7 +523,7 @@ function VariantList({ variants }: { variants: ProductDetail["variants"] }) {
             {Object.keys(v.options ?? {}).length > 0 && (
               <div className="mt-2 flex flex-wrap gap-1">
                 {Object.entries(v.options).map(([k, val]) => (
-                  <Badge key={k} className="rounded-full bg-slate-50 text-[11px] text-slate-600 ring-1 ring-inset ring-slate-200">
+                  <Badge key={k} className="rounded-full bg-slate-50 text-2xs text-slate-600 ring-1 ring-inset ring-slate-200">
                     {k}: {val}
                   </Badge>
                 ))}
@@ -695,12 +695,12 @@ export default function ProductModerationQueue() {
             placeholder="ค้นหาสินค้า, ร้านค้า, ผู้ขาย..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="rounded-[10px] pl-9"
+            className="rounded-md pl-9"
           />
         </div>
         <div className="flex flex-wrap gap-2">
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger aria-label="กรองตามสถานะสินค้า" className="h-9 flex-1 rounded-[10px] border-slate-200 bg-white text-sm sm:flex-none sm:w-[150px]">
+            <SelectTrigger aria-label="กรองตามสถานะสินค้า" className="h-9 flex-1 rounded-md border-slate-200 bg-white text-sm sm:flex-none sm:w-[150px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -713,7 +713,7 @@ export default function ProductModerationQueue() {
             </SelectContent>
           </Select>
           <Select value={sortOrder} onValueChange={setSortOrder}>
-            <SelectTrigger aria-label="เรียงลำดับ" className="h-9 flex-1 rounded-[10px] border-slate-200 bg-white text-sm sm:flex-none sm:w-[120px]">
+            <SelectTrigger aria-label="เรียงลำดับ" className="h-9 flex-1 rounded-md border-slate-200 bg-white text-sm sm:flex-none sm:w-[120px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -721,10 +721,10 @@ export default function ProductModerationQueue() {
               <SelectItem value="oldest">เก่าสุด</SelectItem>
             </SelectContent>
           </Select>
-          <Button variant="outline" size="sm" onClick={expandAll} className="rounded-[10px]">
+          <Button variant="outline" size="sm" onClick={expandAll} className="rounded-md">
             <ChevronDown className="size-3.5" /> ขยาย
           </Button>
-          <Button variant="ghost" size="sm" onClick={collapseAll} className="rounded-[10px]">
+          <Button variant="ghost" size="sm" onClick={collapseAll} className="rounded-md">
             <ChevronRight className="size-3.5" /> ย่อ
           </Button>
         </div>
@@ -752,14 +752,14 @@ export default function ProductModerationQueue() {
           </span>
           <h3 className="mt-5 text-lg font-semibold text-slate-900">เกิดข้อผิดพลาด</h3>
           <p className="mt-1.5 max-w-sm text-sm text-slate-500">{error}</p>
-          <Button variant="outline" size="sm" onClick={() => void loadProducts()} className="mt-4 rounded-[10px]">
+          <Button variant="outline" size="sm" onClick={() => void loadProducts()} className="mt-4 rounded-md">
             ลองใหม่
           </Button>
         </div>
       ) : shopGroups.length === 0 ? (
         <div className="flex flex-col items-center rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center">
           <span className="flex size-14 items-center justify-center rounded-2xl bg-[#ECFDF5]">
-            <Package className="size-7 text-[#10B981]" />
+            <Package className="size-7 text-brand" />
           </span>
           <h3 className="mt-5 text-lg font-semibold text-slate-900">ไม่มีสินค้า</h3>
           <p className="mt-1.5 max-w-sm text-sm leading-6 text-slate-500">
@@ -776,7 +776,7 @@ export default function ProductModerationQueue() {
                 className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-slate-50"
               >
                 <div className="flex min-w-0 items-center gap-3">
-                  <Store className="size-4 shrink-0 text-[#10B981]" />
+                  <Store className="size-4 shrink-0 text-brand" />
                   <div className="min-w-0">
                     <p className="flex items-center gap-1.5 text-sm font-semibold text-slate-900">
                       <span className="truncate">{group.shopName}</span>
@@ -786,7 +786,7 @@ export default function ProductModerationQueue() {
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                  <Badge className="rounded-full bg-amber-100 text-[11px] text-amber-700 ring-1 ring-inset ring-amber-600/15">
+                  <Badge className="rounded-full bg-amber-100 text-2xs text-amber-700 ring-1 ring-inset ring-amber-600/15">
                     {group.products.length} สินค้า
                   </Badge>
                   {expandedShops.has(group.shopId) ? <ChevronDown className="size-4 text-slate-400" /> : <ChevronRight className="size-4 text-slate-400" />}
@@ -838,7 +838,7 @@ export default function ProductModerationQueue() {
               <Button
                 variant="outline"
                 size="sm"
-                className="rounded-[10px] text-xs"
+                className="rounded-md text-xs"
                 disabled={page <= 1 || loading}
                 onClick={() => setPage((p) => Math.max(p - 1, 1))}
               >
@@ -847,7 +847,7 @@ export default function ProductModerationQueue() {
               <Button
                 variant="outline"
                 size="sm"
-                className="rounded-[10px] text-xs"
+                className="rounded-md text-xs"
                 disabled={!pagination?.hasMore || loading}
                 onClick={() => setPage((p) => p + 1)}
               >
@@ -876,7 +876,7 @@ export default function ProductModerationQueue() {
             <div className="flex min-w-0 items-start gap-3">
               <div className="min-w-0 flex-1">
                 <div className="flex min-w-0 items-center gap-2">
-                  <Package className="size-4 shrink-0 text-[#10B981]" />
+                  <Package className="size-4 shrink-0 text-brand" />
                   <DialogTitle className="min-w-0 flex-1 truncate text-base">
                     {detailProduct?.product.name ?? "ตรวจสอบสินค้า"}
                   </DialogTitle>
@@ -914,7 +914,7 @@ export default function ProductModerationQueue() {
                   <Button
                     variant="outline"
                     size="sm"
-                    className="rounded-[10px]"
+                    className="rounded-md"
                     onClick={() => void loadDetail(detailProductId)}
                   >
                     ลองใหม่
@@ -1045,24 +1045,24 @@ export default function ProductModerationQueue() {
           {/* Pinned action bar — approve/reject stay reachable on every screen */}
           <DialogFooter className="shrink-0 flex-col gap-2 border-t border-slate-100 bg-white px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:flex-row sm:items-center sm:justify-end sm:px-6 sm:py-3">
             {!isPending || !detailProduct ? (
-              <Button variant="outline" className="w-full rounded-[10px] sm:w-auto" onClick={() => setDetailOpen(false)}>
+              <Button variant="outline" className="w-full rounded-md sm:w-auto" onClick={() => setDetailOpen(false)}>
                 ปิด
               </Button>
             ) : moderationChoice === null ? (
               <>
-                <Button variant="ghost" className="w-full rounded-[10px] sm:w-auto" onClick={() => setDetailOpen(false)} disabled={acting}>
+                <Button variant="ghost" className="w-full rounded-md sm:w-auto" onClick={() => setDetailOpen(false)} disabled={acting}>
                   ปิด
                 </Button>
                 <Button
                   variant="outline"
-                  className="w-full gap-1.5 rounded-[10px] border-rose-200 text-rose-600 hover:bg-rose-50 sm:w-auto"
+                  className="w-full gap-1.5 rounded-md border-rose-200 text-rose-600 hover:bg-rose-50 sm:w-auto"
                   onClick={() => setModerationChoice("reject")}
                   disabled={acting}
                 >
                   <X className="size-4" /> ปฏิเสธ
                 </Button>
                 <Button
-                  className="w-full gap-1.5 rounded-[10px] bg-emerald-600 text-white hover:bg-emerald-700 sm:w-auto"
+                  className="w-full gap-1.5 rounded-md bg-emerald-600 text-white hover:bg-emerald-700 sm:w-auto"
                   onClick={() => setModerationChoice("approve")}
                   disabled={acting}
                 >
@@ -1072,11 +1072,11 @@ export default function ProductModerationQueue() {
             ) : moderationChoice === "approve" ? (
               <>
                 <p className="flex-1 text-xs text-slate-500 sm:text-left">ยืนยันการอนุมัติสินค้านี้?</p>
-                <Button variant="outline" className="rounded-[10px]" onClick={() => setModerationChoice(null)} disabled={acting}>
+                <Button variant="outline" className="rounded-md" onClick={() => setModerationChoice(null)} disabled={acting}>
                   ยกเลิก
                 </Button>
                 <Button
-                  className="gap-1.5 rounded-[10px] bg-emerald-600 text-white hover:bg-emerald-700"
+                  className="gap-1.5 rounded-md bg-emerald-600 text-white hover:bg-emerald-700"
                   onClick={() => void handleModeration()}
                   disabled={acting}
                 >
@@ -1091,19 +1091,19 @@ export default function ProductModerationQueue() {
                   value={rejectReason}
                   onChange={(e) => setRejectReason(e.target.value)}
                   placeholder="กรุณาระบุเหตุผลที่ปฏิเสธสินค้า..."
-                  className="rounded-[10px] border-slate-200 bg-white text-sm"
+                  className="rounded-md border-slate-200 bg-white text-sm"
                 />
                 <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
                   <Button
                     variant="outline"
-                    className="rounded-[10px]"
+                    className="rounded-md"
                     onClick={() => { setModerationChoice(null); setRejectReason(""); }}
                     disabled={acting}
                   >
                     ยกเลิก
                   </Button>
                   <Button
-                    className="gap-1.5 rounded-[10px] bg-rose-600 text-white hover:bg-rose-700"
+                    className="gap-1.5 rounded-md bg-rose-600 text-white hover:bg-rose-700"
                     onClick={() => void handleModeration()}
                     disabled={acting || !rejectReason.trim()}
                   >

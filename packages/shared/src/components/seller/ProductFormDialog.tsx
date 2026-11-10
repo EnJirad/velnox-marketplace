@@ -279,11 +279,11 @@ function VariantManager({ productId, price }: { productId: string; price: number
   if (variants.length === 0 && !loading) {
     return (
       <div className="mt-3 border-t border-slate-200 pt-3">
-        <Button type="button" variant="outline" className="w-full gap-1.5 border-dashed border-[#10B981] text-sm text-[#10B981] hover:bg-[#ECFDF5]" onClick={handleGenerate} disabled={generating}>
+        <Button type="button" variant="outline" className="w-full gap-1.5 border-dashed border-brand text-sm text-brand hover:bg-[#ECFDF5]" onClick={handleGenerate} disabled={generating}>
           {generating ? <Loader2 className="size-4 animate-spin" /> : <ListOrdered className="size-4" />}
           {t("productForm.variants.generateCta")}
         </Button>
-        <p className="mt-1 text-[11px] text-slate-400">{t("productForm.variants.generateDesc")}</p>
+        <p className="mt-1 text-2xs text-slate-400">{t("productForm.variants.generateDesc")}</p>
       </div>
     );
   }
@@ -292,7 +292,7 @@ function VariantManager({ productId, price }: { productId: string; price: number
     <div className="mt-3 border-t border-slate-200 pt-3">
       <div className="flex items-center justify-between">
         <p className="text-xs font-semibold text-slate-700">{t("productForm.variants.countLabel", { count: variants.length })}</p>
-        <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 text-xs text-[#10B981]" onClick={handleGenerate} disabled={generating}>
+        <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 text-xs text-brand" onClick={handleGenerate} disabled={generating}>
           {generating ? <Loader2 className="size-3 animate-spin" /> : <Plus className="size-3" />}
           {t("productForm.variants.regenerate")}
         </Button>
@@ -354,21 +354,21 @@ function VariantManager({ productId, price }: { productId: string; price: number
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
                     <span className="min-w-0 flex-1 truncate font-medium text-slate-900">{v.name}</span>
-                    {v.discountPercent != null && v.discountPercent > 0 && <span className="shrink-0 rounded bg-red-50 px-1 py-0.5 text-[11px] font-semibold text-red-600">-{Math.round(v.discountPercent)}%</span>}
-                    <Badge className={`shrink-0 text-[11px] ${v.status === "active" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>{v.status}</Badge>
-                    <button type="button" className={`shrink-0 text-[11px] px-1.5 py-0.5 rounded ${featuredVariantId === v.id ? "bg-amber-100 text-amber-700 font-semibold" : "text-slate-400 hover:text-amber-600"}`} onClick={() => handleSetFeatured(v.id)} title={t("productForm.variants.featuredTitle")}>
+                    {v.discountPercent != null && v.discountPercent > 0 && <span className="shrink-0 rounded bg-red-50 px-1 py-0.5 text-2xs font-semibold text-red-600">-{Math.round(v.discountPercent)}%</span>}
+                    <Badge className={`shrink-0 text-2xs ${v.status === "active" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>{v.status}</Badge>
+                    <button type="button" className={`shrink-0 text-2xs px-1.5 py-0.5 rounded ${featuredVariantId === v.id ? "bg-amber-100 text-amber-700 font-semibold" : "text-slate-400 hover:text-amber-600"}`} onClick={() => handleSetFeatured(v.id)} title={t("productForm.variants.featuredTitle")}>
                       {featuredVariantId === v.id ? "★" : "☆"}
                     </button>
                   </div>
                   <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
                     <span className="tabular-nums font-semibold text-slate-900">฿{(() => { const full = v.compareAtPrice || v.price || 0; const disc = v.discountPercent || 0; return Math.max(0, Math.round(full * (1 - disc / 100) * 100) / 100).toLocaleString(); })()}</span>
-                    {v.compareAtPrice && v.compareAtPrice > v.price && <span className="text-[11px] text-slate-400 line-through">฿{v.compareAtPrice.toLocaleString()}</span>}
+                    {v.compareAtPrice && v.compareAtPrice > v.price && <span className="text-2xs text-slate-400 line-through">฿{v.compareAtPrice.toLocaleString()}</span>}
                     <span className={`tabular-nums ${v.stock <= 0 ? "text-red-500" : v.stock <= 5 ? "text-amber-600" : "text-slate-600"}`}>{t("productForm.variants.stockUnit", { count: v.stock })}</span>
-                    {v.sku && <span className="font-mono text-[11px] text-slate-400">{v.sku}</span>}
+                    {v.sku && <span className="font-mono text-2xs text-slate-400">{v.sku}</span>}
                   </div>
                   <div className="mt-1 flex items-center gap-1">
-                    <Button type="button" variant="ghost" size="sm" className="h-6 gap-1 px-1.5 text-[11px] text-slate-500 hover:text-slate-700" onClick={() => startEdit(v)}><Pencil className="size-3" />{t("productForm.variants.edit")}</Button>
-                    <Button type="button" variant="ghost" size="sm" className="h-6 gap-1 px-1.5 text-[11px] text-slate-500 hover:text-red-600" onClick={() => handleDelete(v.id)}><Trash2 className="size-3" />{t("productForm.variants.delete")}</Button>
+                    <Button type="button" variant="ghost" size="sm" className="h-6 gap-1 px-1.5 text-2xs text-slate-500 hover:text-slate-700" onClick={() => startEdit(v)}><Pencil className="size-3" />{t("productForm.variants.edit")}</Button>
+                    <Button type="button" variant="ghost" size="sm" className="h-6 gap-1 px-1.5 text-2xs text-slate-500 hover:text-red-600" onClick={() => handleDelete(v.id)}><Trash2 className="size-3" />{t("productForm.variants.delete")}</Button>
                   </div>
                 </div>
               </div>
@@ -994,7 +994,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
                   onClick={() => setPickerOpen(true)}
                   disabled={categoriesLoading || categoriesError}
                   title={selectedCategoryName ?? undefined}
-                  className="flex h-10 w-full min-w-0 items-center gap-2 overflow-hidden rounded-xl border border-slate-200 bg-white px-3 text-left text-sm transition-colors hover:border-[#10B981] disabled:opacity-50"
+                  className="flex h-10 w-full min-w-0 items-center gap-2 overflow-hidden rounded-xl border border-slate-200 bg-white px-3 text-left text-sm transition-colors hover:border-brand disabled:opacity-50"
                 >
                   {categoriesLoading ? (
                     <span className="min-w-0 flex-1 truncate text-slate-400">{t("productForm.loadingCategories")}</span>
@@ -1008,7 +1008,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
                   <ChevronDown className="size-4 shrink-0 text-slate-400" />
                 </button>
                 {categoriesError && (
-                  <p className="text-[11px] text-red-600">
+                  <p className="text-2xs text-red-600">
                     {t("productForm.categoriesFailed")}{" "}
                     <button type="button" className="underline" onClick={() => void loadCategories()}>{t("productForm.retry")}</button>
                   </p>
@@ -1031,7 +1031,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
         {/* ═══ Section 3: Option Groups ══════════════════════════════ */}
         <div className="rounded-xl border border-slate-200 bg-white p-4">
           <div className="flex items-center gap-2">
-            <ListOrdered className="size-4 text-[#10B981]" />
+            <ListOrdered className="size-4 text-brand" />
             <h3 className="text-sm font-semibold text-slate-900">{t("productForm.optionsSection")}</h3>
           </div>
           <p className="mt-1 text-xs text-slate-500">{t("productForm.optionsDesc")}</p>
@@ -1039,7 +1039,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
           {variantCount > 100 && (
             <div className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-3">
               <p className="text-xs font-semibold text-red-700">{t("productForm.variantLimitWarn", { count: variantCount.toLocaleString() })}</p>
-              <p className="mt-1 text-[11px] text-red-500">{t("productForm.variantLimitHint")}</p>
+              <p className="mt-1 text-2xs text-red-500">{t("productForm.variantLimitHint")}</p>
             </div>
           )}
 
@@ -1049,8 +1049,8 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
                 <div className="flex items-center gap-2">
                   <Input value={group.name} onChange={(e) => updateGroupName(gi, e.target.value)} placeholder={t("productForm.groupNamePlaceholder")} className="h-8 text-sm" />
                   <div className="flex shrink-0 items-center overflow-hidden rounded-lg border border-slate-200 bg-white">
-                    <button type="button" className={`px-2.5 py-1 text-[11px] font-medium transition-colors ${group.displayType === "text" ? "bg-[#10B981] text-white" : "text-slate-500 hover:text-slate-700"}`} onClick={() => updateGroupDisplayType(gi, "text")}>{t("productForm.displayText")}</button>
-                    <button type="button" className={`px-2.5 py-1 text-[11px] font-medium transition-colors ${group.displayType === "image" ? "bg-[#10B981] text-white" : "text-slate-500 hover:text-slate-700"}`} onClick={() => updateGroupDisplayType(gi, "image")}>{t("productForm.displayImage")}</button>
+                    <button type="button" className={`px-2.5 py-1 text-2xs font-medium transition-colors ${group.displayType === "text" ? "bg-brand text-white" : "text-slate-500 hover:text-slate-700"}`} onClick={() => updateGroupDisplayType(gi, "text")}>{t("productForm.displayText")}</button>
+                    <button type="button" className={`px-2.5 py-1 text-2xs font-medium transition-colors ${group.displayType === "image" ? "bg-brand text-white" : "text-slate-500 hover:text-slate-700"}`} onClick={() => updateGroupDisplayType(gi, "image")}>{t("productForm.displayImage")}</button>
                   </div>
                   <Button type="button" variant="ghost" size="icon" className="size-8 shrink-0 text-red-400 hover:text-red-600" onClick={() => removeOptionGroup(gi)} aria-label={t("productForm.removeGroupAria")}><X className="size-4" /></Button>
                 </div>
@@ -1066,7 +1066,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
                         <>
                           {/* IMAGE group — image column on the left, details on the right */}
                           <div className="relative size-11 shrink-0">
-                            <label className="flex size-full cursor-pointer items-center justify-center overflow-hidden rounded-lg border border-dashed border-slate-300 bg-white text-slate-400 hover:border-[#10B981] hover:text-[#10B981]">
+                            <label className="flex size-full cursor-pointer items-center justify-center overflow-hidden rounded-lg border border-dashed border-slate-300 bg-white text-slate-400 hover:border-brand hover:text-brand">
                               {val.imageUrl ? (
                                 <img src={val.imageUrl} alt="" className="size-full object-cover" />
                               ) : (
@@ -1091,14 +1091,14 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
                     </div>
                   ))}
                   <div className="flex items-center gap-1.5">
-                    <Button type="button" variant="ghost" size="sm" className="h-6 gap-1 text-[11px] text-slate-500 hover:text-slate-700" onClick={() => {
+                    <Button type="button" variant="ghost" size="sm" className="h-6 gap-1 text-2xs text-slate-500 hover:text-slate-700" onClick={() => {
                       setOptionGroups((prev) => prev.map((g, i) => i === gi ? { ...g, values: g.values.map((v) => ({ ...v, isEnabled: true })) } : g));
                     }}>{t("productForm.selectAll")}</Button>
-                    <Button type="button" variant="ghost" size="sm" className="h-6 gap-1 text-[11px] text-slate-500 hover:text-slate-700" onClick={() => {
+                    <Button type="button" variant="ghost" size="sm" className="h-6 gap-1 text-2xs text-slate-500 hover:text-slate-700" onClick={() => {
                       setOptionGroups((prev) => prev.map((g, i) => i === gi ? { ...g, values: g.values.map((v) => ({ ...v, isEnabled: false })) } : g));
                     }}>{t("productForm.clearAll")}</Button>
                     <div className="flex-1" />
-                    <Button type="button" variant="ghost" size="sm" className="h-6 gap-1 text-xs text-[#10B981]" onClick={() => addOptionValue(gi)}><Plus className="size-3" />{t("productForm.addValue")}</Button>
+                    <Button type="button" variant="ghost" size="sm" className="h-6 gap-1 text-xs text-brand" onClick={() => addOptionValue(gi)}><Plus className="size-3" />{t("productForm.addValue")}</Button>
                   </div>
                 </div>
               </div>
@@ -1115,7 +1115,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
         {!isEdit && draftVariants.length > 0 && (
           <div className="rounded-xl border border-slate-200 bg-white p-4">
             <div className="flex items-center gap-2">
-              <RefreshCw className="size-4 text-[#10B981]" />
+              <RefreshCw className="size-4 text-brand" />
               <h3 className="text-sm font-semibold text-slate-900">Variants ({draftVariants.length})</h3>
             </div>
             <p className="mt-1 text-xs text-slate-500">{t("productForm.variantDesc")}</p>
@@ -1125,29 +1125,29 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
                 <div key={v.key} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                   <div className="flex items-center gap-2">
                     <p className="text-xs font-semibold text-slate-900">{v.name}</p>
-                    {Number(v.stock) <= 0 && <Badge className="text-[11px] bg-red-50 text-red-600">{t("productForm.outOfStock")}</Badge>}
+                    {Number(v.stock) <= 0 && <Badge className="text-2xs bg-red-50 text-red-600">{t("productForm.outOfStock")}</Badge>}
                   </div>
                   <div className="mt-2 grid grid-cols-3 gap-2">
                     <div className="grid gap-1">
-                      <Label className="text-[11px]">{t("productForm.fullPriceLabel")}</Label>
+                      <Label className="text-2xs">{t("productForm.fullPriceLabel")}</Label>
                       <Input type="number" min="0" step="0.5" value={v.compareAtPrice || v.price} onChange={(e) => setDraftVariants((prev) => prev.map((pv) => pv.key === v.key ? { ...pv, compareAtPrice: e.target.value } : pv))} className="h-7 text-xs" />
                     </div>
                     <div className="grid gap-1">
-                      <Label className="text-[11px]">{t("productForm.discountLabel")}</Label>
+                      <Label className="text-2xs">{t("productForm.discountLabel")}</Label>
                       <Input type="number" min="0" max="100" value={v.discountPercent} onChange={(e) => setDraftVariants((prev) => prev.map((pv) => pv.key === v.key ? { ...pv, discountPercent: e.target.value } : pv))} className="h-7 text-xs" placeholder="0" />
                     </div>
                     <div className="grid gap-1">
-                      <Label className="text-[11px]">{t("productForm.stockLabel")}</Label>
+                      <Label className="text-2xs">{t("productForm.stockLabel")}</Label>
                       <Input type="number" min="0" value={v.stock} onChange={(e) => setDraftVariants((prev) => prev.map((pv) => pv.key === v.key ? { ...pv, stock: e.target.value } : pv))} className="h-7 text-xs" />
                     </div>
                   </div>
                   <div className="mt-1 flex items-center gap-2">
-                    <span className="text-[11px] text-slate-500">{t("productForm.finalPrice")}</span>
-                    <span className="text-xs font-bold text-[#10B981]">฿{(() => { const full = Number(v.compareAtPrice) || 0; const disc = Number(v.discountPercent) || 0; return Math.max(0, Math.round(full * (1 - disc / 100) * 100) / 100).toLocaleString(); })()}</span>
-                    {Number(v.discountPercent) > 0 && <span className="rounded bg-red-50 px-1 py-0.5 text-[11px] font-semibold text-red-600">-{Math.round(Number(v.discountPercent))}%</span>}
+                    <span className="text-2xs text-slate-500">{t("productForm.finalPrice")}</span>
+                    <span className="text-xs font-bold text-brand">฿{(() => { const full = Number(v.compareAtPrice) || 0; const disc = Number(v.discountPercent) || 0; return Math.max(0, Math.round(full * (1 - disc / 100) * 100) / 100).toLocaleString(); })()}</span>
+                    {Number(v.discountPercent) > 0 && <span className="rounded bg-red-50 px-1 py-0.5 text-2xs font-semibold text-red-600">-{Math.round(Number(v.discountPercent))}%</span>}
                   </div>
                   {draftVariants.length > 1 && (
-                    <button type="button" className="mt-1.5 text-[11px] text-blue-500 hover:text-blue-700" onClick={() => {
+                    <button type="button" className="mt-1.5 text-2xs text-blue-500 hover:text-blue-700" onClick={() => {
                       const first = draftVariants[0];
                       if (first) setDraftVariants((prev) => prev.map((pv) => pv.key === v.key ? pv : { ...pv, compareAtPrice: first.compareAtPrice, discountPercent: first.discountPercent }));
                     }}>{t("productForm.copyFromFirst")}</button>
@@ -1156,20 +1156,20 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
                     <input
                       type="radio"
                       name="featuredVariant"
-                      className="accent-[#10B981] size-3.5"
+                      className="accent-brand size-3.5"
                       checked={featuredVariantKey === v.key}
                       onChange={() => setFeaturedVariantKey(v.key)}
                     />
-                    <span className="text-[11px] text-slate-600">{t("productForm.featuredBadge")}</span>
+                    <span className="text-2xs text-slate-600">{t("productForm.featuredBadge")}</span>
                   </label>
                   <div className="mt-2 grid grid-cols-4 gap-2">
                     <div className="grid gap-1">
-                      <Label className="text-[11px]">SKU</Label>
+                      <Label className="text-2xs">SKU</Label>
                       <Input value={v.sku} onChange={(e) => setDraftVariants((prev) => prev.map((pv) => pv.key === v.key ? { ...pv, sku: e.target.value } : pv))} className="h-7 text-xs" placeholder={t("productForm.skuPlaceholder")} />
                     </div>
                     <div className="col-span-3 grid gap-1">
-                      <Label className="text-[11px]">{t("productForm.valueImageLabel")}</Label>
-                      <p className="text-[11px] text-slate-400">{t("productForm.valueImageHint")}</p>
+                      <Label className="text-2xs">{t("productForm.valueImageLabel")}</Label>
+                      <p className="text-2xs text-slate-400">{t("productForm.valueImageHint")}</p>
                     </div>
                   </div>
                 </div>
@@ -1204,7 +1204,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
               </div>
             ))}
             {galleryImages.length < 10 && (
-              <label className="flex size-20 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50 text-slate-400 hover:border-[#10B981] hover:text-[#10B981]">
+              <label className="flex size-20 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50 text-slate-400 hover:border-brand hover:text-brand">
                 <input type="file" accept="image/jpeg,image/png,image/webp,image/avif" multiple className="hidden" onChange={(e) => { if (e.target.files) handleGalleryUpload(e.target.files); e.target.value = ""; }} />
                 {uploadingGallery ? <Loader2 className="size-5 animate-spin" /> : <ImagePlus className="size-5" />}
               </label>
@@ -1238,7 +1238,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
               </div>
             ))}
             {detailImages.length < 10 && (
-              <label className="flex size-20 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50 text-slate-400 hover:border-[#10B981] hover:text-[#10B981]">
+              <label className="flex size-20 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50 text-slate-400 hover:border-brand hover:text-brand">
                 <input type="file" accept="image/jpeg,image/png,image/webp,image/avif" multiple className="hidden" onChange={(e) => { if (e.target.files) handleDetailUpload(e.target.files); e.target.value = ""; }} />
                 {uploadingDetail ? <Loader2 className="size-5 animate-spin" /> : <ImagePlus className="size-5" />}
               </label>
@@ -1275,8 +1275,8 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
         )}
 
         {/* ═══ Section 10: Submit ════════════════════════════════════ */}
-        <div className="flex items-center gap-2 rounded-[10px] border border-slate-200 px-3 py-2.5">
-          <Store className="size-4 shrink-0 text-[#10B981]" />
+        <div className="flex items-center gap-2 rounded-md border border-slate-200 px-3 py-2.5">
+          <Store className="size-4 shrink-0 text-brand" />
           <div className="flex-1">
             <p className="text-sm font-medium text-slate-900">
               {isEdit ? t("productForm.submitEdit") : t("productForm.submitCreate")}

@@ -16,5 +16,5 @@ export const ACTION_BUTTON_CLASSES: Record<ProductAction, string> = {
   /** Buy Now — dark / primary */
   buy: "bg-slate-900 text-white hover:bg-slate-800",
   /** Add to Cart — Velnox green */
-  cart: "bg-[#10B981] text-white hover:bg-emerald-600",
+  cart: "bg-brand text-white hover:bg-emerald-600",
 };

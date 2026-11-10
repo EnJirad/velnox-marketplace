@@ -75,7 +75,7 @@ export function MobileTabBar({
               className={cn(
                 "relative flex min-w-0 flex-1 flex-col items-center justify-center gap-1 py-1.5 transition-colors",
                 active
-                  ? "text-[#10B981]"
+                  ? "text-brand"
                   : "text-slate-400 hover:text-slate-600 active:text-slate-500",
               )}
             >
@@ -87,14 +87,14 @@ export function MobileTabBar({
               >
                 <Icon className="size-[22px]" strokeWidth={active ? 2.4 : 2} />
                 {item.badge != null && item.badge > 0 && (
-                  <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#10B981] px-1 text-[11px] font-bold leading-none text-white">
+                  <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-brand px-1 text-2xs font-bold leading-none text-white">
                     {item.badge > 99 ? "99+" : item.badge}
                   </span>
                 )}
               </span>
               <span
                 className={cn(
-                  "text-[11px] leading-none",
+                  "text-2xs leading-none",
                   active ? "font-semibold" : "font-medium",
                 )}
               >

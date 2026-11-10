@@ -80,7 +80,7 @@ export function ProductCard({ product, onOpen: _onOpen, onAdd: _onAdd, badgeLabe
             keeps just two items. */}
         {displayDiscountPercent != null && displayDiscountPercent > 0 && (
           <span
-            className={`absolute left-1.5 top-1.5 rounded-md bg-red-600/95 px-1.5 py-0.5 font-semibold tabular-nums text-white backdrop-blur-sm ${compact ? "text-[11px]" : "text-[11px]"}`}
+            className={`absolute left-1.5 top-1.5 rounded-md bg-red-600/95 px-1.5 py-0.5 font-semibold tabular-nums text-white backdrop-blur-sm ${compact ? "text-2xs" : "text-2xs"}`}
           >
             -{Math.round(displayDiscountPercent)}%
           </span>
@@ -107,7 +107,7 @@ export function ProductCard({ product, onOpen: _onOpen, onAdd: _onAdd, badgeLabe
         {/* Product name (navigates to Product Detail) */}
         <Link
           to={detailUrl}
-          className={`line-clamp-2 min-w-0 flex-1 font-medium leading-snug text-slate-900 hover:text-[#10B981] ${compact ? "text-[12px]" : "text-sm font-semibold leading-5"}`}
+          className={`line-clamp-2 min-w-0 flex-1 font-medium leading-snug text-slate-900 hover:text-brand ${compact ? "text-[12px]" : "text-sm font-semibold leading-5"}`}
         >
           {product.name}
         </Link>
@@ -118,13 +118,13 @@ export function ProductCard({ product, onOpen: _onOpen, onAdd: _onAdd, badgeLabe
             {formatBaht(displayPrice)}
           </p>
           {displayCompareAtPrice && displayCompareAtPrice > displayPrice && (
-            <span className={`tabular-nums text-slate-400 line-through ${compact ? "text-[11px]" : "text-[11px] sm:text-xs"}`}>{formatBaht(displayCompareAtPrice)}</span>
+            <span className={`tabular-nums text-slate-400 line-through ${compact ? "text-2xs" : "text-2xs sm:text-xs"}`}>{formatBaht(displayCompareAtPrice)}</span>
           )}
         </div>
 
         {/* Rating + Sold */}
         {(hasReviews || sold > 0) && (
-          <p className={`flex flex-wrap items-center gap-x-1 text-[11px] leading-4 text-slate-400 ${compact ? "mt-0.5" : "mt-1"}`}>
+          <p className={`flex flex-wrap items-center gap-x-1 text-2xs leading-4 text-slate-400 ${compact ? "mt-0.5" : "mt-1"}`}>
             {hasReviews && (
               <span className="inline-flex items-center gap-0.5 text-slate-700">
                 <Star className="fill-amber-400 text-amber-400" style={{ width: compact ? 9 : 11, height: compact ? 9 : 11 }} />
@@ -144,7 +144,7 @@ export function ProductCard({ product, onOpen: _onOpen, onAdd: _onAdd, badgeLabe
             every card: dead controls that looked interactive. Nothing likes, saves
             or shares server-side yet, so nothing here pretends to be clickable. */}
         {!compact && (likeCount > 0 || saveCount > 0 || shareCount > 0) && (
-          <div className="mt-2 flex items-center gap-1.5 border-t border-slate-100 pt-2 text-[11px] text-slate-400">
+          <div className="mt-2 flex items-center gap-1.5 border-t border-slate-100 pt-2 text-2xs text-slate-400">
             {likeCount > 0 && (
               <span className="flex items-center gap-1 px-1 py-1" title={t("product.like")}>
                 <Heart className="size-3.5" />
@@ -168,7 +168,7 @@ export function ProductCard({ product, onOpen: _onOpen, onAdd: _onAdd, badgeLabe
 
         {/* Stock warning (non-compact only, when no reviews/sold) */}
         {!compact && !hasReviews && sold === 0 && (
-          <p className={`mt-0.5 text-[11px] ${outOfStock ? "font-medium text-red-500" : available <= 5 ? "font-medium text-amber-600" : "text-slate-400"}`}>
+          <p className={`mt-0.5 text-2xs ${outOfStock ? "font-medium text-red-500" : available <= 5 ? "font-medium text-amber-600" : "text-slate-400"}`}>
             {outOfStock ? t("product.outOfStock") : available <= 5 ? t("product.lowStock", { count: available, unit: product.unit }) : t("product.inStockShort")}
           </p>
         )}

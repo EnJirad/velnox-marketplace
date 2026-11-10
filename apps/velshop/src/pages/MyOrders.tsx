@@ -297,7 +297,7 @@ export default function MyOrders() {
       <main className="mx-auto w-full max-w-4xl px-4 py-8 sm:px-6 sm:py-10">
         <div>
           <p className="flex items-center gap-1.5 text-sm font-medium text-slate-400">
-            <ShoppingBag className="size-4 text-[#10B981]" />
+            <ShoppingBag className="size-4 text-brand" />
             {t("orders.eyebrow")}
           </p>
           <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
@@ -318,7 +318,7 @@ export default function MyOrders() {
               <button
                 type="button"
                 onClick={retry}
-                className="ml-auto rounded-[10px] border border-amber-300 px-3 py-1.5 text-xs font-semibold text-amber-800 transition-colors hover:bg-amber-100"
+                className="ml-auto rounded-md border border-amber-300 px-3 py-1.5 text-xs font-semibold text-amber-800 transition-colors hover:bg-amber-100"
               >
                 {t("common.retry")}
               </button>
@@ -346,7 +346,7 @@ export default function MyOrders() {
           ) : orders.length === 0 ? (
             <div className="mt-8 flex flex-col items-center rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center">
               <span className="flex size-14 items-center justify-center rounded-2xl bg-[#ECFDF5]">
-                <PackageSearch className="size-7 text-[#10B981]" />
+                <PackageSearch className="size-7 text-brand" />
               </span>
               <h2 className="mt-5 text-lg font-semibold text-slate-900">{t("orders.emptyTitle")}</h2>
               <p className="mt-1.5 max-w-sm text-sm leading-6 text-slate-500">{t("orders.emptyDesc")}</p>
@@ -362,7 +362,7 @@ export default function MyOrders() {
               {purchases.map((purchase) => (
               <div key={purchase.key} className="space-y-3">
               {purchase.orders.length > 1 && (
-                <div className="rounded-lg border border-[#10B981]/30 bg-[#ECFDF5]/60 px-3 py-2">
+                <div className="rounded-lg border border-brand/30 bg-[#ECFDF5]/60 px-3 py-2">
                   <p className="text-xs font-semibold uppercase tracking-wide text-[#047857]">
                     {t("orders.purchaseGroup")}
                   </p>
@@ -399,7 +399,7 @@ export default function MyOrders() {
                 return (
                   <div
                     key={order.id}
-                    className="rounded-xl border border-slate-200 bg-white transition-[transform,border-color,box-shadow,background-color] duration-200 hover:-translate-y-0.5 hover:border-[#10B981]/40 hover:shadow-float"
+                    className="rounded-xl border border-slate-200 bg-white transition-[transform,border-color,box-shadow,background-color] duration-200 hover:-translate-y-0.5 hover:border-brand/40 hover:shadow-float"
                   >
                     {/*
                       Header: the order number on the LEFT, the status badge TOP RIGHT
@@ -410,7 +410,7 @@ export default function MyOrders() {
                     */}
                     <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2 p-5 pb-4">
                       <Link to={`/orders/${order.id}`} className="group min-w-0 flex-1">
-                        <p className="truncate text-sm font-semibold text-slate-900 transition-colors group-hover:text-[#10B981]">
+                        <p className="truncate text-sm font-semibold text-slate-900 transition-colors group-hover:text-brand">
                           {t("orders.orderNo", { no: shortOrderNumber(order.orderNumber) })}
                         </p>
                         <p className="mt-0.5 text-xs text-slate-400">
@@ -466,7 +466,7 @@ export default function MyOrders() {
                             {productAvailable ? (
                               <Link
                                 to={`/products/${item.productId}`}
-                                className="flex min-w-0 items-center gap-2.5 transition-colors hover:text-[#10B981]"
+                                className="flex min-w-0 items-center gap-2.5 transition-colors hover:text-brand"
                               >
                                 {row}
                               </Link>
@@ -546,7 +546,7 @@ export default function MyOrders() {
                                 {t("orderReservation.expiredTitle")}
                               </p>
                               {order.status === "expired" && (
-                                <p className="mt-1 text-[11px] leading-4 text-slate-300">
+                                <p className="mt-1 text-2xs leading-4 text-slate-300">
                                   {t("orderReservation.expiredDesc")}
                                 </p>
                               )}

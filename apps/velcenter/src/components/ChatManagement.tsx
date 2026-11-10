@@ -607,7 +607,7 @@ export default function ChatManagement() {
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="flex items-center gap-1.5 text-sm font-medium text-slate-400">
-            <MessageCircle className="size-4 text-[#10B981]" />
+            <MessageCircle className="size-4 text-brand" />
             velcenter · แชทบริษัท
           </p>
           <h2 className="mt-1 text-xl font-bold tracking-tight text-slate-900">Chat</h2>
@@ -617,7 +617,7 @@ export default function ChatManagement() {
         </div>
       </div>
 
-      <div className="flex gap-1 rounded-[12px] border border-slate-200 bg-white p-1">
+      <div className="flex gap-1 rounded-lg border border-slate-200 bg-white p-1">
         {(Object.keys(TAB_META) as ChatTab[]).map((key) => {
           const meta = TAB_META[key];
           const unread = counts[meta.countKey];
@@ -627,7 +627,7 @@ export default function ChatManagement() {
               type="button"
               onClick={() => switchTab(key)}
               aria-pressed={tab === key}
-              className={`flex flex-1 items-center justify-center gap-1.5 rounded-[10px] px-3 py-2 text-sm font-semibold transition-colors ${
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-2 text-sm font-semibold transition-colors ${
                 tab === key ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-50"
               }`}
             >
@@ -636,8 +636,8 @@ export default function ChatManagement() {
               <span className="sm:hidden">{meta.short}</span>
               {unread > 0 && (
                 <span
-                  className={`flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[11px] font-bold ${
-                    tab === key ? "bg-white text-slate-900" : "bg-[#10B981] text-white"
+                  className={`flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-2xs font-bold ${
+                    tab === key ? "bg-white text-slate-900" : "bg-brand text-white"
                   }`}
                 >
                   {unread > 99 ? "99+" : unread}
@@ -691,7 +691,7 @@ export default function ChatManagement() {
               >
                 ยังไม่อ่าน
                 {counts[tabMeta.countKey] > 0 && (
-                  <span className="rounded-full bg-white/70 px-1.5 text-[11px] font-semibold">
+                  <span className="rounded-full bg-white/70 px-1.5 text-2xs font-semibold">
                     {counts[tabMeta.countKey]}
                   </span>
                 )}
@@ -800,7 +800,7 @@ export default function ChatManagement() {
                         </span>
                       )}
                       {c.unreadCount > 0 && (
-                        <span className="absolute -right-1 -top-1 flex size-4 min-w-4 items-center justify-center rounded-full bg-[#10B981] px-0.5 text-[11px] font-bold text-white">
+                        <span className="absolute -right-1 -top-1 flex size-4 min-w-4 items-center justify-center rounded-full bg-brand px-0.5 text-2xs font-bold text-white">
                           {c.unreadCount > 99 ? "99+" : c.unreadCount}
                         </span>
                       )}
@@ -808,14 +808,14 @@ export default function ChatManagement() {
                       {c.participantOnline === true && (
                         <span
                           aria-hidden="true"
-                          className="absolute -bottom-0.5 -right-0.5 size-3 rounded-full border-2 border-white bg-[#10B981]"
+                          className="absolute -bottom-0.5 -right-0.5 size-3 rounded-full border-2 border-white bg-brand"
                         />
                       )}
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center justify-between gap-2">
                         <span className="truncate text-sm font-semibold text-slate-900">{title}</span>
-                        <span className="shrink-0 text-[11px] text-slate-400">
+                        <span className="shrink-0 text-2xs text-slate-400">
                           {formatRelativeTime(c.lastMessageAt, lang, t)}
                         </span>
                       </span>
@@ -825,7 +825,7 @@ export default function ChatManagement() {
                       <span className="mt-1 flex items-center gap-1.5">
                         {tab === "support" && (
                           <span
-                            className={`rounded-full px-1.5 py-0.5 text-[11px] font-semibold ${
+                            className={`rounded-full px-1.5 py-0.5 text-2xs font-semibold ${
                               c.supportAudience === "seller"
                                 ? "bg-amber-50 text-amber-700"
                                 : "bg-sky-50 text-sky-700"
@@ -834,11 +834,11 @@ export default function ChatManagement() {
                             {c.supportAudience === "seller" ? "ผู้ขาย" : "ลูกค้า"}
                           </span>
                         )}
-                        <span className={`rounded-full px-1.5 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${status.className}`}>
+                        <span className={`rounded-full px-1.5 py-0.5 text-2xs font-semibold ring-1 ring-inset ${status.className}`}>
                           {status.label}
                         </span>
                         {c.assignedToName && (
-                          <span className="truncate text-[11px] text-slate-400">{c.assignedToName}</span>
+                          <span className="truncate text-2xs text-slate-400">{c.assignedToName}</span>
                         )}
                       </span>
                     </span>
@@ -874,7 +874,7 @@ export default function ChatManagement() {
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-semibold text-slate-900">{conversationTitle(active)}</p>
                     <p
-                      className={`truncate text-[11px] ${
+                      className={`truncate text-2xs ${
                         activeOnline === true ? "font-medium text-emerald-600" : "text-slate-400"
                       }`}
                     >
@@ -943,7 +943,7 @@ export default function ChatManagement() {
                     <span className="block truncate text-xs font-semibold text-slate-900">
                       {active.product.name ?? "สินค้า"}
                     </span>
-                    <span className="block text-[11px] text-slate-400">บริบทสินค้าของบทสนทนา</span>
+                    <span className="block text-2xs text-slate-400">บริบทสินค้าของบทสนทนา</span>
                   </span>
                 </div>
               )}
@@ -961,7 +961,7 @@ export default function ChatManagement() {
                         type="button"
                         onClick={() => void loadOlder()}
                         disabled={loadingMore}
-                        className="mx-auto flex items-center gap-1 text-xs font-medium text-[#10B981] transition-colors hover:text-[#059669] disabled:opacity-50"
+                        className="mx-auto flex items-center gap-1 text-xs font-medium text-brand transition-colors hover:text-[#059669] disabled:opacity-50"
                       >
                         {loadingMore && <Loader2 className="size-3 animate-spin" />}
                         โหลดข้อความก่อนหน้า

@@ -125,7 +125,7 @@ export function ShopMediaField({ shopId, kind, value, onChange }: ShopMediaField
     <div className="grid gap-2">
       <div className="flex items-center justify-between gap-2">
         <span className="text-sm font-medium text-slate-700">{label}</span>
-        <span className="text-[11px] text-slate-500">
+        <span className="text-2xs text-slate-500">
           {isCover ? t("sellerDash.shop.mediaCoverHint") : t("sellerDash.shop.mediaLogoHint")}
         </span>
       </div>
@@ -153,7 +153,7 @@ export function ShopMediaField({ shopId, kind, value, onChange }: ShopMediaField
 
         {busy && (
           <span className="absolute inset-0 flex items-center justify-center bg-white/70">
-            <Loader2 className="size-5 animate-spin text-[#10B981]" aria-hidden="true" />
+            <Loader2 className="size-5 animate-spin text-brand" aria-hidden="true" />
             <span className="sr-only">{t("sellerDash.shop.mediaUploading")}</span>
           </span>
         )}

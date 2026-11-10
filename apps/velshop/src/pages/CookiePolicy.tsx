@@ -32,7 +32,7 @@ export default function CookiePolicy() {
 
       <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-10 sm:px-6">
         <p className="flex items-center gap-1.5 text-sm font-medium text-slate-400">
-          <Cookie className="size-4 text-[#10B981]" />
+          <Cookie className="size-4 text-brand" />
           {t("cookies.settings")}
         </p>
         <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
@@ -50,7 +50,7 @@ export default function CookiePolicy() {
         </div>
 
         <div className="mt-8">
-          <Button className="gap-1.5 bg-[#10B981] text-white hover:bg-emerald-700" onClick={openSettings}>
+          <Button className="gap-1.5 bg-brand text-white hover:bg-emerald-700" onClick={openSettings}>
             <Settings2 className="size-4" />
             {t("cookies.settings")}
           </Button>

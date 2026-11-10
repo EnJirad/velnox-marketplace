@@ -45,6 +45,16 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
+  /* Brand accent as a real token.
+
+     The emerald brand colour was written as `text-[#10B981]` / `bg-[#10B981]`
+     etc. in 302 places, so changing it meant finding every literal. It now has
+     one name. Colour values are unchanged (#10B981). */
+  --color-brand: var(--brand);
+  /* 11px is used 295 times as `text-[11px]` because the type scale has no step
+     between text-xs (12px) and nothing. Declared WITHOUT a paired line-height
+     so the utility sets font-size only — exactly what `text-[11px]` did. */
+  --text-2xs: 0.6875rem;
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -78,6 +88,7 @@
   --border: #e2e8f0;
   --input: #e2e8f0;
   --ring: #10b981;
+  --brand: #10b981;
   --chart-1: #10b981;
   --chart-2: #0f172a;
   --chart-3: #f59e0b;

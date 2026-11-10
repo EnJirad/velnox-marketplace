@@ -152,7 +152,7 @@ export function AnnouncementCarousel({
       onBlur={() => setPaused(false)}
       tabIndex={count > 1 ? 0 : -1}
       className={cn(
-        "relative overflow-hidden rounded-2xl border border-[#10B981]/20 bg-[#ECFDF5] outline-none focus-visible:ring-2 focus-visible:ring-[#10B981]/60",
+        "relative overflow-hidden rounded-2xl border border-brand/20 bg-[#ECFDF5] outline-none focus-visible:ring-2 focus-visible:ring-brand/60",
         className,
       )}
     >
@@ -173,7 +173,7 @@ export function AnnouncementCarousel({
           const body = (
             <>
               {item.eyebrow && (
-                <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-[#059669] sm:text-[11px]">
+                <span className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wide text-[#059669] sm:text-2xs">
                   {item.eyebrow}
                 </span>
               )}
@@ -183,12 +183,12 @@ export function AnnouncementCarousel({
                 </span>
               )}
               {item.subtitle && (
-                <span className="mt-1 line-clamp-2 text-[11px] leading-4 text-slate-600 sm:text-xs sm:leading-5">
+                <span className="mt-1 line-clamp-2 text-2xs leading-4 text-slate-600 sm:text-xs sm:leading-5">
                   {item.subtitle}
                 </span>
               )}
               {item.href && hasText && (
-                <span className="mt-2 inline-flex w-fit items-center gap-1 text-[11px] font-semibold text-[#059669] sm:text-xs">
+                <span className="mt-2 inline-flex w-fit items-center gap-1 text-2xs font-semibold text-[#059669] sm:text-xs">
                   {item.ctaLabel || t("home.bannerCta")}
                   <ArrowRight className="size-3.5" />
                 </span>
@@ -211,14 +211,14 @@ export function AnnouncementCarousel({
                       <a
                         href={item.href}
                         rel="noopener noreferrer"
-                        className="flex flex-col rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-[#10B981]"
+                        className="flex flex-col rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-brand"
                       >
                         {body}
                       </a>
                     ) : (
                       <Link
                         to={item.href}
-                        className="flex flex-col rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-[#10B981]"
+                        className="flex flex-col rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-brand"
                       >
                         {body}
                       </Link>
@@ -252,7 +252,7 @@ export function AnnouncementCarousel({
                           href={item.href}
                           rel="noopener noreferrer"
                           aria-label={item.ctaLabel || t("home.bannerCta")}
-                          className="block size-full outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#10B981]"
+                          className="block size-full outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand"
                         >
                           <img
                             src={item.imageUrl}
@@ -266,7 +266,7 @@ export function AnnouncementCarousel({
                         <Link
                           to={item.href}
                           aria-label={item.ctaLabel || t("home.bannerCta")}
-                          className="block size-full outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#10B981]"
+                          className="block size-full outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand"
                         >
                           <img
                             src={item.imageUrl}
@@ -313,7 +313,7 @@ export function AnnouncementCarousel({
                 aria-current={i === index}
                 className={cn(
                   "pointer-events-auto h-1.5 rounded-full transition-[width,background-color] duration-300",
-                  i === index ? "w-5 bg-[#10B981]" : "w-1.5 bg-[#10B981]/30 hover:bg-[#10B981]/50",
+                  i === index ? "w-5 bg-brand" : "w-1.5 bg-brand/30 hover:bg-brand/50",
                 )}
               />
             ))}

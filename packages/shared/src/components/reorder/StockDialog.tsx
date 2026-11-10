@@ -81,7 +81,7 @@ export function StockDialog({ product, open, onOpenChange }: StockDialogProps) {
           </div>
 
           {valid && (
-            <p className="rounded-[10px] bg-slate-50 px-3 py-2.5 text-sm text-slate-600">
+            <p className="rounded-md bg-slate-50 px-3 py-2.5 text-sm text-slate-600">
               สต็อกจะเหลือ{" "}
               <span className="font-semibold text-slate-900">
                 {formatNumber(Math.max(0, (product.currentStock ?? 0) - qty))} {product.unit}

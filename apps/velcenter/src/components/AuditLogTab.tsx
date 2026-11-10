@@ -114,7 +114,7 @@ function formatWhen(ms: number): string {
 
 function ValueChip({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <span className="inline-flex min-w-0 items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px]">
+    <span className="inline-flex min-w-0 items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-2xs">
       <span className="text-slate-400">{label}</span>
       <span className="truncate font-medium text-slate-700">{value}</span>
     </span>
@@ -140,7 +140,7 @@ function ChangeSummary({ row }: { row: AuditRow }) {
           const to = renderValue((row.after ?? {})[key]);
           if (from === to) return <ValueChip key={key} label={key} value={to} />;
           return (
-            <span key={key} className="inline-flex min-w-0 items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px]">
+            <span key={key} className="inline-flex min-w-0 items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-2xs">
               <span className="text-slate-400">{key}</span>
               <span className="max-w-40 truncate text-slate-400 line-through">{from}</span>
               <span className="text-slate-300">→</span>
@@ -289,7 +289,7 @@ export default function AuditLogTab() {
         <CardHeader className="flex-col items-start gap-3 space-y-0 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
             <CardTitle className="flex items-center gap-2 text-base">
-              <History className="size-4 text-[#10B981]" />
+              <History className="size-4 text-brand" />
               Audit Logs
             </CardTitle>
             <p className="mt-1 text-xs leading-5 text-slate-400">
@@ -299,7 +299,7 @@ export default function AuditLogTab() {
           <Button
             variant="outline"
             size="sm"
-            className="shrink-0 gap-1.5 rounded-[10px] border-slate-200 text-slate-600"
+            className="shrink-0 gap-1.5 rounded-md border-slate-200 text-slate-600"
             onClick={() => void load(0)}
             disabled={loading}
           >
@@ -317,11 +317,11 @@ export default function AuditLogTab() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="ค้นหา action, ผู้ดำเนินการ, รายละเอียด..."
-                className="rounded-[10px] pl-9"
+                className="rounded-md pl-9"
               />
             </div>
             <Select value={actionFilter} onValueChange={setActionFilter}>
-              <SelectTrigger aria-label="กรองตาม action" className="h-10 w-full rounded-[10px] border-slate-200 bg-white text-sm">
+              <SelectTrigger aria-label="กรองตาม action" className="h-10 w-full rounded-md border-slate-200 bg-white text-sm">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -334,7 +334,7 @@ export default function AuditLogTab() {
               </SelectContent>
             </Select>
             <Select value={entityFilter} onValueChange={setEntityFilter}>
-              <SelectTrigger aria-label="กรองตามประเภทเป้าหมาย" className="h-10 w-full rounded-[10px] border-slate-200 bg-white text-sm">
+              <SelectTrigger aria-label="กรองตามประเภทเป้าหมาย" className="h-10 w-full rounded-md border-slate-200 bg-white text-sm">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -348,24 +348,24 @@ export default function AuditLogTab() {
             </Select>
             <div className="grid grid-cols-2 gap-2 lg:col-span-1">
               <div className="grid gap-1">
-                <Label htmlFor="audit-from" className="text-[11px] text-slate-400">จากวันที่</Label>
-                <Input id="audit-from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="h-10 rounded-[10px] text-xs" />
+                <Label htmlFor="audit-from" className="text-2xs text-slate-400">จากวันที่</Label>
+                <Input id="audit-from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="h-10 rounded-md text-xs" />
               </div>
               <div className="grid gap-1">
-                <Label htmlFor="audit-to" className="text-[11px] text-slate-400">ถึงวันที่</Label>
-                <Input id="audit-to" type="date" value={to} onChange={(e) => setTo(e.target.value)} className="h-10 rounded-[10px] text-xs" />
+                <Label htmlFor="audit-to" className="text-2xs text-slate-400">ถึงวันที่</Label>
+                <Input id="audit-to" type="date" value={to} onChange={(e) => setTo(e.target.value)} className="h-10 rounded-md text-xs" />
               </div>
             </div>
           </div>
           {hasFilters && (
             <div className="flex items-center gap-2">
-              <Badge className="rounded-full bg-slate-100 text-[11px] text-slate-600 ring-1 ring-inset ring-slate-600/10">
+              <Badge className="rounded-full bg-slate-100 text-2xs text-slate-600 ring-1 ring-inset ring-slate-600/10">
                 พบ {total.toLocaleString()} รายการ
               </Badge>
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-7 rounded-[8px] text-xs text-slate-500"
+                className="h-7 rounded-sm text-xs text-slate-500"
                 onClick={() => {
                   setSearch("");
                   setActionFilter("all");
@@ -390,7 +390,7 @@ export default function AuditLogTab() {
               <AlertCircle className="size-6 text-red-500" />
               <p className="text-sm font-medium text-slate-900">โหลดบันทึกไม่สำเร็จ</p>
               <p className="max-w-sm text-xs text-slate-500">{error}</p>
-              <Button variant="outline" size="sm" className="mt-1 rounded-[10px]" onClick={() => void load(0)}>
+              <Button variant="outline" size="sm" className="mt-1 rounded-md" onClick={() => void load(0)}>
                 ลองใหม่
               </Button>
             </div>
@@ -417,11 +417,11 @@ export default function AuditLogTab() {
                       <TableRow key={row.id} className="hover:bg-slate-50/60">
                         <TableCell className="pl-4 align-top">
                           <p className="whitespace-nowrap text-xs tabular-nums text-slate-500">{formatWhen(row.createdAt)}</p>
-                          {row.ipAddress && <p className="text-[11px] text-slate-300">{row.ipAddress}</p>}
+                          {row.ipAddress && <p className="text-2xs text-slate-300">{row.ipAddress}</p>}
                         </TableCell>
                         <TableCell className="align-top"><ActorCell row={row} /></TableCell>
                         <TableCell className="align-top">
-                          <Badge className="rounded-full bg-slate-900 text-[11px] text-white">{actionLabel(row.action)}</Badge>
+                          <Badge className="rounded-full bg-slate-900 text-2xs text-white">{actionLabel(row.action)}</Badge>
                         </TableCell>
                         <TableCell className="align-top"><TargetCell row={row} /></TableCell>
                         <TableCell className="pr-4 align-top">
@@ -446,10 +446,10 @@ export default function AuditLogTab() {
                             {row.actorName ?? row.actorEmail ?? "ระบบ"}
                           </p>
                         </div>
-                        <Badge className="shrink-0 rounded-full bg-slate-900 text-[11px] text-white">{actionLabel(row.action)}</Badge>
+                        <Badge className="shrink-0 rounded-full bg-slate-900 text-2xs text-white">{actionLabel(row.action)}</Badge>
                       </div>
                       <div className="mt-2 flex items-center gap-2 text-xs text-slate-500">
-                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">{entityLabel(row.entityType)}</span>
+                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-2xs text-slate-600">{entityLabel(row.entityType)}</span>
                         <span className="min-w-0 truncate">{row.targetLabel ?? "—"}</span>
                       </div>
                       <div className="mt-2">
@@ -458,13 +458,13 @@ export default function AuditLogTab() {
                       <button
                         type="button"
                         onClick={() => setExpanded(open ? null : row.id)}
-                        className="mt-2 flex items-center gap-1 text-xs font-medium text-[#10B981]"
+                        className="mt-2 flex items-center gap-1 text-xs font-medium text-brand"
                       >
                         {open ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
                         {open ? "ซ่อนรายละเอียด" : "ดูรายละเอียด"}
                       </button>
                       {open && (
-                        <div className="mt-2 space-y-2 rounded-lg bg-slate-50 px-3 py-2 text-[11px] text-slate-600">
+                        <div className="mt-2 space-y-2 rounded-lg bg-slate-50 px-3 py-2 text-2xs text-slate-600">
                           <div className="flex justify-between gap-3">
                             <span className="text-slate-400">Action code</span>
                             <span className="font-mono">{row.action}</span>
@@ -488,7 +488,7 @@ export default function AuditLogTab() {
                             </div>
                           )}
                           {row.details && (
-                            <pre className="max-h-40 overflow-auto rounded-md bg-white px-2 py-1.5 text-[11px] leading-relaxed text-slate-500">
+                            <pre className="max-h-40 overflow-auto rounded-md bg-white px-2 py-1.5 text-2xs leading-relaxed text-slate-500">
                               {JSON.stringify(row.details, null, 2)}
                             </pre>
                           )}
@@ -504,7 +504,7 @@ export default function AuditLogTab() {
                   <Button
                     variant="outline"
                     size="sm"
-                    className="rounded-[10px]"
+                    className="rounded-md"
                     onClick={() => void load((rows ?? []).length)}
                     disabled={loadingMore}
                   >

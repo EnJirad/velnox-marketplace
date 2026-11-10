@@ -255,7 +255,7 @@ export function MarketingBanners() {
           </Button>
           <Button
             type="button"
-            className="gap-1.5 bg-[#10B981] text-white hover:bg-[#059669]"
+            className="gap-1.5 bg-brand text-white hover:bg-[#059669]"
             onClick={onSave}
             disabled={saving || hasEmptyRow}
           >
@@ -308,7 +308,7 @@ export function MarketingBanners() {
                         <ImagePlus className="size-5" />
                       </div>
                     )}
-                    <label className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-[11px] text-slate-600 hover:bg-slate-50">
+                    <label className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-2xs text-slate-600 hover:bg-slate-50">
                       {uploadingIndex === index ? (
                         <Loader2 className="size-3 animate-spin" />
                       ) : (
@@ -326,7 +326,7 @@ export function MarketingBanners() {
                         }}
                       />
                     </label>
-                    <p className="text-[11px] leading-3.5 text-slate-400">{t("marketing.uploadHint")}</p>
+                    <p className="text-2xs leading-3.5 text-slate-400">{t("marketing.uploadHint")}</p>
                   </div>
 
                   <div className="grid min-w-0 flex-1 gap-2">
@@ -371,7 +371,7 @@ export function MarketingBanners() {
                         onChange={(event) => update(index, { title: event.target.value })}
                         maxLength={120}
                       />
-                      <p className="text-[11px] text-slate-400">{t("marketing.fieldTitleHint")}</p>
+                      <p className="text-2xs text-slate-400">{t("marketing.fieldTitleHint")}</p>
                     </div>
                     <div className="grid gap-1">
                       <Label htmlFor={`bn-sub-${index}`}>{t("marketing.fieldSubtitle")}</Label>
@@ -443,12 +443,12 @@ export function MarketingBanners() {
                     >
                       <ArrowDown className="size-4" />
                     </button>
-                    <label className="flex min-h-11 items-center gap-1.5 text-[11px] text-slate-600">
+                    <label className="flex min-h-11 items-center gap-1.5 text-2xs text-slate-600">
                       <input
                         type="checkbox"
                         checked={row.active}
                         onChange={(event) => update(index, { active: event.target.checked })}
-                        className="size-4 accent-[#10B981]"
+                        className="size-4 accent-brand"
                       />
                       {t("marketing.active")}
                     </label>
@@ -474,10 +474,10 @@ export function MarketingBanners() {
                   {mode === "image+text" && (
                     <div className="flex items-stretch">
                       <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5 px-3 py-2">
-                        <span className="text-[11px] font-semibold uppercase tracking-wide text-[#059669]">{t("marketing.stripEyebrow")}</span>
+                        <span className="text-2xs font-semibold uppercase tracking-wide text-[#059669]">{t("marketing.stripEyebrow")}</span>
                         {row.title.trim() && <span className="text-xs font-bold text-slate-900">{row.title}</span>}
-                        {row.subtitle.trim() && <span className="line-clamp-1 text-[11px] text-slate-600">{row.subtitle}</span>}
-                        {row.ctaUrl && <span className="text-[11px] font-semibold text-[#059669]">{row.ctaLabel || t("marketing.stripCta")} →</span>}
+                        {row.subtitle.trim() && <span className="line-clamp-1 text-2xs text-slate-600">{row.subtitle}</span>}
+                        {row.ctaUrl && <span className="text-2xs font-semibold text-[#059669]">{row.ctaLabel || t("marketing.stripCta")} →</span>}
                       </div>
                       <img src={row.imageUrl!} alt="" className="h-14 w-[34%] object-cover" />
                     </div>
@@ -485,15 +485,15 @@ export function MarketingBanners() {
                   {mode === "text" && (
                     <div className="px-3 py-2">
                       {row.title.trim() && <span className="block text-xs font-bold text-slate-900">{row.title}</span>}
-                      {row.subtitle.trim() && <span className="mt-0.5 block line-clamp-1 text-[11px] text-slate-600">{row.subtitle}</span>}
-                      {row.ctaUrl && <span className="mt-1 inline-flex text-[11px] font-semibold text-[#059669]">{row.ctaLabel || t("marketing.stripCta")} →</span>}
+                      {row.subtitle.trim() && <span className="mt-0.5 block line-clamp-1 text-2xs text-slate-600">{row.subtitle}</span>}
+                      {row.ctaUrl && <span className="mt-1 inline-flex text-2xs font-semibold text-[#059669]">{row.ctaLabel || t("marketing.stripCta")} →</span>}
                     </div>
                   )}
                   {mode === "image" && (
                     <img src={row.imageUrl!} alt="" className="h-14 w-full object-cover" />
                   )}
                   {mode === "empty" && (
-                    <p className="px-3 py-2 text-[11px] font-medium text-red-700">{t("marketing.emptyBannerError")}</p>
+                    <p className="px-3 py-2 text-2xs font-medium text-red-700">{t("marketing.emptyBannerError")}</p>
                   )}
                 </div>
               </li>

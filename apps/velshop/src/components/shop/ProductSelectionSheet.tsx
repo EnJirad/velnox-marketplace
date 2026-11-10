@@ -423,7 +423,7 @@ export function ProductSelectionSheet({
                       {compareAt && compareAt > resolvedPrice && (
                         <span className="text-xs text-slate-400 line-through">{formatBaht(compareAt)}</span>
                       )}
-                      <span className="rounded bg-red-50 px-1.5 py-0.5 text-[11px] font-semibold text-red-600">
+                      <span className="rounded bg-red-50 px-1.5 py-0.5 text-2xs font-semibold text-red-600">
                         -{Math.round(discountPct ?? ((compareAt! - resolvedPrice) / compareAt!) * 100)}%
                       </span>
                     </div>
@@ -537,7 +537,7 @@ export function ProductSelectionSheet({
                         onClick={() => handleOptionSelect(group.id, val.id)}
                         className={`${group.displayType === "image" ? "flex w-full min-w-0 items-center gap-2 p-2 sm:w-[calc(50%-0.375rem)]" : "flex items-center gap-1.5 px-3 py-1.5"} rounded-xl border transition-colors ${
                           selected
-                            ? "border-[#10B981] bg-[#ECFDF5] ring-1 ring-[#10B981]/30"
+                            ? "border-brand bg-[#ECFDF5] ring-1 ring-brand/30"
                             : valueInStock
                               ? "border-slate-200 bg-white hover:border-slate-300 active:bg-slate-50"
                               : "border-slate-100 bg-slate-50 opacity-40"
@@ -558,22 +558,22 @@ export function ProductSelectionSheet({
                                   {val.imageUrl || optionValueImageMap[val.id] ? (
                                     <img src={val.imageUrl || optionValueImageMap[val.id]} alt="" className="size-full object-contain" loading="lazy" />
                                   ) : (
-                                    <span className="flex size-full items-center justify-center bg-slate-100 text-[11px] font-semibold text-slate-500">
+                                    <span className="flex size-full items-center justify-center bg-slate-100 text-2xs font-semibold text-slate-500">
                                       {val.label.slice(0, 3)}
                                     </span>
                                   )}
                                 </span>
                                 <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                                  <span className={`w-full min-w-0 truncate text-[11px] font-medium leading-4 ${selected ? "text-[#10B981]" : valueInStock ? "text-slate-700" : "text-slate-400"}`}>
+                                  <span className={`w-full min-w-0 truncate text-2xs font-medium leading-4 ${selected ? "text-brand" : valueInStock ? "text-slate-700" : "text-slate-400"}`}>
                                     {val.label}
                                   </span>
                                   {valueInStock && valueStock > 0 && (
-                                    <span className={`text-[11px] ${valueStock <= 5 ? "text-amber-600" : "text-slate-400"}`}>
+                                    <span className={`text-2xs ${valueStock <= 5 ? "text-amber-600" : "text-slate-400"}`}>
                                       {valueStock <= 5 ? t("productDetail.stockLeft", { count: valueStock }) : t("productDetail.stockPieces", { count: valueStock })}
                                     </span>
                                   )}
                                   {!valueInStock && (
-                                    <span className="text-[11px] text-red-400">{t("productDetail.stockOut")}</span>
+                                    <span className="text-2xs text-red-400">{t("productDetail.stockOut")}</span>
                                   )}
                                 </span>
                               </>
@@ -582,14 +582,14 @@ export function ProductSelectionSheet({
                           // TEXT option: compact pill — no image, no placeholder
                           return (
                             <>
-                              <span className="truncate text-[11px] font-medium">{val.label}</span>
+                              <span className="truncate text-2xs font-medium">{val.label}</span>
                               {valueInStock && valueStock > 0 && (
-                                <span className={`text-[11px] ${valueStock <= 5 ? "text-amber-600" : "text-slate-400"}`}>
+                                <span className={`text-2xs ${valueStock <= 5 ? "text-amber-600" : "text-slate-400"}`}>
                                   {valueStock <= 5 ? t("productDetail.stockLeft", { count: valueStock }) : t("productDetail.stockPieces", { count: valueStock })}
                                 </span>
                               )}
                               {!valueInStock && (
-                                <span className="text-[11px] text-red-400">{t("productDetail.stockOut")}</span>
+                                <span className="text-2xs text-red-400">{t("productDetail.stockOut")}</span>
                               )}
                             </>
                           );

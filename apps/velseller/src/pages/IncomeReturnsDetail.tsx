@@ -120,12 +120,12 @@ export default function IncomeReturnsDetail() {
                 { icon: PackageSearch, label: t("sellerDash.income.returnsDetail.colOrder"), value: report.returnCount.toLocaleString("th-TH"), sub: `\u0E08\u0E32\u0E01 ${report.grossCount.toLocaleString("th-TH")} \u0E0A\u0E34\u0E49\u0E19`, color: "text-slate-600", bg: "bg-slate-50" },
               ].map(({ icon: Icon, label, value, sub, color, bg }) => (
                 <div key={label} className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
-                  <span className={`flex size-9 items-center justify-center rounded-[10px] ${bg} ${color} mb-3`}>
+                  <span className={`flex size-9 items-center justify-center rounded-md ${bg} ${color} mb-3`}>
                     <Icon className="size-4.5" />
                   </span>
                   <p className="text-xs text-slate-500">{label}</p>
                   <p className={`mt-1 text-xl font-bold tabular-nums tracking-tight ${color}`}>{value}</p>
-                  <p className="mt-0.5 text-[11px] text-slate-400">{sub}</p>
+                  <p className="mt-0.5 text-2xs text-slate-400">{sub}</p>
                 </div>
               ))}
             </section>
@@ -158,12 +158,12 @@ export default function IncomeReturnsDetail() {
                     const retRate = d.value > 0 ? d.returns / d.value : 0;
                     return (
                       <div key={i} className="flex-1 flex flex-col items-center gap-1 h-full justify-end">
-                        <span className="text-[11px] font-semibold tabular-nums text-slate-900">
+                        <span className="text-2xs font-semibold tabular-nums text-slate-900">
                           {retRate > 0 ? `${(retRate * 100).toFixed(1)}%` : "0%"}
                         </span>
                         <div className="w-full rounded-t-md bg-amber-500 transition-[width]"
                           style={{ height: `${Math.min(retRate * 100, 100)}%` }} />
-                        <span className="text-[11px] text-slate-400 truncate w-full text-center">{d.label}</span>
+                        <span className="text-2xs text-slate-400 truncate w-full text-center">{d.label}</span>
                       </div>
                     );
                   })}

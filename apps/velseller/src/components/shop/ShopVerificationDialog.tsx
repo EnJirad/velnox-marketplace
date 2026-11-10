@@ -154,7 +154,7 @@ export function ShopVerificationDialog({
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <ShieldCheck className="size-5 text-[#10B981]" aria-hidden="true" />
+            <ShieldCheck className="size-5 text-brand" aria-hidden="true" />
             {t("sellerDash.shop.verifyTitle")}
           </DialogTitle>
           <DialogDescription>
@@ -192,7 +192,7 @@ export function ShopVerificationDialog({
                 t("sellerDash.shop.verifyReq3"),
               ].map((line) => (
                 <li key={line} className="flex items-start gap-2.5 text-sm leading-6 text-slate-600">
-                  <span className="mt-2 size-1.5 shrink-0 rounded-full bg-[#10B981]" aria-hidden="true" />
+                  <span className="mt-2 size-1.5 shrink-0 rounded-full bg-brand" aria-hidden="true" />
                   {line}
                 </li>
               ))}
@@ -244,14 +244,14 @@ export function ShopVerificationDialog({
           )}
           {step === 1 ? (
             <Button
-              className="h-11 gap-1.5 bg-[#10B981] text-white hover:bg-[#059669]"
+              className="h-11 gap-1.5 bg-brand text-white hover:bg-[#059669]"
               onClick={() => setStep(2)}
             >
               {t("sellerDash.shop.verifyNext")}
             </Button>
           ) : (
             <Button
-              className="h-11 gap-1.5 bg-[#10B981] text-white hover:bg-[#059669]"
+              className="h-11 gap-1.5 bg-brand text-white hover:bg-[#059669]"
               onClick={() => void handleSubmit()}
               disabled={busy || hasUploading || !hasUploaded}
             >

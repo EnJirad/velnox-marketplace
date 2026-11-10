@@ -109,16 +109,16 @@ export function ComposerImagePreview({
           <p className="truncate text-xs text-red-600">{error}</p>
         ) : progress !== null && progress < 100 ? (
           <div className="space-y-1">
-            <p className="text-[11px] text-slate-500">Uploading… {progress}%</p>
+            <p className="text-2xs text-slate-500">Uploading… {progress}%</p>
             <div className="h-1 w-full overflow-hidden rounded-full bg-slate-100">
-              <div className="h-full rounded-full bg-[#10B981] transition-[width]" style={{ width: `${progress}%` }} />
+              <div className="h-full rounded-full bg-brand transition-[width]" style={{ width: `${progress}%` }} />
             </div>
           </div>
         ) : (
-          <p className="text-[11px] text-slate-500">Ready to send</p>
+          <p className="text-2xs text-slate-500">Ready to send</p>
         )}
         {error && onRetry && (
-          <button type="button" onClick={onRetry} className="mt-1 text-xs font-medium text-[#10B981] hover:underline">
+          <button type="button" onClick={onRetry} className="mt-1 text-xs font-medium text-brand hover:underline">
             {sendLabel}
           </button>
         )}

@@ -124,7 +124,7 @@ export default function ShopWishlist() {
       <main className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 sm:py-10">
         <div>
           <p className="flex items-center gap-1.5 text-sm font-medium text-slate-400">
-            <Heart className="size-4 text-[#10B981]" />
+            <Heart className="size-4 text-brand" />
             {t("wishlist.eyebrow")}
           </p>
           <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">{t("wishlist.title")}</h1>
@@ -201,7 +201,7 @@ export default function ShopWishlist() {
                       </span>
                     )}
                     {outOfStock && (
-                      <span className="absolute inset-x-0 bottom-0 bg-slate-900/70 px-2 py-1 text-center text-[11px] font-semibold text-white backdrop-blur-sm">
+                      <span className="absolute inset-x-0 bottom-0 bg-slate-900/70 px-2 py-1 text-center text-2xs font-semibold text-white backdrop-blur-sm">
                         {t("wishlist.outOfStock")}
                       </span>
                     )}
@@ -211,16 +211,16 @@ export default function ShopWishlist() {
                     <div className="flex-1">
                       <Link
                         to={`/products/${row.productId}`}
-                        className="line-clamp-2 text-[13px] font-semibold leading-[1.35] text-slate-900 hover:text-[#10B981]"
+                        className="line-clamp-2 text-[13px] font-semibold leading-[1.35] text-slate-900 hover:text-brand"
                       >
                         {row.productName}
                       </Link>
-                      <p className="mt-1 truncate text-[11px] text-slate-400">
+                      <p className="mt-1 truncate text-2xs text-slate-400">
                         {row.shopName || t("wishlist.defaultShop")}
                       </p>
 
                       {row.rating != null && row.rating > 0 && (
-                        <p className="mt-1.5 flex items-center gap-1 text-[11px] text-slate-500">
+                        <p className="mt-1.5 flex items-center gap-1 text-2xs text-slate-500">
                           <Star className="size-3 fill-amber-400 text-amber-400" />
                           <span className="font-semibold tabular-nums text-slate-700">
                             {Number(row.rating).toFixed(1)}
@@ -236,14 +236,14 @@ export default function ShopWishlist() {
                       <p className="text-sm font-bold tabular-nums tracking-tight text-slate-900">
                         {formatBaht(row.price)}
                         {row.unit && (
-                          <span className="ml-0.5 text-[11px] font-normal text-slate-400">/{row.unit}</span>
+                          <span className="ml-0.5 text-2xs font-normal text-slate-400">/{row.unit}</span>
                         )}
                       </p>
                       <div className="flex items-center gap-1">
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="size-7 rounded-[8px] text-slate-400 hover:bg-rose-50 hover:text-rose-500"
+                          className="size-7 rounded-sm text-slate-400 hover:bg-rose-50 hover:text-rose-500"
                           onClick={() => void handleRemove(row)}
                           disabled={busyId === row.productId}
                           aria-label={t("wishlist.ariaRemove", { name: row.productName })}
@@ -256,7 +256,7 @@ export default function ShopWishlist() {
                         </Button>
                         <Button
                           size="icon"
-                          className="size-7 rounded-[8px] bg-slate-900 text-white hover:bg-slate-800"
+                          className="size-7 rounded-sm bg-slate-900 text-white hover:bg-slate-800"
                           disabled={outOfStock}
                           onClick={() => handleAdd(row)}
                           aria-label={

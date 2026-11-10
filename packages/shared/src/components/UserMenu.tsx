@@ -44,7 +44,7 @@ export function UserMenu() {
       <DropdownMenuTrigger asChild>
         <Button
           variant="ghost"
-          className="flex cursor-pointer items-center gap-2.5 rounded-[10px] px-2 py-1.5 text-slate-700 hover:bg-slate-100"
+          className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 text-slate-700 hover:bg-slate-100"
         >
           <span className={`relative flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full border ${
               isLoading ? "border-transparent bg-transparent" : user?.image ? "border-transparent bg-slate-100" : "border-slate-200 bg-slate-900"

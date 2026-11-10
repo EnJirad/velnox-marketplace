@@ -52,7 +52,7 @@ describe("VelCenter nav rail", () => {
   });
 
   test("the people-segment Tabs did not get the nav selector", () => {
-    const marker = '<TabsTrigger value="staff" className="gap-1.5 rounded-[10px]">';
+    const marker = '<TabsTrigger value="staff" className="gap-1.5 rounded-md">';
     const at = src.indexOf(marker);
     expect(at).toBeGreaterThan(-1);
     expect(src.slice(at, at + 120)).not.toContain("selectTab(");

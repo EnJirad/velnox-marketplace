@@ -148,7 +148,7 @@ function DocumentCard({ doc, label }: { doc: ReviewDocument; label: string }) {
         {!doc.url || failed ? (
           <div className="flex aspect-[4/3] flex-col items-center justify-center gap-1.5 bg-slate-50 px-3 text-center">
             <ImageOff className="size-5 text-slate-300" />
-            <p className="text-[11px] text-slate-400">{t("review.evidenceFailed")}</p>
+            <p className="text-2xs text-slate-400">{t("review.evidenceFailed")}</p>
           </div>
         ) : (
           <button type="button" onClick={() => setZoom(true)} className="block w-full">
@@ -161,7 +161,7 @@ function DocumentCard({ doc, label }: { doc: ReviewDocument; label: string }) {
             />
           </button>
         )}
-        <p className="truncate border-t border-slate-100 px-3 py-1.5 text-[11px] text-slate-400" title={doc.filename}>
+        <p className="truncate border-t border-slate-100 px-3 py-1.5 text-2xs text-slate-400" title={doc.filename}>
           {doc.filename}
         </p>
       </div>
@@ -295,7 +295,7 @@ export function VerificationReviewDialog({
       <DialogContent className="max-h-[92dvh] w-[calc(100vw-1.5rem)] max-w-4xl overflow-y-auto p-0 sm:w-full">
         <DialogHeader className="border-b border-slate-100 px-4 py-4 sm:px-6">
           <DialogTitle className="flex items-center gap-2 text-base">
-            <Store className="size-4 shrink-0 text-[#10B981]" />
+            <Store className="size-4 shrink-0 text-brand" />
             <span className="min-w-0 flex-1 truncate">{t("review.title")}</span>
             <VerificationStatusLabel status={(row.status === "unverified" ? "unverified" : row.status) as never} />
           </DialogTitle>
@@ -400,17 +400,17 @@ export function VerificationReviewDialog({
                   </span>
                 </div>
                 {detail.verification.reviewReasonCode && (
-                  <p className="mt-2 rounded-lg bg-rose-50 px-2.5 py-1.5 text-[11px] text-rose-700">
+                  <p className="mt-2 rounded-lg bg-rose-50 px-2.5 py-1.5 text-2xs text-rose-700">
                     {t(`reviewReason.${detail.verification.reviewReasonCode}`)}
                   </p>
                 )}
                 {detail.verification.reviewNote && (
-                  <p className="mt-1.5 text-[11px] text-slate-400">
+                  <p className="mt-1.5 text-2xs text-slate-400">
                     {t("review.noteLabel")}: {detail.verification.reviewNote}
                   </p>
                 )}
                 {detail.verification.rejectionReason && (
-                  <p className="mt-1.5 text-[11px] text-slate-500">{detail.verification.rejectionReason}</p>
+                  <p className="mt-1.5 text-2xs text-slate-500">{detail.verification.rejectionReason}</p>
                 )}
               </section>
 
@@ -432,16 +432,16 @@ export function VerificationReviewDialog({
                             {/* action keys are backend-defined verbs */}
                             {t(`review.action${h.action.charAt(0).toUpperCase()}${h.action.slice(1).replace(/_([a-z])/g, (_m, c: string) => c.toUpperCase())}`)}
                           </span>
-                          <span className="shrink-0 text-[11px] text-slate-400">
+                          <span className="shrink-0 text-2xs text-slate-400">
                             {new Date(h.created_at).toLocaleDateString()}
                           </span>
                         </div>
                         {h.reason_code && (
-                          <p className="mt-0.5 text-[11px] text-slate-500">{t(`reviewReason.${h.reason_code}`)}</p>
+                          <p className="mt-0.5 text-2xs text-slate-500">{t(`reviewReason.${h.reason_code}`)}</p>
                         )}
-                        {h.reason && <p className="mt-0.5 text-[11px] text-slate-500">{h.reason}</p>}
+                        {h.reason && <p className="mt-0.5 text-2xs text-slate-500">{h.reason}</p>}
                         {h.reviewer_name && (
-                          <p className="mt-0.5 text-[11px] text-slate-400">— {h.reviewer_name}</p>
+                          <p className="mt-0.5 text-2xs text-slate-400">— {h.reviewer_name}</p>
                         )}
                       </li>
                     ))}
@@ -472,7 +472,7 @@ export function VerificationReviewDialog({
                         />
                       ))}
                     </div>
-                    <p className="mt-2 text-[11px] text-slate-400">{t("review.signedExpiry")}</p>
+                    <p className="mt-2 text-2xs text-slate-400">{t("review.signedExpiry")}</p>
                   </>
                 )}
               </section>
@@ -481,12 +481,12 @@ export function VerificationReviewDialog({
                 <section>
                   <div className="mb-2 flex items-center justify-between">
                     <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-400">{t("review.checklist")}</h4>
-                    <span className="text-[11px] tabular-nums text-slate-400">{checklistCount}/{checklistTotal}</span>
+                    <span className="text-2xs tabular-nums text-slate-400">{checklistCount}/{checklistTotal}</span>
                   </div>
                   <div className="space-y-3">
                     {checklistGroups.map((group) => (
                       <div key={group.title}>
-                        <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">{group.title}</p>
+                        <p className="mb-1.5 text-2xs font-semibold uppercase tracking-wide text-slate-400">{group.title}</p>
                         <div className="space-y-1.5">
                           {group.keys.map((key) => (
                             <label
@@ -506,7 +506,7 @@ export function VerificationReviewDialog({
                       </div>
                     ))}
                   </div>
-                  <p className="mt-2 text-[11px] text-slate-400">
+                  <p className="mt-2 text-2xs text-slate-400">
                     {t("review.checklist")} — {t("review.decision")}
                   </p>
                 </section>
@@ -577,7 +577,7 @@ export function VerificationReviewDialog({
                         <div className="mt-2 space-y-3">
                           {(["identity", "application", "eligibility"] as const).map((group) => (
                             <div key={group}>
-                              <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                              <p className="mb-1 text-2xs font-semibold uppercase tracking-wide text-slate-400">
                                 {group === "identity" ? t("review.checklistIdentity") : group === "application" ? t("review.checklistApplication") : t("review.filterAll")}
                               </p>
                               <div className="flex flex-wrap gap-1.5">
@@ -586,9 +586,9 @@ export function VerificationReviewDialog({
                                     key={code}
                                     type="button"
                                     onClick={() => setReasonCode(code)}
-                                    className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                                    className={`rounded-full px-2.5 py-1 text-2xs font-medium transition-colors ${
                                       reasonCode === code
-                                        ? "bg-[#10B981] text-white"
+                                        ? "bg-brand text-white"
                                         : "bg-white text-slate-600 ring-1 ring-inset ring-slate-200 hover:ring-slate-300"
                                     }`}
                                   >
@@ -610,7 +610,7 @@ export function VerificationReviewDialog({
                           rows={2}
                           value={reasonText}
                           onChange={(e) => setReasonText(e.target.value)}
-                          className="rounded-[10px] border-slate-200 bg-white text-sm"
+                          className="rounded-md border-slate-200 bg-white text-sm"
                         />
                       </div>
 
@@ -624,7 +624,7 @@ export function VerificationReviewDialog({
                           value={note}
                           onChange={(e) => setNote(e.target.value)}
                           placeholder={t("review.notePlaceholder")}
-                          className="rounded-[10px] border-slate-200 bg-white text-sm"
+                          className="rounded-md border-slate-200 bg-white text-sm"
                         />
                       </div>
 

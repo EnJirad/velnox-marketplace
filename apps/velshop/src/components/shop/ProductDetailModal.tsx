@@ -116,9 +116,9 @@ export function ProductDetailModal({ product, open, onOpenChange, onSubscribe }:
                     key={img.id}
                     type="button"
                     onClick={() => setActiveIndex(i)}
-                    className={`size-16 shrink-0 overflow-hidden rounded-[10px] border-2 transition-colors ${
+                    className={`size-16 shrink-0 overflow-hidden rounded-md border-2 transition-colors ${
                       i === activeIndex
-                        ? "border-[#10B981]"
+                        ? "border-brand"
                         : "border-slate-200 hover:border-slate-300"
                     }`}
                     aria-label={t("productDetail.imageAlt", { n: i + 1 })}
@@ -188,7 +188,7 @@ export function ProductDetailModal({ product, open, onOpenChange, onSubscribe }:
                 </Button>
               ) : (
                 <div className="flex items-center gap-3">
-                  <div className="flex items-center gap-1 rounded-[10px] border border-slate-200 px-1.5 py-1">
+                  <div className="flex items-center gap-1 rounded-md border border-slate-200 px-1.5 py-1">
                     <Button
                       variant="ghost"
                       size="icon"

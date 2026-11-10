@@ -102,7 +102,7 @@ function GateCard({
         }`}
       >
         <span className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-[#ECFDF5]">
-          <Icon className="size-7 text-[#10B981]" />
+          <Icon className="size-7 text-brand" />
         </span>
         <h1 className="mt-5 text-xl font-bold tracking-tight text-slate-900">{title}</h1>
         <p className="mt-2 text-sm leading-6 text-slate-500">{desc}</p>
@@ -414,7 +414,7 @@ export function RequireRole({ role, children }: RequireRoleProps) {
               value={bootstrapCode}
               onChange={(e) => setBootstrapCode(e.target.value)}
               placeholder={t("gate.centerBootstrapCodePlaceholder")}
-              className="h-11 rounded-[10px] border-slate-200"
+              className="h-11 rounded-md border-slate-200"
               disabled={busy}
             />
           </div>
@@ -459,7 +459,7 @@ export function RequireRole({ role, children }: RequireRoleProps) {
   if (seller?.status === "approved") return children;
 
   if (seller?.status === "pending") {
-    return <GateCard icon={Clock} title={t("gate.sellerPendingTitle")} desc={t("gate.sellerPendingDesc")}>        <div className="mt-4 rounded-[10px] bg-amber-50 px-4 py-3 text-left">
+    return <GateCard icon={Clock} title={t("gate.sellerPendingTitle")} desc={t("gate.sellerPendingDesc")}>        <div className="mt-4 rounded-md bg-amber-50 px-4 py-3 text-left">
           <p className="text-sm font-medium text-amber-800">{t("gate.sellerPendingStatus")}</p>
           <p className="mt-1 text-xs text-amber-600">{t("gate.sellerPendingEta")}</p>
         </div>
@@ -468,7 +468,7 @@ export function RequireRole({ role, children }: RequireRoleProps) {
 
   if (seller?.status === "under_review") {
     return <GateCard icon={Clock} title={t("gate.sellerUnderReviewTitle")} desc={t("gate.sellerUnderReviewDesc")}>
-      <div className="mt-4 rounded-[10px] bg-blue-50 px-4 py-3 text-left">
+      <div className="mt-4 rounded-md bg-blue-50 px-4 py-3 text-left">
         <p className="text-sm font-medium text-blue-800">{t("gate.sellerUnderReviewStatus")}</p>
         <p className="mt-1 text-xs text-blue-600">{t("gate.sellerUnderReviewHint")}</p>
       </div>
@@ -576,7 +576,7 @@ export function RequireRole({ role, children }: RequireRoleProps) {
         title={t("gate.sellerSubmittedTitle")}
         desc={t("gate.sellerSubmittedDesc")}
       >
-        <div className="mt-4 rounded-[10px] bg-amber-50 px-4 py-3 text-left">
+        <div className="mt-4 rounded-md bg-amber-50 px-4 py-3 text-left">
           <p className="text-sm font-medium text-amber-800">{t("gate.sellerPendingStatus")}</p>
           <p className="mt-1 text-xs text-amber-600">{t("gate.sellerSubmittedHint")}</p>
         </div>
@@ -598,7 +598,7 @@ export function RequireRole({ role, children }: RequireRoleProps) {
       desc={isRejected ? t("gate.sellerRejectedDesc") : needsCorrection ? t("gate.sellerCorrectionDesc") : t("gate.sellerApplyDesc")}
     >
       {isRejected && (seller?.rejectionReason || seller?.rejectionReasonCode) && (
-        <div className="mt-4 rounded-[10px] bg-rose-50 px-3 py-2.5 text-left">
+        <div className="mt-4 rounded-md bg-rose-50 px-3 py-2.5 text-left">
           {seller?.rejectionReasonCode && (
             <p className="text-sm font-medium text-rose-700">{t(`reviewReason.${seller.rejectionReasonCode}`)}</p>
           )}
@@ -607,7 +607,7 @@ export function RequireRole({ role, children }: RequireRoleProps) {
           )}
         </div>
       )}          {needsCorrection && (
-        <div className="mt-4 rounded-[10px] bg-amber-50 px-3 py-2.5 text-left">
+        <div className="mt-4 rounded-md bg-amber-50 px-3 py-2.5 text-left">
           <p className="text-sm font-medium text-amber-800">⚠ {t("gate.sellerActionRequired")}</p>
           {seller?.correctionReasonCode && (
             <p className="mt-1 text-xs font-medium text-amber-700">{t(`reviewReason.${seller.correctionReasonCode}`)}</p>
@@ -625,7 +625,7 @@ export function RequireRole({ role, children }: RequireRoleProps) {
             <div
               className={`flex size-7 items-center justify-center rounded-full text-xs font-bold transition-colors ${
                 i < onboardingStep
-                  ? "bg-[#10B981] text-white"
+                  ? "bg-brand text-white"
                   : i === onboardingStep
                     ? "bg-slate-900 text-white"
                     : "bg-slate-100 text-slate-400"
@@ -634,7 +634,7 @@ export function RequireRole({ role, children }: RequireRoleProps) {
               {i < onboardingStep ? "✓" : i + 1}
             </div>
             {i < STEPS.length - 1 && (
-              <div className={`h-0.5 w-4 rounded ${i < onboardingStep ? "bg-[#10B981]" : "bg-slate-200"}`} />
+              <div className={`h-0.5 w-4 rounded ${i < onboardingStep ? "bg-brand" : "bg-slate-200"}`} />
             )}
           </div>
         ))}
@@ -647,8 +647,8 @@ export function RequireRole({ role, children }: RequireRoleProps) {
         {/* Step 0: Store information */}
         {onboardingStep === 0 && (
           <div className="grid gap-3">
-            <div className="flex items-center gap-2 rounded-[10px] bg-slate-50 px-3 py-2">
-              <Store className="size-4 text-[#10B981]" />
+            <div className="flex items-center gap-2 rounded-md bg-slate-50 px-3 py-2">
+              <Store className="size-4 text-brand" />
               <span className="text-xs font-semibold text-slate-700">ข้อมูลร้านค้า</span>
             </div>
             <div className="grid gap-2">
@@ -658,7 +658,7 @@ export function RequireRole({ role, children }: RequireRoleProps) {
                 value={shopName}
                 onChange={(e) => setShopName(e.target.value)}
                 placeholder="เช่น ร้านสมชาย electronics"
-                className="h-11 rounded-[10px] border-slate-200"
+                className="h-11 rounded-md border-slate-200"
                 disabled={busy}
                 required
               />
@@ -671,7 +671,7 @@ export function RequireRole({ role, children }: RequireRoleProps) {
                 onChange={(e) => setShopDescription(e.target.value)}
                 placeholder="ขายสินค้าอิเล็กทรอนิกส์คุณภาพสูง"
                 rows={2}
-                className="rounded-[10px] border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#10B981]/20 focus:border-[#10B981]"
+                className="rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand"
                 disabled={busy}
               />
             </div>
@@ -682,7 +682,7 @@ export function RequireRole({ role, children }: RequireRoleProps) {
                 value={shopCategory}
                 onChange={(e) => setShopCategory(e.target.value)}
                 placeholder="เช่น อิเล็กทรอนิกส์, แฟชั่น, อาหาร"
-                className="h-11 rounded-[10px] border-slate-200"
+                className="h-11 rounded-md border-slate-200"
                 disabled={busy}
               />
             </div>
@@ -692,7 +692,7 @@ export function RequireRole({ role, children }: RequireRoleProps) {
                 value={shopAddress.line1}
                 onChange={(e) => setShopAddress((a) => ({ ...a, line1: e.target.value }))}
                 placeholder="บ้านเลขที่ / ถนน"
-                className="h-10 rounded-[10px] border-slate-200"
+                className="h-10 rounded-md border-slate-200"
                 disabled={busy}
               />
               <div className="grid grid-cols-2 gap-2">
@@ -700,14 +700,14 @@ export function RequireRole({ role, children }: RequireRoleProps) {
                   value={shopAddress.subdistrict}
                   onChange={(e) => setShopAddress((a) => ({ ...a, subdistrict: e.target.value }))}
                   placeholder="ตำบล/แขวง"
-                  className="h-10 rounded-[10px] border-slate-200"
+                  className="h-10 rounded-md border-slate-200"
                   disabled={busy}
                 />
                 <Input
                   value={shopAddress.district}
                   onChange={(e) => setShopAddress((a) => ({ ...a, district: e.target.value }))}
                   placeholder="อำเภอ/เขต"
-                  className="h-10 rounded-[10px] border-slate-200"
+                  className="h-10 rounded-md border-slate-200"
                   disabled={busy}
                 />
               </div>
@@ -716,14 +716,14 @@ export function RequireRole({ role, children }: RequireRoleProps) {
                   value={shopAddress.city}
                   onChange={(e) => setShopAddress((a) => ({ ...a, city: e.target.value }))}
                   placeholder="จังหวัด"
-                  className="h-10 rounded-[10px] border-slate-200"
+                  className="h-10 rounded-md border-slate-200"
                   disabled={busy}
                 />
                 <Input
                   value={shopAddress.postalCode}
                   onChange={(e) => setShopAddress((a) => ({ ...a, postalCode: e.target.value }))}
                   placeholder="รหัสไปรษณีย์"
-                  className="h-10 rounded-[10px] border-slate-200"
+                  className="h-10 rounded-md border-slate-200"
                   disabled={busy}
                 />
               </div>
@@ -734,16 +734,16 @@ export function RequireRole({ role, children }: RequireRoleProps) {
         {/* Step 1: Applicant information */}
         {onboardingStep === 1 && (
           <div className="grid gap-3">
-            <div className="flex items-center gap-2 rounded-[10px] bg-slate-50 px-3 py-2">
-              <User className="size-4 text-[#10B981]" />
+            <div className="flex items-center gap-2 rounded-md bg-slate-50 px-3 py-2">
+              <User className="size-4 text-brand" />
               <span className="text-xs font-semibold text-slate-700">ข้อมูลผู้สมัคร</span>
             </div>
             {user?.email && (
               <div className="grid gap-2">
                 <Label className="text-xs font-medium text-slate-500">อีเมล (จากบัญชี Google)</Label>
-                <div className="flex h-11 items-center rounded-[10px] border border-slate-200 bg-slate-50 px-3">
+                <div className="flex h-11 items-center rounded-md border border-slate-200 bg-slate-50 px-3">
                   <span className="text-sm text-slate-600">{user.email}</span>
-                  <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">ยืนยันแล้ว</span>
+                  <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-2xs font-semibold text-emerald-700">ยืนยันแล้ว</span>
                 </div>
               </div>
             )}
@@ -755,7 +755,7 @@ export function RequireRole({ role, children }: RequireRoleProps) {
                   value={sellerFirstName}
                   onChange={(e) => setSellerFirstName(e.target.value)}
                   placeholder="สมชาย"
-                  className="h-11 rounded-[10px] border-slate-200"
+                  className="h-11 rounded-md border-slate-200"
                   disabled={busy}
                   required
                 />
@@ -767,7 +767,7 @@ export function RequireRole({ role, children }: RequireRoleProps) {
                   value={sellerLastName}
                   onChange={(e) => setSellerLastName(e.target.value)}
                   placeholder="ใจดี"
-                  className="h-11 rounded-[10px] border-slate-200"
+                  className="h-11 rounded-md border-slate-200"
                   disabled={busy}
                   required
                 />
@@ -781,7 +781,7 @@ export function RequireRole({ role, children }: RequireRoleProps) {
                 value={sellerPhone}
                 onChange={(e) => setSellerPhone(e.target.value)}
                 placeholder="081-234-5678"
-                className="h-11 rounded-[10px] border-slate-200"
+                className="h-11 rounded-md border-slate-200"
                 disabled={busy}
                 required
               />
@@ -792,8 +792,8 @@ export function RequireRole({ role, children }: RequireRoleProps) {
         {/* Step 2: Identity verification */}
         {onboardingStep === 2 && (
           <div className="grid gap-3">
-            <div className="flex items-center gap-2 rounded-[10px] bg-slate-50 px-3 py-2">
-              <ShieldCheck className="size-4 text-[#10B981]" />
+            <div className="flex items-center gap-2 rounded-md bg-slate-50 px-3 py-2">
+              <ShieldCheck className="size-4 text-brand" />
               <span className="text-xs font-semibold text-slate-700">ยืนยันตัวตน</span>
             </div>
             <div className="grid gap-2">
@@ -803,7 +803,7 @@ export function RequireRole({ role, children }: RequireRoleProps) {
                 value={sellerIdNumber}
                 onChange={(e) => setSellerIdNumber(e.target.value)}
                 placeholder="1-2345-67890-12-3"
-                className="h-11 rounded-[10px] border-slate-200"
+                className="h-11 rounded-md border-slate-200"
                 disabled={busy}
               />
             </div>
@@ -814,12 +814,12 @@ export function RequireRole({ role, children }: RequireRoleProps) {
                 type="date"
                 value={sellerBirthdate}
                 onChange={(e) => setSellerBirthdate(e.target.value)}
-                className="h-11 rounded-[10px] border-slate-200"
+                className="h-11 rounded-md border-slate-200"
                 disabled={busy}
               />
             </div>
             <div className="grid gap-3">
-              <div className="rounded-[10px] border border-amber-200 bg-amber-50 px-3 py-2">
+              <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
                 <p className="text-xs text-amber-700">{t("identityDoc.securityNote")}</p>
               </div>
               <IdentityDocumentUploader
@@ -856,12 +856,12 @@ export function RequireRole({ role, children }: RequireRoleProps) {
         {/* Step 3: Review before submit */}
         {onboardingStep === 3 && (
           <div className="grid gap-3">
-            <div className="flex items-center gap-2 rounded-[10px] bg-slate-50 px-3 py-2">
-              <FileCheck className="size-4 text-[#10B981]" />
+            <div className="flex items-center gap-2 rounded-md bg-slate-50 px-3 py-2">
+              <FileCheck className="size-4 text-brand" />
               <span className="text-xs font-semibold text-slate-700">ตรวจสอบข้อมูลก่อนส่ง</span>
             </div>
             {/* Store summary */}
-            <div className="rounded-[10px] border border-slate-200 p-3">
+            <div className="rounded-md border border-slate-200 p-3">
               <p className="text-xs font-semibold text-slate-500">ร้านค้า</p>
               <p className="mt-1 text-sm font-medium text-slate-900">{shopName}</p>
               {shopDescription && <p className="mt-0.5 text-xs text-slate-500">{shopDescription}</p>}
@@ -871,14 +871,14 @@ export function RequireRole({ role, children }: RequireRoleProps) {
               )}
             </div>
             {/* Applicant summary */}
-            <div className="rounded-[10px] border border-slate-200 p-3">
+            <div className="rounded-md border border-slate-200 p-3">
               <p className="text-xs font-semibold text-slate-500">ผู้สมัคร</p>
               <p className="mt-1 text-sm text-slate-900">{sellerFirstName} {sellerLastName}</p>
               {user?.email && <p className="mt-0.5 text-xs text-slate-500">{user.email}</p>}
               {sellerPhone && <p className="mt-0.5 text-xs text-slate-500">{sellerPhone}</p>}
             </div>
             {/* Identity summary */}
-            <div className="rounded-[10px] border border-slate-200 p-3">
+            <div className="rounded-md border border-slate-200 p-3">
               <p className="text-xs font-semibold text-slate-500">{t("identityDoc.sectionTitle")}</p>
               <div className="mt-2 grid gap-2 sm:grid-cols-3">
                 {[
@@ -886,15 +886,15 @@ export function RequireRole({ role, children }: RequireRoleProps) {
                   { key: "id_card_back", doc: sellerIdBack, label: t("identityDoc.idBack") },
                   { key: "selfie_id", doc: sellerSelfie, label: t("identityDoc.selfie") },
                 ].map((item) => (
-                  <div key={item.key} className="overflow-hidden rounded-[10px] border border-slate-200 bg-slate-50">
+                  <div key={item.key} className="overflow-hidden rounded-md border border-slate-200 bg-slate-50">
                     {item.doc?.url ? (
                       <img src={item.doc.url} alt={item.label} className="h-24 w-full object-cover" />
                     ) : (
-                      <div className="flex h-24 items-center justify-center text-[11px] text-slate-400">
+                      <div className="flex h-24 items-center justify-center text-2xs text-slate-400">
                         {t("identityDoc.notUploaded")}
                       </div>
                     )}
-                    <p className="truncate border-t border-slate-100 bg-white px-2 py-1 text-[11px] font-medium text-slate-500">
+                    <p className="truncate border-t border-slate-100 bg-white px-2 py-1 text-2xs font-medium text-slate-500">
                       {item.label}
                     </p>
                   </div>
@@ -934,7 +934,7 @@ export function RequireRole({ role, children }: RequireRoleProps) {
           ) : (
             <Button
               type="submit"
-              className="gap-1.5 bg-[#10B981] text-white hover:bg-[#059669]"
+              className="gap-1.5 bg-brand text-white hover:bg-[#059669]"
               disabled={busy || !shopName.trim() || !identityDocsReady}
             >
               {busy && <Loader2 className="size-4 animate-spin" />}

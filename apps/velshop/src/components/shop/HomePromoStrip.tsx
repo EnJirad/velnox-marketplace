@@ -77,21 +77,21 @@ export function HomePromoStrip({ banners }: { banners: PromoStripBanner[] }) {
             return (
               <div
                 key={banner.id}
-                className="flex items-center gap-4 rounded-2xl border border-[#10B981]/15 bg-[#ECFDF5]/50 p-3 sm:p-4"
+                className="flex items-center gap-4 rounded-2xl border border-brand/15 bg-[#ECFDF5]/50 p-3 sm:p-4"
               >
                 {banner.href ? (
                   banner.href.startsWith("http") ? (
                     <a
                       href={banner.href}
                       rel="noopener noreferrer"
-                      className="flex min-w-0 flex-1 items-center gap-4 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-[#10B981]"
+                      className="flex min-w-0 flex-1 items-center gap-4 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-brand"
                     >
                       {inner}
                     </a>
                   ) : (
                     <Link
                       to={banner.href}
-                      className="flex min-w-0 flex-1 items-center gap-4 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-[#10B981]"
+                      className="flex min-w-0 flex-1 items-center gap-4 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-brand"
                     >
                       {inner}
                     </Link>

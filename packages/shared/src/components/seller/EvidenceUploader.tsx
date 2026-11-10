@@ -273,13 +273,13 @@ export function EvidenceUploader({
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium text-slate-700">{label}</span>
           {uploadedCount > 0 && (
-            <Badge className="gap-1 rounded-full bg-emerald-50 text-emerald-600 ring-1 ring-inset ring-emerald-500/20 text-[11px]">
+            <Badge className="gap-1 rounded-full bg-emerald-50 text-emerald-600 ring-1 ring-inset ring-emerald-500/20 text-2xs">
               <CheckCircle2 className="size-2.5" />
               {uploadedCount}
             </Badge>
           )}
           {errorCount > 0 && (
-            <Badge className="gap-1 rounded-full bg-red-50 text-red-600 ring-1 ring-inset ring-red-500/20 text-[11px]">
+            <Badge className="gap-1 rounded-full bg-red-50 text-red-600 ring-1 ring-inset ring-red-500/20 text-2xs">
               <AlertCircle className="size-2.5" />
               {errorCount}
             </Badge>
@@ -330,7 +330,7 @@ export function EvidenceUploader({
                   <p className="truncate text-xs font-medium text-slate-700">
                     {getFileName(ef)}
                   </p>
-                  <p className="text-[11px] text-slate-400">
+                  <p className="text-2xs text-slate-400">
                     {(getFileSize(ef) / 1024 / 1024).toFixed(1)} MB
                     {ef.status === "uploading" && " · กำลังอัปโหลด..."}
                     {ef.status === "uploaded" && " · อัปโหลดสำเร็จ"}
@@ -341,17 +341,17 @@ export function EvidenceUploader({
                 {/* Status / Actions */}
                 <div className="flex shrink-0 items-center gap-1">
                   {ef.status === "uploading" && (
-                    <Loader2 className="size-4 animate-spin text-[#10B981]" />
+                    <Loader2 className="size-4 animate-spin text-brand" />
                   )}
                   {ef.status === "uploaded" && (
-                    <CheckCircle2 className="size-4 text-[#10B981]" />
+                    <CheckCircle2 className="size-4 text-brand" />
                   )}
                   {ef.status === "error" && (
                     <Button
                       type="button"
                       variant="ghost"
                       size="sm"
-                      className="h-6 px-2 text-[11px] text-[#10B981]"
+                      className="h-6 px-2 text-2xs text-brand"
                       onClick={() => void handleRetry(ef)}
                     >
                       ลองอีกครั้ง
@@ -384,11 +384,11 @@ export function EvidenceUploader({
             if (e.dataTransfer.files.length > 0) void handleFiles(e.dataTransfer.files);
           }}
           disabled={uploading}
-          className="flex w-full cursor-pointer flex-col items-center justify-center gap-1.5 rounded-lg border-2 border-dashed border-slate-200 bg-slate-50/50 px-3 py-4 text-center transition-colors hover:border-[#10B981]/50 hover:bg-[#ECFDF5]/30 disabled:cursor-not-allowed disabled:opacity-60"
+          className="flex w-full cursor-pointer flex-col items-center justify-center gap-1.5 rounded-lg border-2 border-dashed border-slate-200 bg-slate-50/50 px-3 py-4 text-center transition-colors hover:border-brand/50 hover:bg-[#ECFDF5]/30 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {uploading ? (
             <>
-              <Loader2 className="size-4 animate-spin text-[#10B981]" />
+              <Loader2 className="size-4 animate-spin text-brand" />
               <p className="text-xs text-slate-500">กำลังอัปโหลด...</p>
             </>
           ) : (
@@ -397,7 +397,7 @@ export function EvidenceUploader({
               <p className="text-xs font-medium text-slate-600">
                 คลิกหรือลากไฟล์มาวาง
               </p>
-              <p className="text-[11px] text-slate-400">
+              <p className="text-2xs text-slate-400">
                 JPG · PNG · WebP · PDF (สูงสุด 10 MB/ไฟล์ · {files.length}/{maxFiles})
               </p>
             </>

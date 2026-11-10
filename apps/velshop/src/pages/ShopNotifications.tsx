@@ -102,7 +102,7 @@ export default function ShopNotifications() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="flex items-center gap-1.5 text-sm font-medium text-slate-400">
-              <Bell className="size-4 text-[#10B981]" />
+              <Bell className="size-4 text-brand" />
               {t("notifications.eyebrow")}
             </p>
             <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">{t("notifications.title")}</h1>
@@ -155,12 +155,12 @@ export default function ShopNotifications() {
                   onClick={() => void handleRead(n)}
                   disabled={busyId === n.id}
                   className={`flex w-full items-start gap-3 rounded-xl border p-4 text-left transition-colors ${
-                    n.isRead ? "border-slate-200 bg-white" : "border-[#10B981]/30 bg-[#F0FDF9]"
-                  } ${!n.isRead ? "hover:border-[#10B981]/50" : ""}`}
+                    n.isRead ? "border-slate-200 bg-white" : "border-brand/30 bg-[#F0FDF9]"
+                  } ${!n.isRead ? "hover:border-brand/50" : ""}`}
                 >
                   <span
-                    className={`flex size-9 shrink-0 items-center justify-center rounded-[10px] ${
-                      n.isRead ? "bg-slate-100 text-slate-400" : "bg-[#10B981] text-white"
+                    className={`flex size-9 shrink-0 items-center justify-center rounded-md ${
+                      n.isRead ? "bg-slate-100 text-slate-400" : "bg-brand text-white"
                     }`}
                   >
                     <Icon className="size-4" />
@@ -168,10 +168,10 @@ export default function ShopNotifications() {
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center justify-between gap-2">
                       <span className="truncate text-sm font-semibold text-slate-900">{n.title}</span>
-                      {!n.isRead && <Badge className="shrink-0 rounded-full bg-[#10B981] text-white hover:bg-[#10B981]">{t("notifications.new")}</Badge>}
+                      {!n.isRead && <Badge className="shrink-0 rounded-full bg-brand text-white hover:bg-brand">{t("notifications.new")}</Badge>}
                     </span>
                     {n.message && <span className="mt-0.5 block text-sm leading-5 text-slate-600">{n.message}</span>}
-                    <span className="mt-1 block text-[11px] text-slate-400">{formatIsoDateTime(n.createdAt)}</span>
+                    <span className="mt-1 block text-2xs text-slate-400">{formatIsoDateTime(n.createdAt)}</span>
                   </span>
                 </button>
               );

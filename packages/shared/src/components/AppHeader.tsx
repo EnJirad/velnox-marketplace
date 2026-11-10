@@ -26,7 +26,7 @@ export function AppHeader() {
   const unread = chatUnread != null && chatUnread > 0 ? chatUnread : null;
   const chatBadge =
     unread == null ? null : (
-      <span className="ml-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#10B981] px-1 text-[11px] font-bold leading-none text-white">
+      <span className="ml-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-brand px-1 text-2xs font-bold leading-none text-white">
         {unread > 99 ? "99+" : unread}
       </span>
     );
@@ -45,7 +45,7 @@ export function AppHeader() {
                 <Link
                   key={item.to}
                   to={item.to}
-                  className={`flex items-center gap-1.5 rounded-[10px] px-3 py-1.5 text-sm font-medium transition-colors ${
+                  className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
                     active
                       ? "bg-slate-100 text-slate-900"
                       : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
@@ -71,7 +71,7 @@ export function AppHeader() {
             to="/seller/chat"
             aria-label={unread != null ? `แชท (${unread})` : "แชท"}
             aria-current={location.pathname.startsWith("/seller/chat") ? "page" : undefined}
-            className={`relative flex size-10 items-center justify-center rounded-[10px] transition-colors md:hidden ${
+            className={`relative flex size-10 items-center justify-center rounded-md transition-colors md:hidden ${
               location.pathname.startsWith("/seller/chat")
                 ? "bg-slate-100 text-slate-900"
                 : "text-slate-600 hover:bg-slate-100"
@@ -79,7 +79,7 @@ export function AppHeader() {
           >
             <MessageCircle className="size-5" />
             {unread != null && (
-              <span className="absolute right-0 top-0 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#10B981] px-1 text-[11px] font-bold leading-none text-white">
+              <span className="absolute right-0 top-0 flex h-4 min-w-4 items-center justify-center rounded-full bg-brand px-1 text-2xs font-bold leading-none text-white">
                 {unread > 99 ? "99+" : unread}
               </span>
             )}

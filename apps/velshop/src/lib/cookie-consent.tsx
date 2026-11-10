@@ -149,7 +149,7 @@ export function CookieConsentProvider({ children }: { children: ReactNode }) {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-slate-900">
-              <Cookie className="size-4 text-[#10B981]" />
+              <Cookie className="size-4 text-brand" />
               {t("cookies.title")}
             </DialogTitle>
             <DialogDescription>{t("cookies.desc")}</DialogDescription>
@@ -224,7 +224,7 @@ function CategoryRow({
       </div>
       <div className="shrink-0 pt-0.5">
         {disabled ? (
-          <span className="inline-flex items-center rounded-full bg-[#ECFDF5] px-2.5 py-1 text-[11px] font-medium text-emerald-700">
+          <span className="inline-flex items-center rounded-full bg-[#ECFDF5] px-2.5 py-1 text-2xs font-medium text-emerald-700">
             {alwaysActive}
           </span>
         ) : (
@@ -253,7 +253,7 @@ function ConsentBanner({
     >
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-3 rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-overlay backdrop-blur sm:flex-row sm:items-center sm:justify-between">
         <p className="flex items-start gap-2 text-xs leading-5 text-slate-600 sm:max-w-md">
-          <Cookie className="mt-0.5 size-4 shrink-0 text-[#10B981]" />
+          <Cookie className="mt-0.5 size-4 shrink-0 text-brand" />
           {t("cookies.banner")}
         </p>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
@@ -263,7 +263,7 @@ function ConsentBanner({
           <Button variant="outline" size="sm" className="h-9 border-slate-200 text-slate-700" onClick={onSettings}>
             {t("cookies.settings")}
           </Button>
-          <Button size="sm" className="h-9 gap-1.5 bg-[#10B981] text-white hover:bg-emerald-700" onClick={onAccept}>
+          <Button size="sm" className="h-9 gap-1.5 bg-brand text-white hover:bg-emerald-700" onClick={onAccept}>
             {t("cookies.acceptAll")}
           </Button>
         </div>

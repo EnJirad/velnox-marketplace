@@ -547,7 +547,7 @@ export default function ShopOrderDetail() {
         <div className="mb-4">
           <Link
             to="/orders"
-            className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 transition-colors hover:text-[#10B981]"
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 transition-colors hover:text-brand"
           >
             <ArrowLeft className="size-4" />
             {t("tracking.backToOrders")}
@@ -564,7 +564,7 @@ export default function ShopOrderDetail() {
           <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3 p-5 sm:p-6">
             <div className="min-w-0">
               <h1 className="flex items-center gap-2 text-lg font-bold tracking-tight text-slate-900 sm:text-xl">
-                <Package className="size-5 shrink-0 text-[#10B981]" />
+                <Package className="size-5 shrink-0 text-brand" />
                 <span className="truncate">{order.orderNumber}</span>
               </h1>
               <p className="mt-1 text-sm text-slate-500">
@@ -578,13 +578,13 @@ export default function ShopOrderDetail() {
             */}
             <div className="flex flex-wrap items-start gap-x-6 gap-y-3">
               <div>
-                <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                <p className="mb-1 text-2xs font-medium uppercase tracking-wide text-slate-400">
                   {t("orderDetail.orderStatusLabel")}
                 </p>
                 <OrderStatusBadge status={order.status} label={statusLabel} size="default" />
               </div>
               <div>
-                <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                <p className="mb-1 text-2xs font-medium uppercase tracking-wide text-slate-400">
                   {t("orderDetail.paymentStatus")}
                 </p>
                 <Badge
@@ -757,9 +757,9 @@ export default function ShopOrderDetail() {
                   const current = stageIndex === i;
                   const StageIcon = orderProgressStageIcon(stage);
                   const marker = done
-                    ? "bg-[#10B981] text-white"
+                    ? "bg-brand text-white"
                     : current
-                      ? "bg-white text-[#10B981] ring-2 ring-[#10B981]"
+                      ? "bg-white text-brand ring-2 ring-brand"
                       : "bg-slate-100 text-slate-400 ring-1 ring-inset ring-slate-200";
                   return (
                     <li
@@ -771,7 +771,7 @@ export default function ShopOrderDetail() {
                         <span
                           aria-hidden="true"
                           className={`hidden h-0.5 flex-1 sm:block ${
-                            i === 0 ? "bg-transparent" : stageIndex >= i ? "bg-[#10B981]" : "bg-slate-200"
+                            i === 0 ? "bg-transparent" : stageIndex >= i ? "bg-brand" : "bg-slate-200"
                           }`}
                         />
                         {/*
@@ -799,7 +799,7 @@ export default function ShopOrderDetail() {
                             i === ORDER_PROGRESS_STAGES.length - 1
                               ? "bg-transparent"
                               : stageIndex > i
-                                ? "bg-[#10B981]"
+                                ? "bg-brand"
                                 : "bg-slate-200"
                           }`}
                         />
@@ -808,7 +808,7 @@ export default function ShopOrderDetail() {
                           <span
                             aria-hidden="true"
                             className={`w-0.5 flex-1 sm:hidden ${
-                              done ? "bg-[#10B981]" : "bg-slate-200"
+                              done ? "bg-brand" : "bg-slate-200"
                             }`}
                           />
                         )}
@@ -817,7 +817,7 @@ export default function ShopOrderDetail() {
                       <span className="sr-only">{t(orderProgressStageI18nKey(stage))}</span>
                       <span
                         aria-current={current ? "step" : undefined}
-                        className={`truncate pb-4 text-xs sm:mt-2 sm:pb-0 sm:text-[11px] ${
+                        className={`truncate pb-4 text-xs sm:mt-2 sm:pb-0 sm:text-2xs ${
                           current ? "font-semibold text-slate-900" : done ? "text-slate-500" : "text-slate-400"
                         }`}
                       >
@@ -849,7 +849,7 @@ export default function ShopOrderDetail() {
                           <img
                             src={item.imageUrl}
                             alt={item.productName}
-                            className="size-14 rounded-[10px] border border-slate-100 object-cover"
+                            className="size-14 rounded-md border border-slate-100 object-cover"
                             loading="lazy"
                           />
                         </Link>
@@ -857,12 +857,12 @@ export default function ShopOrderDetail() {
                         <img
                           src={item.imageUrl}
                           alt={item.productName}
-                          className="size-14 rounded-[10px] border border-slate-100 object-cover opacity-60"
+                          className="size-14 rounded-md border border-slate-100 object-cover opacity-60"
                           loading="lazy"
                         />
                       )
                     ) : (
-                      <span className="flex size-14 shrink-0 items-center justify-center rounded-[10px] bg-slate-50">
+                      <span className="flex size-14 shrink-0 items-center justify-center rounded-md bg-slate-50">
                         <ImageOff className="size-4 text-slate-300" />
                       </span>
                     )}
@@ -870,7 +870,7 @@ export default function ShopOrderDetail() {
                       {productAvailable ? (
                         <Link
                           to={`/products/${item.productId}`}
-                          className="block truncate text-sm font-semibold text-slate-900 transition-colors hover:text-[#10B981]"
+                          className="block truncate text-sm font-semibold text-slate-900 transition-colors hover:text-brand"
                         >
                           {item.productName}
                         </Link>
@@ -921,7 +921,7 @@ export default function ShopOrderDetail() {
         {/* ── 4. Delivery ────────────────────────────────────────────────── */}
         <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
           <h2 className="flex items-center gap-2 text-base font-bold tracking-tight text-slate-900">
-            <Truck className="size-4 text-[#10B981]" />
+            <Truck className="size-4 text-brand" />
             {t("orderDetail.deliveryTitle")}
           </h2>
 
@@ -934,7 +934,7 @@ export default function ShopOrderDetail() {
             <div className="mt-4 flex gap-3">
               <MapPin className="mt-0.5 size-4 shrink-0 text-slate-300" />
               <div className="min-w-0">
-                <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                <p className="text-2xs font-medium uppercase tracking-wide text-slate-400">
                   {t("orderDetail.shipTo")}
                 </p>
                 <p className="mt-1 text-sm font-semibold break-words text-slate-900">
@@ -1002,12 +1002,12 @@ export default function ShopOrderDetail() {
                       {[...s.events].reverse().slice(0, 3).map((e, i) => (
                         <div key={e.id} className="flex gap-3">
                           <div className="flex flex-col items-center">
-                            <span className={`mt-1 size-2.5 rounded-full ${i === 0 ? "bg-[#10B981]" : "bg-slate-300"}`} />
+                            <span className={`mt-1 size-2.5 rounded-full ${i === 0 ? "bg-brand" : "bg-slate-300"}`} />
                             {i < 2 && <span className="w-px flex-1 bg-slate-200" />}
                           </div>
                           <div className="pb-4">
                             <p className="text-sm font-medium text-slate-900">{trackingLabel(e.status)}</p>
-                            <p className="mt-0.5 text-[11px] text-slate-400">
+                            <p className="mt-0.5 text-2xs text-slate-400">
                               {e.location ? `${e.location} · ` : ""}
                               {formatIsoDateTime(e.occurredAt)}
                             </p>
@@ -1025,7 +1025,7 @@ export default function ShopOrderDetail() {
         {/* ── 5. Payment ─────────────────────────────────────────────────── */}
         <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
           <h2 className="flex items-center gap-2 text-base font-bold tracking-tight text-slate-900">
-            <CreditCard className="size-4 text-[#10B981]" />
+            <CreditCard className="size-4 text-brand" />
             {t("orderDetail.paymentTitle")}
           </h2>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -1218,11 +1218,11 @@ export default function ShopOrderDetail() {
                 value={reviewComment}
                 onChange={(e) => setReviewComment(e.target.value)}
                 placeholder={t("orderDetail.commentPlaceholder")}
-                className="mt-1.5 rounded-[10px] border-slate-200 text-sm"
+                className="mt-1.5 rounded-md border-slate-200 text-sm"
                 rows={3}
               />
             </div>
-            <p className="rounded-[10px] bg-[#ECFDF5] px-3 py-2 text-xs text-emerald-700">
+            <p className="rounded-md bg-[#ECFDF5] px-3 py-2 text-xs text-emerald-700">
               {t("orderDetail.verifiedNote")}
             </p>
           </div>

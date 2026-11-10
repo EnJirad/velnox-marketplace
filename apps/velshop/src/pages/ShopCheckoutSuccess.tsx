@@ -46,7 +46,7 @@ interface OrderData {
 }
 
 const STATUS_META: Record<string, { icon: typeof CheckCircle2; color: string; bg: string; labelKey: string }> = {
-  paid: { icon: CheckCircle2, color: "text-[#10B981]", bg: "bg-[#ECFDF5]", labelKey: "checkoutSuccess.paid" },
+  paid: { icon: CheckCircle2, color: "text-brand", bg: "bg-[#ECFDF5]", labelKey: "checkoutSuccess.paid" },
   pending: { icon: Clock, color: "text-amber-500", bg: "bg-amber-50", labelKey: "checkoutSuccess.pending" },
   pending_payment: { icon: Clock, color: "text-amber-500", bg: "bg-amber-50", labelKey: "checkoutSuccess.pendingPayment" },
   cancelled: { icon: XCircle, color: "text-red-500", bg: "bg-red-50", labelKey: "checkoutSuccess.cancelled" },
@@ -182,7 +182,7 @@ export default function ShopCheckoutSuccess() {
       <main className="mx-auto w-full max-w-2xl px-4 py-14 sm:px-6">
         {loading ? (
           <div className="flex flex-col items-center py-16">
-            <Loader2 className="size-8 animate-spin text-[#10B981]" />
+            <Loader2 className="size-8 animate-spin text-brand" />
             <p className="mt-4 text-sm text-slate-500">{t("checkoutSuccess.loading")}</p>
             {sessionId && (
               <p className="mt-2 text-xs text-slate-400">{t("checkoutSuccess.verifyingPayment")}</p>
@@ -236,7 +236,7 @@ export default function ShopCheckoutSuccess() {
                 <div className="mt-3 flex items-center justify-between">
                   <p className="text-sm text-slate-500">{t("checkoutSuccess.paymentStatus")}</p>
                   <span className="flex items-center gap-1.5 text-sm font-medium">
-                    <CreditCard className="size-3.5 text-[#10B981]" />
+                    <CreditCard className="size-3.5 text-brand" />
                     {order.payment
                       ? paymentStatusLabel(order.payment.status)
                       : t("checkoutSuccess.verifyingPayment")}
@@ -297,7 +297,7 @@ export default function ShopCheckoutSuccess() {
                     returnPath={`/orders/${order.id}`}
                   />
                 </div>
-                <p className="mt-3 text-[11px] leading-5 text-amber-700/70">{t("checkoutSuccess.polling")}</p>
+                <p className="mt-3 text-2xs leading-5 text-amber-700/70">{t("checkoutSuccess.polling")}</p>
               </div>
             )}
           </>

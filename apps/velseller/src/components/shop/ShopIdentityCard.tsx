@@ -193,7 +193,7 @@ export function ShopIdentityCard({ shop, verificationStatus, onUpdated }: ShopId
             {logo ? (
               <img src={logo} alt="" className="size-full object-cover" />
             ) : (
-              <Store className="size-7 text-[#10B981]" aria-hidden="true" />
+              <Store className="size-7 text-brand" aria-hidden="true" />
             )}
           </span>
           <div className="flex flex-wrap items-center gap-2 pb-1">
@@ -303,7 +303,7 @@ export function ShopIdentityCard({ shop, verificationStatus, onUpdated }: ShopId
                 value={form.name}
                 onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
                 maxLength={255}
-                className="h-11 rounded-[10px]"
+                className="h-11 rounded-md"
                 autoComplete="organization"
               />
             </div>
@@ -316,7 +316,7 @@ export function ShopIdentityCard({ shop, verificationStatus, onUpdated }: ShopId
                 onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
                 rows={3}
                 maxLength={2000}
-                className="rounded-[10px]"
+                className="rounded-md"
                 placeholder={t("sellerDash.shop.onboardDescPh")}
               />
             </div>
@@ -330,7 +330,7 @@ export function ShopIdentityCard({ shop, verificationStatus, onUpdated }: ShopId
                   onChange={(e) => setForm((prev) => ({ ...prev, phone: e.target.value }))}
                   inputMode="tel"
                   maxLength={20}
-                  className="h-11 rounded-[10px] tabular-nums"
+                  className="h-11 rounded-md tabular-nums"
                   autoComplete="tel"
                 />
               </div>
@@ -341,7 +341,7 @@ export function ShopIdentityCard({ shop, verificationStatus, onUpdated }: ShopId
                   value={form.category}
                   onChange={(e) => setForm((prev) => ({ ...prev, category: e.target.value }))}
                   maxLength={100}
-                  className="h-11 rounded-[10px]"
+                  className="h-11 rounded-md"
                   placeholder={t("sellerDash.shop.fieldCategoryPh")}
                   aria-describedby="edit-shop-category-hint"
                 />
@@ -362,7 +362,7 @@ export function ShopIdentityCard({ shop, verificationStatus, onUpdated }: ShopId
                   value={form.address.line1 ?? ""}
                   onChange={(e) => setAddress("line1", e.target.value)}
                   maxLength={255}
-                  className="h-11 rounded-[10px]"
+                  className="h-11 rounded-md"
                   autoComplete="address-line1"
                 />
               </div>
@@ -374,7 +374,7 @@ export function ShopIdentityCard({ shop, verificationStatus, onUpdated }: ShopId
                     value={form.address.subdistrict ?? ""}
                     onChange={(e) => setAddress("subdistrict", e.target.value)}
                     maxLength={100}
-                    className="h-11 rounded-[10px]"
+                    className="h-11 rounded-md"
                   />
                 </div>
                 <div className="grid gap-2">
@@ -384,7 +384,7 @@ export function ShopIdentityCard({ shop, verificationStatus, onUpdated }: ShopId
                     value={form.address.district ?? ""}
                     onChange={(e) => setAddress("district", e.target.value)}
                     maxLength={100}
-                    className="h-11 rounded-[10px]"
+                    className="h-11 rounded-md"
                   />
                 </div>
                 <div className="grid gap-2">
@@ -394,7 +394,7 @@ export function ShopIdentityCard({ shop, verificationStatus, onUpdated }: ShopId
                     value={form.address.city ?? ""}
                     onChange={(e) => setAddress("city", e.target.value)}
                     maxLength={100}
-                    className="h-11 rounded-[10px]"
+                    className="h-11 rounded-md"
                     autoComplete="address-level1"
                   />
                 </div>
@@ -406,7 +406,7 @@ export function ShopIdentityCard({ shop, verificationStatus, onUpdated }: ShopId
                     onChange={(e) => setAddress("postalCode", e.target.value)}
                     inputMode="numeric"
                     maxLength={5}
-                    className="h-11 rounded-[10px] tabular-nums"
+                    className="h-11 rounded-md tabular-nums"
                     autoComplete="postal-code"
                     aria-invalid={postalInvalid || undefined}
                     aria-describedby={postalInvalid ? "edit-shop-postal-error" : undefined}
@@ -434,7 +434,7 @@ export function ShopIdentityCard({ shop, verificationStatus, onUpdated }: ShopId
                     onChange={(e) => setForm((prev) => ({ ...prev, shippingFee: e.target.value }))}
                     inputMode="decimal"
                     placeholder="50"
-                    className="h-11 rounded-[10px] tabular-nums"
+                    className="h-11 rounded-md tabular-nums"
                     aria-describedby="edit-shop-shipping-fee-hint"
                     aria-invalid={moneyFieldInvalid(form.shippingFee) || undefined}
                   />
@@ -452,7 +452,7 @@ export function ShopIdentityCard({ shop, verificationStatus, onUpdated }: ShopId
                     onChange={(e) => setForm((prev) => ({ ...prev, freeShippingThreshold: e.target.value }))}
                     inputMode="decimal"
                     placeholder="1000"
-                    className="h-11 rounded-[10px] tabular-nums"
+                    className="h-11 rounded-md tabular-nums"
                     aria-describedby="edit-shop-free-threshold-hint"
                     aria-invalid={moneyFieldInvalid(form.freeShippingThreshold) || undefined}
                   />
@@ -474,7 +474,7 @@ export function ShopIdentityCard({ shop, verificationStatus, onUpdated }: ShopId
               {t("common.cancel")}
             </Button>
             <Button
-              className="h-11 gap-1.5 bg-[#10B981] text-white hover:bg-[#059669]"
+              className="h-11 gap-1.5 bg-brand text-white hover:bg-[#059669]"
               onClick={() => void handleSave()}
               disabled={saving || !form.name.trim() || postalInvalid || shippingInvalid}
             >

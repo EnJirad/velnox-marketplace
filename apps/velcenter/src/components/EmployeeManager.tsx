@@ -323,7 +323,7 @@ export default function EmployeeManager({ readOnly = false }: { readOnly?: boole
     <Card className="mb-4 border-slate-200 shadow-none">
       <CardHeader className="flex-row items-center justify-between space-y-0">
         <CardTitle className="flex items-center gap-2 text-base">
-          <ShieldCheck className="size-4 text-[#10B981]" />
+          <ShieldCheck className="size-4 text-brand" />
           บัญชีพนักงาน (ล็อกอิน velcenter)
         </CardTitle>
         {!readOnly && (
@@ -347,12 +347,12 @@ export default function EmployeeManager({ readOnly = false }: { readOnly?: boole
         {/* Refresh failure with rows already on screen: keep the table, flag the
             staleness, offer the retry. */}
         {employees !== null && error && (
-          <div className="mb-3 flex flex-col items-start gap-2 rounded-[10px] border border-red-200 bg-red-50/60 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="mb-3 flex flex-col items-start gap-2 rounded-md border border-red-200 bg-red-50/60 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
             <p className="flex items-center gap-2 text-xs text-rose-700">
               <AlertCircle className="size-3.5 shrink-0" />
               อัปเดตข้อมูลล่าสุดไม่สำเร็จ: {error}
             </p>
-            <Button variant="outline" size="sm" className="shrink-0 gap-1.5 rounded-[10px]" onClick={() => void load()}>
+            <Button variant="outline" size="sm" className="shrink-0 gap-1.5 rounded-md" onClick={() => void load()}>
               <RefreshCw className="size-3.5" />
               ลองใหม่
             </Button>
@@ -361,10 +361,10 @@ export default function EmployeeManager({ readOnly = false }: { readOnly?: boole
 
         {employees === null ? (
           error ? (
-            <div className="flex flex-col items-center gap-2 rounded-[10px] border border-red-200 bg-red-50/60 px-3 py-6 text-center">
+            <div className="flex flex-col items-center gap-2 rounded-md border border-red-200 bg-red-50/60 px-3 py-6 text-center">
               <AlertCircle className="size-5 text-rose-500" />
               <p className="max-w-sm text-sm text-rose-700">โหลดบัญชีพนักงานไม่สำเร็จ: {error}</p>
-              <Button variant="outline" size="sm" className="gap-1.5 rounded-[10px]" onClick={() => void load()}>
+              <Button variant="outline" size="sm" className="gap-1.5 rounded-md" onClick={() => void load()}>
                 <RefreshCw className="size-3.5" />
                 ลองใหม่
               </Button>
@@ -376,7 +376,7 @@ export default function EmployeeManager({ readOnly = false }: { readOnly?: boole
             </div>
           )
         ) : employees.length === 0 ? (
-          <p className="rounded-[10px] bg-slate-50 px-3 py-4 text-center text-sm text-slate-400">
+          <p className="rounded-md bg-slate-50 px-3 py-4 text-center text-sm text-slate-400">
             {readOnly ? "ยังไม่มีบัญชีพนักงาน" : "ยังไม่มีพนักงาน — กด “สร้างพนักงาน” เพื่อสร้างบัญชีแรก"}
           </p>
         ) : (
@@ -570,7 +570,7 @@ export default function EmployeeManager({ readOnly = false }: { readOnly?: boole
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <UserPlus className="size-4 text-[#10B981]" />
+              <UserPlus className="size-4 text-brand" />
               สร้างบัญชีพนักงาน
             </DialogTitle>
             <DialogDescription>
@@ -628,7 +628,7 @@ export default function EmployeeManager({ readOnly = false }: { readOnly?: boole
                   value={newEmployee.department}
                   onValueChange={(v) => setNewEmployee((f) => ({ ...f, department: v }))}
                 >
-                  <SelectTrigger className="h-10 rounded-[10px] border-slate-200 text-sm">
+                  <SelectTrigger className="h-10 rounded-md border-slate-200 text-sm">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -646,7 +646,7 @@ export default function EmployeeManager({ readOnly = false }: { readOnly?: boole
                   value={newEmployee.role}
                   onValueChange={(v) => setNewEmployee((f) => ({ ...f, role: v }))}
                 >
-                  <SelectTrigger className="h-10 rounded-[10px] border-slate-200 text-sm">
+                  <SelectTrigger className="h-10 rounded-md border-slate-200 text-sm">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -658,14 +658,14 @@ export default function EmployeeManager({ readOnly = false }: { readOnly?: boole
             </div>
             <div className="grid gap-2">
               <Label>สิทธิ์เฉพาะ (staff เท่านั้น ใช้ได้จริง — admin/owner ได้ทั้งหมดอยู่แล้ว)</Label>
-              <div className="grid max-h-56 gap-1.5 overflow-y-auto rounded-[10px] border border-slate-200 p-3">
+              <div className="grid max-h-56 gap-1.5 overflow-y-auto rounded-md border border-slate-200 p-3">
                 {catalog.length === 0 ? (
                   <p className="text-xs text-slate-400">กำลังโหลดรายการสิทธิ์...</p>
                 ) : (
                   catalog.map((p) => (
                     <label
                       key={p.code}
-                      className="flex cursor-pointer items-start gap-2.5 rounded-[8px] px-1 py-1.5 hover:bg-slate-50"
+                      className="flex cursor-pointer items-start gap-2.5 rounded-sm px-1 py-1.5 hover:bg-slate-50"
                     >
                       <Checkbox
                         checked={newPermissions.includes(p.code)}
@@ -835,7 +835,7 @@ export default function EmployeeManager({ readOnly = false }: { readOnly?: boole
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <ShieldCheck className="size-4 text-[#10B981]" />
+              <ShieldCheck className="size-4 text-brand" />
               สิทธิ์ของ {permEditor?.name}
             </DialogTitle>
             <DialogDescription>
@@ -851,7 +851,7 @@ export default function EmployeeManager({ readOnly = false }: { readOnly?: boole
                   setPermEditor((e) => (e ? { ...e, department: v } : e))
                 }
               >
-                <SelectTrigger className="h-10 rounded-[10px] border-slate-200 text-sm">
+                <SelectTrigger className="h-10 rounded-md border-slate-200 text-sm">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -865,14 +865,14 @@ export default function EmployeeManager({ readOnly = false }: { readOnly?: boole
             </div>
             <div className="grid gap-2">
               <Label>สิทธิ์</Label>
-              <div className="grid max-h-64 gap-1.5 overflow-y-auto rounded-[10px] border border-slate-200 p-3">
+              <div className="grid max-h-64 gap-1.5 overflow-y-auto rounded-md border border-slate-200 p-3">
                 {catalog.length === 0 ? (
                   <p className="text-xs text-slate-400">กำลังโหลดรายการสิทธิ์...</p>
                 ) : (
                   catalog.map((p) => (
                     <label
                       key={p.code}
-                      className="flex cursor-pointer items-start gap-2.5 rounded-[8px] px-1 py-1.5 hover:bg-slate-50"
+                      className="flex cursor-pointer items-start gap-2.5 rounded-sm px-1 py-1.5 hover:bg-slate-50"
                     >
                       <Checkbox
                         checked={permDraft.includes(p.code)}

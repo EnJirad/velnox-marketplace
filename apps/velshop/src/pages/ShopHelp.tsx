@@ -131,7 +131,7 @@ export default function ShopHelp() {
       <main className="mx-auto w-full max-w-3xl px-4 py-8 sm:px-6 sm:py-10">
         {/* Hero */}
         <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-soft">
-          <div className="bg-gradient-to-r from-[#0f766e] via-[#10B981] to-[#34d399] px-6 py-8 sm:px-8">
+          <div className="bg-gradient-to-r from-[#0f766e] via-brand to-[#34d399] px-6 py-8 sm:px-8">
             <p className="flex items-center gap-1.5 text-sm font-medium text-emerald-50">
               <Headphones className="size-4" />
               {t("help.eyebrow")}
@@ -146,7 +146,7 @@ export default function ShopHelp() {
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder={t("help.searchPlaceholder")}
-                className="h-11 rounded-[12px] border-white/40 bg-white pl-9 pr-3 text-sm shadow-sm"
+                className="h-11 rounded-lg border-white/40 bg-white pl-9 pr-3 text-sm shadow-sm"
                 aria-label={t("help.searchPlaceholder")}
               />
             </div>
@@ -169,7 +169,7 @@ export default function ShopHelp() {
               return (
                 <section key={cat.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
                   <div className="flex items-start gap-3 px-5 pt-5 pb-3 sm:px-6">
-                    <span className="flex size-10 shrink-0 items-center justify-center rounded-[12px] bg-[#ECFDF5] text-[#047857]">
+                    <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-[#ECFDF5] text-[#047857]">
                       <Icon className="size-[18px]" />
                     </span>
                     <div className="min-w-0">
@@ -180,7 +180,7 @@ export default function ShopHelp() {
                   <Accordion type="single" collapsible className="border-t border-slate-100 px-1">
                     {cat.articles.map((article) => (
                       <AccordionItem key={article.id} value={article.id} className="border-b border-slate-100 last:border-b-0">
-                        <AccordionTrigger className="px-4 py-3.5 text-left text-sm font-medium text-slate-800 hover:no-underline [&[data-state=open]>svg]:text-[#10B981]">
+                        <AccordionTrigger className="px-4 py-3.5 text-left text-sm font-medium text-slate-800 hover:no-underline [&[data-state=open]>svg]:text-brand">
                           {t(article.titleKey)}
                         </AccordionTrigger>
                         <AccordionContent className="px-4 pb-4 text-sm leading-6 text-slate-500">
@@ -198,7 +198,7 @@ export default function ShopHelp() {
         {/* Contact support */}
         <section id="contact" className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
           <div className="flex items-start gap-3">
-            <span className="flex size-10 shrink-0 items-center justify-center rounded-[12px] bg-slate-100 text-slate-500">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
               <LifeBuoy className="size-[18px]" />
             </span>
             <div className="min-w-0 flex-1">
@@ -231,7 +231,7 @@ export default function ShopHelp() {
         </section>
 
         <p className="mt-6 flex items-center justify-center gap-1.5 text-center text-xs text-slate-400">
-          <MessageCircle className="size-3.5 text-[#10B981]" />
+          <MessageCircle className="size-3.5 text-brand" />
           {t("help.supportNote")}
         </p>
       </main>

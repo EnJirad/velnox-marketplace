@@ -229,7 +229,7 @@ export function CategoryPicker({
             <button
               type="button"
               onClick={() => handleNavigateToBreadcrumb(0)}
-              className="shrink-0 rounded px-1 py-0.5 font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-[#10B981]"
+              className="shrink-0 rounded px-1 py-0.5 font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-brand"
             >
               {t("categoryPicker.all")}
             </button>
@@ -242,8 +242,8 @@ export function CategoryPicker({
                   title={getLocalizedName(node, lang)}
                   className={`min-w-0 max-w-[8rem] truncate rounded px-1 py-0.5 font-medium transition-colors hover:bg-slate-100 sm:max-w-[14rem] ${
                     idx === navigationStack.length - 1
-                      ? "text-[#10B981]"
-                      : "text-slate-600 hover:text-[#10B981]"
+                      ? "text-brand"
+                      : "text-slate-600 hover:text-brand"
                   }`}
                 >
                   {getLocalizedName(node, lang)}
@@ -257,7 +257,7 @@ export function CategoryPicker({
         <div className="min-h-0 w-full min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-2 py-2">
           {loading ? (
             <div className="flex flex-col items-center justify-center py-12 text-slate-400">
-              <div className="size-6 animate-spin rounded-full border-2 border-slate-200 border-t-[#10B981]" />
+              <div className="size-6 animate-spin rounded-full border-2 border-slate-200 border-t-brand" />
               <p className="mt-3 text-xs">{t("categoryPicker.loading")}</p>
             </div>
           ) : searchResults !== null ? (
@@ -280,7 +280,7 @@ export function CategoryPicker({
                     title={getLocalizedName(node, lang)}
                     className={`flex w-full min-w-0 items-center gap-3 overflow-hidden rounded-xl px-3 py-2.5 text-left transition-all ${
                       pendingSelection === node.slug
-                        ? "bg-[#ECFDF5] ring-1 ring-[#10B981] text-[#059669]"
+                        ? "bg-[#ECFDF5] ring-1 ring-brand text-[#059669]"
                         : "hover:bg-slate-50 text-slate-700"
                     }`}
                   >
@@ -290,13 +290,13 @@ export function CategoryPicker({
                         {getLocalizedName(node, lang)}
                       </p>
                       {node.searchPath.length > 1 && (
-                        <p className="mt-0.5 w-full truncate text-[11px] text-slate-400">
+                        <p className="mt-0.5 w-full truncate text-2xs text-slate-400">
                           {node.searchPath.join(" › ")}
                         </p>
                       )}
                     </div>
                     {pendingSelection === node.slug && (
-                      <Check className="size-4 shrink-0 text-[#10B981]" />
+                      <Check className="size-4 shrink-0 text-brand" />
                     )}
                   </button>
                 ))}
@@ -326,7 +326,7 @@ export function CategoryPicker({
                       // width with min-w-0 + truncate instead.
                       className={`flex w-full min-w-0 items-center gap-1 rounded-xl transition-all ${
                         active
-                          ? "bg-[#ECFDF5] ring-1 ring-[#10B981]"
+                          ? "bg-[#ECFDF5] ring-1 ring-brand"
                           : "hover:bg-slate-50"
                       }`}
                     >
@@ -342,7 +342,7 @@ export function CategoryPicker({
                         className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2.5 text-left"
                       >
                         {isParent ? (
-                          <Folder className="size-4 shrink-0 text-[#10B981]" />
+                          <Folder className="size-4 shrink-0 text-brand" />
                         ) : (
                           <span className="size-4 shrink-0" />
                         )}
@@ -355,13 +355,13 @@ export function CategoryPicker({
                             {getLocalizedName(node, lang)}
                           </p>
                           {isParent && (
-                            <p className="mt-0.5 w-full truncate text-[11px] text-slate-400">
+                            <p className="mt-0.5 w-full truncate text-2xs text-slate-400">
                               {t("categoryPicker.subcategories", { count: childCount })}
                             </p>
                           )}
                         </div>
                         {active && (
-                          <Check className="size-4 shrink-0 text-[#10B981]" />
+                          <Check className="size-4 shrink-0 text-brand" />
                         )}
                         {isParent && (
                           <ChevronRight className="size-4 shrink-0 text-slate-300" />
@@ -404,7 +404,7 @@ export function CategoryPicker({
               size="sm"
               onClick={handleConfirm}
               disabled={!pendingSelection}
-              className="bg-[#10B981] text-white hover:bg-[#059669] disabled:opacity-50"
+              className="bg-brand text-white hover:bg-[#059669] disabled:opacity-50"
             >
               {t("categoryPicker.select")}
             </Button>

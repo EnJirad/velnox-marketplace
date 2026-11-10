@@ -298,7 +298,7 @@ export default function SellerOrderDetail() {
             {error ?? t("orderDetail.notFoundDesc")}
           </p>
           <div className="mt-6 flex flex-col gap-2 sm:flex-row">
-            <Button className="gap-1.5 h-11 bg-[#10B981] text-white hover:bg-[#059669]" onClick={() => void load()}>
+            <Button className="gap-1.5 h-11 bg-brand text-white hover:bg-[#059669]" onClick={() => void load()}>
               <RefreshCw className="size-4" />
               {t("orderDetail.retry")}
             </Button>
@@ -345,7 +345,7 @@ export default function SellerOrderDetail() {
       <main className="mx-auto w-full max-w-5xl px-4 py-8 sm:px-6 sm:py-10">
         <Link
           to="/seller/orders"
-          className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 transition-colors hover:text-[#10B981]"
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 transition-colors hover:text-brand"
         >
           <ArrowLeft className="size-4" />
           {t("orderDetail.backToOrders")}
@@ -356,7 +356,7 @@ export default function SellerOrderDetail() {
           <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3 p-5 sm:p-6">
             <div className="min-w-0">
               <h1 className="flex items-center gap-2 text-lg font-bold tracking-tight text-slate-900 sm:text-xl">
-                <Package className="size-5 shrink-0 text-[#10B981]" />
+                <Package className="size-5 shrink-0 text-brand" />
                 <span className="truncate tabular-nums">{order.orderNumber}</span>
               </h1>
               <p className="mt-1 text-sm text-slate-500">
@@ -364,7 +364,7 @@ export default function SellerOrderDetail() {
               </p>
             </div>
             <div className="text-right">
-              <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-400">
+              <p className="mb-1 text-2xs font-medium uppercase tracking-wide text-slate-400">
                 {t("sellerOrders.currentStatus")}
               </p>
               <OrderStatusBadge status={order.status} label={statusLabel} size="default" />
@@ -392,7 +392,7 @@ export default function SellerOrderDetail() {
                       className={
                         destructive
                           ? "gap-1.5 border-rose-200 text-rose-600 hover:bg-rose-50"
-                          : "gap-1.5 bg-[#10B981] text-white hover:bg-emerald-600"
+                          : "gap-1.5 bg-brand text-white hover:bg-emerald-600"
                       }
                       variant={destructive ? "outline" : "default"}
                       disabled={busyStatus !== null}
@@ -411,7 +411,7 @@ export default function SellerOrderDetail() {
         {/* ── 3. Customer ──────────────────────────────────────────────────── */}
         <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
           <h2 className="flex items-center gap-2 text-base font-bold tracking-tight text-slate-900">
-            <User className="size-4 text-[#10B981]" />
+            <User className="size-4 text-brand" />
             {t("sellerOrders.customerTitle")}
           </h2>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -427,7 +427,7 @@ export default function SellerOrderDetail() {
             </div>
           </div>
           {order.note && (
-            <p className="mt-3 rounded-[10px] bg-amber-50 px-3 py-2 text-xs text-amber-700">
+            <p className="mt-3 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-700">
               {t("orderDetail.note", { note: order.note })}
             </p>
           )}
@@ -454,11 +454,11 @@ export default function SellerOrderDetail() {
                     <img
                       src={item.imageUrl}
                       alt=""
-                      className="size-14 shrink-0 rounded-[10px] border border-slate-100 object-cover"
+                      className="size-14 shrink-0 rounded-md border border-slate-100 object-cover"
                       loading="lazy"
                     />
                   ) : (
-                    <span className="flex size-14 shrink-0 items-center justify-center rounded-[10px] bg-slate-50">
+                    <span className="flex size-14 shrink-0 items-center justify-center rounded-md bg-slate-50">
                       <ImageOff className="size-4 text-slate-300" />
                     </span>
                   )}
@@ -516,7 +516,7 @@ export default function SellerOrderDetail() {
         {/* ── 5. Shipping: the order's OWN address snapshot + real tracking ── */}
         <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
           <h2 className="flex items-center gap-2 text-base font-bold tracking-tight text-slate-900">
-            <Truck className="size-4 text-[#10B981]" />
+            <Truck className="size-4 text-brand" />
             {t("orderDetail.deliveryTitle")}
           </h2>
 
@@ -524,11 +524,11 @@ export default function SellerOrderDetail() {
             <div className="mt-4 flex gap-3">
               <MapPin className="mt-0.5 size-4 shrink-0 text-slate-300" />
               <div className="min-w-0">
-                <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                <p className="text-2xs font-medium uppercase tracking-wide text-slate-400">
                   {t("orderDetail.shipTo")}
                 </p>
                 {address.label && (
-                  <p className="mt-1 inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
+                  <p className="mt-1 inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-2xs font-medium text-slate-600">
                     {address.label}
                   </p>
                 )}
@@ -572,7 +572,7 @@ export default function SellerOrderDetail() {
                     <p className="font-semibold text-slate-900">
                       {shipment.carrier}
                       {shipment.carrierCode && (
-                        <span className="ml-1.5 rounded-full bg-slate-200 px-1.5 py-0.5 font-mono text-[11px] font-medium text-slate-500">
+                        <span className="ml-1.5 rounded-full bg-slate-200 px-1.5 py-0.5 font-mono text-2xs font-medium text-slate-500">
                           {shipment.carrierCode}
                         </span>
                       )}
@@ -605,7 +605,7 @@ export default function SellerOrderDetail() {
                       : ""}
                   </p>
                   {shipment.lastError && (
-                    <p className="mt-1 text-[11px] text-amber-600">
+                    <p className="mt-1 text-2xs text-amber-600">
                       {t("tracking.carrierError", { code: shipment.lastError })}
                     </p>
                   )}
@@ -617,7 +617,7 @@ export default function SellerOrderDetail() {
                           <div className="flex flex-col items-center">
                             <span
                               className={`mt-1 size-2.5 shrink-0 rounded-full ${
-                                index === 0 ? "bg-[#10B981]" : "bg-slate-300"
+                                index === 0 ? "bg-brand" : "bg-slate-300"
                               }`}
                             />
                             {index < all.length - 1 && <span className="w-px flex-1 bg-slate-200" />}
@@ -629,7 +629,7 @@ export default function SellerOrderDetail() {
                             {event.description && (
                               <p className="mt-0.5 text-xs text-slate-500">{event.description}</p>
                             )}
-                            <p className="mt-0.5 text-[11px] text-slate-400">
+                            <p className="mt-0.5 text-2xs text-slate-400">
                               {event.location ? `${event.location} · ` : ""}
                               {formatIsoDateTime(event.occurredAt)}
                             </p>
@@ -647,7 +647,7 @@ export default function SellerOrderDetail() {
         {/* ── 6. Payment ───────────────────────────────────────────────────── */}
         <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
           <h2 className="flex items-center gap-2 text-base font-bold tracking-tight text-slate-900">
-            <CreditCard className="size-4 text-[#10B981]" />
+            <CreditCard className="size-4 text-brand" />
             {t("orderDetail.paymentTitle")}
           </h2>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -761,7 +761,7 @@ export default function SellerOrderDetail() {
             <div className="grid gap-2">
               <Label htmlFor="ship-carrier">{t("orderFulfillment.carrier")}</Label>
               <Select value={shipCarrier} onValueChange={setShipCarrier} disabled={busyStatus !== null}>
-                <SelectTrigger id="ship-carrier" className="h-10 w-full rounded-[10px] border-slate-200 bg-white text-sm">
+                <SelectTrigger id="ship-carrier" className="h-10 w-full rounded-md border-slate-200 bg-white text-sm">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="bg-white">
@@ -794,7 +794,7 @@ export default function SellerOrderDetail() {
               {t("orderCancel.back")}
             </Button>
             <Button
-              className="gap-1.5 bg-[#10B981] text-white hover:bg-emerald-600"
+              className="gap-1.5 bg-brand text-white hover:bg-emerald-600"
               disabled={busyStatus !== null || !shipCarrier.trim() || !shipTracking.trim()}
               onClick={() =>
                 void handleStatusChange("shipped", {

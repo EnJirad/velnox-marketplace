@@ -103,7 +103,7 @@ export function ChatBubble({
         )}
         <div
           className={cn(
-            "mt-0.5 flex items-center justify-end gap-1 text-[11px] tabular-nums",
+            "mt-0.5 flex items-center justify-end gap-1 text-2xs tabular-nums",
             mine ? "text-emerald-800/60" : "text-slate-400",
           )}
         >
@@ -130,7 +130,7 @@ export function ChatBubble({
 export function ChatDaySeparator({ label }: { label: string }) {
   return (
     <div className="flex justify-center py-2.5">
-      <span className="rounded-full border border-slate-200/80 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500">
+      <span className="rounded-full border border-slate-200/80 bg-white px-2.5 py-1 text-2xs font-medium text-slate-500">
         {label}
       </span>
     </div>
@@ -153,7 +153,7 @@ export function ChatSystemNote({
         <Sparkles className="mt-0.5 size-3.5 shrink-0 text-emerald-500" aria-hidden="true" />
         <span className="min-w-0">
           <span className="whitespace-pre-wrap break-words">{body}</span>
-          <span className="ml-1 whitespace-nowrap text-[11px] text-slate-400">{time}</span>
+          <span className="ml-1 whitespace-nowrap text-2xs text-slate-400">{time}</span>
         </span>
       </p>
     </div>

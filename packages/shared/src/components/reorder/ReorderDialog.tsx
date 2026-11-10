@@ -77,7 +77,7 @@ export function ReorderDialog({ product, open, onOpenChange }: ReorderDialogProp
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <RefreshCw className="size-4 text-[#10B981]" />
+            <RefreshCw className="size-4 text-brand" />
             สั่งซื้อซ้ำ
           </DialogTitle>
           <DialogDescription>
@@ -131,7 +131,7 @@ export function ReorderDialog({ product, open, onOpenChange }: ReorderDialogProp
           </div>
 
           {valid && (
-            <p className="rounded-[10px] bg-slate-50 px-3 py-2.5 text-sm text-slate-600">
+            <p className="rounded-md bg-slate-50 px-3 py-2.5 text-sm text-slate-600">
               สต็อกจะกลายเป็น{" "}
               <span className="font-semibold text-slate-900">
                 {formatNumber((product.currentStock ?? 0) + qty)} {product.unit}

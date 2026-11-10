@@ -169,7 +169,7 @@ export default function ShopAccount() {
             {/* ── Cover + Avatar section ────────────────────────────── */}
             <section className="mt-8 overflow-hidden rounded-3xl border border-slate-200 bg-white">
               {/* Cover image with upload button */}
-              <div className="relative h-36 bg-gradient-to-r from-[#0f766e] via-[#10B981] to-[#34d399] sm:h-40">
+              <div className="relative h-36 bg-gradient-to-r from-[#0f766e] via-brand to-[#34d399] sm:h-40">
                 <CoverImage
                   src={profile?.coverUrl}
                   alt={t("profile.coverAlt", { name: profile?.name || "VelShop" })}
@@ -195,7 +195,7 @@ export default function ShopAccount() {
                     className={`flex size-24 shrink-0 items-center justify-center overflow-hidden rounded-full border-4 border-white shadow-sm ${
                       profile?.avatarUrl
                         ? "bg-transparent"
-                        : "bg-[#ECFDF5] text-3xl font-bold text-[#10B981]"
+                        : "bg-[#ECFDF5] text-3xl font-bold text-brand"
                     }`}
                   >
                     <AvatarImage
@@ -231,12 +231,12 @@ export default function ShopAccount() {
                   </div>
                 </div>
                 <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-4">
-                  <span className="inline-flex items-center gap-1 rounded-full bg-[#ECFDF5] px-2.5 py-1 text-[11px] font-medium text-emerald-700">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-[#ECFDF5] px-2.5 py-1 text-2xs font-medium text-emerald-700">
                     <ShieldCheck className="size-3" />
                     {t("account.statusActive")}
                   </span>
                   {memberSince && (
-                    <span className="inline-flex items-center gap-1 text-[11px] text-slate-400">
+                    <span className="inline-flex items-center gap-1 text-2xs text-slate-400">
                       <CalendarDays className="size-3" />
                       {t("account.memberSince", { date: memberSince })}
                     </span>
@@ -256,7 +256,7 @@ export default function ShopAccount() {
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     placeholder={t("account.namePlaceholder")}
-                    className="h-11 rounded-[10px] border-slate-200"
+                    className="h-11 rounded-md border-slate-200"
                     maxLength={80}
                   />
                 </div>
@@ -268,16 +268,16 @@ export default function ShopAccount() {
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
                     placeholder={t("account.phonePlaceholder")}
-                    className="h-11 rounded-[10px] border-slate-200"
+                    className="h-11 rounded-md border-slate-200"
                   />
-                  <p className="text-[11px] text-slate-400">{t("account.phoneHint")}</p>
+                  <p className="text-2xs text-slate-400">{t("account.phoneHint")}</p>
                 </div>
                 <div className="grid gap-2">
                   <Label>{t("account.email")}</Label>
-                  <div className="flex h-11 items-center rounded-[10px] border border-slate-100 bg-slate-50 px-3 text-sm text-slate-500">
+                  <div className="flex h-11 items-center rounded-md border border-slate-100 bg-slate-50 px-3 text-sm text-slate-500">
                     {profile?.email ?? "—"}
                   </div>
-                  <p className="text-[11px] text-slate-400">{t("account.emailLocked")}</p>
+                  <p className="text-2xs text-slate-400">{t("account.emailLocked")}</p>
                 </div>
               </div>
               <Button

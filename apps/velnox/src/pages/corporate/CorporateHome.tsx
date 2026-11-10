@@ -32,7 +32,7 @@ function WholesaleCard() {
         <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
           ร้านค้าชุมชน · เติมสต็อก
         </p>
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-2xs font-semibold text-slate-600">
           ตัวอย่าง
         </span>
       </div>
@@ -42,7 +42,7 @@ function WholesaleCard() {
             <p className="truncate text-sm font-semibold text-slate-900">น้ำมะพร้าว 1 ลิตร</p>
             <p className="mt-0.5 text-xs text-slate-500">ปลีก ฿ 55/ขวด · ยกแพ็ค 12 ขวด ฿ 540</p>
           </div>
-          <span className="shrink-0 rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-bold text-white">
+          <span className="shrink-0 rounded-lg bg-emerald-600 px-2.5 py-1 text-2xs font-bold text-white">
             1 แพ็ค
           </span>
         </div>
@@ -51,7 +51,7 @@ function WholesaleCard() {
             <p className="truncate text-sm font-semibold text-slate-900">ขนมขบเคี้ยวรวม</p>
             <p className="mt-0.5 text-xs text-slate-500">ปลีก ฿ 12/ซอง · ยกแพ็ค 20 ซอง ฿ 200</p>
           </div>
-          <span className="shrink-0 rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-bold text-white">
+          <span className="shrink-0 rounded-lg bg-emerald-600 px-2.5 py-1 text-2xs font-bold text-white">
             2 แพ็ค
           </span>
         </div>
@@ -167,7 +167,7 @@ export function CorporateHome() {
             </p>
           </div>
           <div className="relative rounded-2xl border border-emerald-200 bg-emerald-50/60 p-7 shadow-sm">
-            <span className="absolute right-5 top-5 rounded-full bg-emerald-600 px-2.5 py-1 text-[11px] font-bold text-white">
+            <span className="absolute right-5 top-5 rounded-full bg-emerald-600 px-2.5 py-1 text-2xs font-bold text-white">
               จุดต่างของ Velnox
             </span>
             <div className="inline-flex size-10 items-center justify-center rounded-xl bg-emerald-600 text-white">

@@ -296,7 +296,7 @@ export function IconifyIconPicker({
                   />
                 ))}
               </div>
-              <div className="flex items-center justify-between gap-2 text-[11px] text-slate-400">
+              <div className="flex items-center justify-between gap-2 text-2xs text-slate-400">
                 <span>
                   {result
                     ? t("velcenter.categories.iconPickerResults", { count: result.total })
@@ -379,7 +379,7 @@ export function IconifyIconPicker({
               </Button>
               <Button
                 type="button"
-                className="gap-1.5 bg-[#10B981] text-white hover:bg-emerald-600"
+                className="gap-1.5 bg-brand text-white hover:bg-emerald-600"
                 onClick={handleConfirm}
                 disabled={!hasTemp}
               >
@@ -409,7 +409,7 @@ function CollectionChip({
       type="button"
       onClick={onClick}
       className={cn(
-        "flex min-h-[28px] items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] transition-colors",
+        "flex min-h-[28px] items-center gap-1 rounded-full border px-2.5 py-1 text-2xs transition-colors",
         active
           ? "border-emerald-600 bg-emerald-50 text-emerald-700"
           : "border-slate-200 text-slate-600 hover:border-emerald-300",
@@ -455,10 +455,10 @@ function IconCell({
         )}
       </span>
       {/* Icon name lives on its own line below the preview — safe wrap, no overlap */}
-      <span className="line-clamp-2 w-full break-words text-center text-[11px] leading-tight text-slate-600">
+      <span className="line-clamp-2 w-full break-words text-center text-2xs leading-tight text-slate-600">
         {item.name}
       </span>
-      <span className="w-full truncate text-center text-[11px] text-slate-400">{item.prefix}</span>
+      <span className="w-full truncate text-center text-2xs text-slate-400">{item.prefix}</span>
     </button>
   );
 }

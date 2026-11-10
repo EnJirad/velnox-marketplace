@@ -288,7 +288,7 @@ export function MapPicker({
       <div className="relative">
         <div
           ref={containerRef}
-          className={`relative z-0 w-full overflow-hidden rounded-[12px] border border-slate-200 ${height}`}
+          className={`relative z-0 w-full overflow-hidden rounded-lg border border-slate-200 ${height}`}
           style={{ touchAction: "none" }}
           aria-label={t("mapPicker.ariaMap")}
         />
@@ -328,16 +328,16 @@ export function MapPicker({
 
         {/* Satellite tile fallback notice */}
         {tileError && layer === "standard" && (
-          <div className="absolute left-2 top-2 z-[600] max-w-[200px] rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-5 text-amber-700 shadow-sm">
+          <div className="absolute left-2 top-2 z-[600] max-w-[200px] rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-2xs leading-5 text-amber-700 shadow-sm">
             {t("mapPicker.satelliteUnavailable")}
           </div>
         )}
 
         {/* Locating overlay */}
         {locating && (
-          <div className="absolute inset-0 z-[550] flex items-center justify-center rounded-[12px] bg-white/70 backdrop-blur-[1px]">
+          <div className="absolute inset-0 z-[550] flex items-center justify-center rounded-lg bg-white/70 backdrop-blur-[1px]">
             <p className="flex items-center gap-2 text-sm font-medium text-slate-600">
-              <LocateFixed className="size-4 animate-spin text-[#10B981]" />
+              <LocateFixed className="size-4 animate-spin text-brand" />
               {t("mapPicker.locating")}
             </p>
           </div>
@@ -346,7 +346,7 @@ export function MapPicker({
 
       {/* ── Live coordinates display ──────────────────────────────────── */}
       {selectedCoords && (
-        <p className="text-center text-[11px] tabular-nums text-slate-400">
+        <p className="text-center text-2xs tabular-nums text-slate-400">
           {t("mapPicker.coords", {
             lat: selectedCoords.lat.toFixed(6),
             lng: selectedCoords.lng.toFixed(6),
@@ -372,7 +372,7 @@ export function MapPicker({
             <Button
               type="button"
               size="sm"
-              className="gap-1.5 bg-[#10B981] text-white hover:bg-emerald-700"
+              className="gap-1.5 bg-brand text-white hover:bg-emerald-700"
               onClick={onConfirm}
             >
               <Check className="size-3.5" />
@@ -381,7 +381,7 @@ export function MapPicker({
           )}
         </div>
         <p
-          className={`flex items-center gap-1 text-[11px] font-medium ${
+          className={`flex items-center gap-1 text-2xs font-medium ${
             confirmed ? "text-emerald-700" : "text-slate-400"
           }`}
         >
@@ -398,7 +398,7 @@ export function MapPicker({
 
       {/* ── Inline geolocation errors ─────────────────────────────────── */}
       {locateError && (
-        <p className="flex items-start gap-1.5 rounded-lg bg-amber-50 px-3 py-2 text-[11px] leading-5 text-amber-700">
+        <p className="flex items-start gap-1.5 rounded-lg bg-amber-50 px-3 py-2 text-2xs leading-5 text-amber-700">
           <LocateFixed className="mt-0.5 size-3.5 shrink-0" />
           {locateError}
         </p>
@@ -406,7 +406,7 @@ export function MapPicker({
 
       {/* ── Hint ──────────────────────────────────────────────────────── */}
       {hasPos && !confirmed && (
-        <p className="text-[11px] text-slate-400">{t("mapPicker.moveHint")}</p>
+        <p className="text-2xs text-slate-400">{t("mapPicker.moveHint")}</p>
       )}
     </div>
   );

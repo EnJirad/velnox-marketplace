@@ -203,19 +203,19 @@ export function IdentityDocumentUploader({
           {required && <span className="ml-0.5 text-rose-500">*</span>}
         </Label>
         {status === "uploading" && (
-          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-600">
+          <span className="inline-flex items-center gap-1 text-2xs font-medium text-amber-600">
             <Loader2 className="size-3 animate-spin" />
             {t("identityDoc.uploading")}
           </span>
         )}
         {status === "uploaded" && (
-          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600">
+          <span className="inline-flex items-center gap-1 text-2xs font-medium text-emerald-600">
             <CheckCircle2 className="size-3" />
             {t("identityDoc.uploaded")}
           </span>
         )}
         {status === "error" && (
-          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-rose-600">
+          <span className="inline-flex items-center gap-1 text-2xs font-medium text-rose-600">
             <AlertCircle className="size-3" />
             {t("identityDoc.failed")}
           </span>
@@ -223,7 +223,7 @@ export function IdentityDocumentUploader({
       </div>
 
       {displayUrl ? (
-        <div className="overflow-hidden rounded-[12px] border border-slate-200 bg-slate-50">
+        <div className="overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
           {/* Real image preview of the ACTUAL selected file */}
           <div className="flex items-center justify-center bg-slate-100">
             <img
@@ -235,14 +235,14 @@ export function IdentityDocumentUploader({
           </div>
           <div className="flex items-center gap-2 border-t border-slate-200 bg-white px-3 py-2">
             <ImageIcon className="size-3.5 shrink-0 text-slate-400" />
-            <p className="min-w-0 flex-1 truncate text-[11px] text-slate-500" title={fileName ?? label}>
+            <p className="min-w-0 flex-1 truncate text-2xs text-slate-500" title={fileName ?? label}>
               {fileName ?? t("identityDoc.previewOnly")}
             </p>
             <Button
               type="button"
               variant="ghost"
               size="sm"
-              className="h-7 shrink-0 gap-1 px-2 text-[11px] text-slate-600"
+              className="h-7 shrink-0 gap-1 px-2 text-2xs text-slate-600"
               onClick={() => inputRef.current?.click()}
               disabled={disabled || status === "uploading"}
             >
@@ -253,7 +253,7 @@ export function IdentityDocumentUploader({
               type="button"
               variant="ghost"
               size="sm"
-              className="h-7 shrink-0 gap-1 px-2 text-[11px] text-rose-600 hover:bg-rose-50"
+              className="h-7 shrink-0 gap-1 px-2 text-2xs text-rose-600 hover:bg-rose-50"
               onClick={handleRemove}
               disabled={disabled || status === "uploading"}
             >
@@ -267,20 +267,20 @@ export function IdentityDocumentUploader({
           type="button"
           onClick={() => inputRef.current?.click()}
           disabled={disabled || status === "uploading"}
-          className="flex min-h-28 w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-[12px] border-2 border-dashed border-slate-200 bg-slate-50/60 px-4 py-6 text-center transition-colors hover:border-[#10B981]/50 hover:bg-[#ECFDF5]/40 disabled:cursor-not-allowed disabled:opacity-60"
+          className="flex min-h-28 w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-slate-200 bg-slate-50/60 px-4 py-6 text-center transition-colors hover:border-brand/50 hover:bg-[#ECFDF5]/40 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {status === "uploading" ? (
-            <Loader2 className="size-5 animate-spin text-[#10B981]" />
+            <Loader2 className="size-5 animate-spin text-brand" />
           ) : (
             <Upload className="size-5 text-slate-400" />
           )}
           <span className="text-xs font-medium text-slate-600">{t("identityDoc.choose")}</span>
-          <span className="text-[11px] text-slate-400">{t("identityDoc.formats")}</span>
+          <span className="text-2xs text-slate-400">{t("identityDoc.formats")}</span>
         </button>
       )}
 
-      {hint && !error && <p className="text-[11px] text-slate-400">{hint}</p>}
-      {error && <p className="text-[11px] font-medium text-rose-600">{error}</p>}
+      {hint && !error && <p className="text-2xs text-slate-400">{hint}</p>}
+      {error && <p className="text-2xs font-medium text-rose-600">{error}</p>}
 
       <input
         ref={inputRef}

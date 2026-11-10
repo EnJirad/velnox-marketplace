@@ -218,12 +218,12 @@ export default function SellerVerificationQueue() {
             placeholder={t("review.searchPlaceholder")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-9 rounded-[10px]"
+            className="pl-9 rounded-md"
           />
         </div>
         <div className="flex gap-2">
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="h-9 w-[160px] rounded-[10px] border-slate-200 bg-white text-sm">
+            <SelectTrigger className="h-9 w-[160px] rounded-md border-slate-200 bg-white text-sm">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -259,14 +259,14 @@ export default function SellerVerificationQueue() {
           </span>
           <h3 className="mt-5 text-lg font-semibold text-slate-900">{t("review.loadFailed")}</h3>
           <p className="mt-1.5 max-w-sm text-sm text-slate-500">{error}</p>
-          <Button variant="outline" size="sm" onClick={() => void loadVerifications()} className="mt-4 rounded-[10px]">
+          <Button variant="outline" size="sm" onClick={() => void loadVerifications()} className="mt-4 rounded-md">
             {t("review.retry")}
           </Button>
         </div>
       ) : rows.length === 0 ? (
         <div className="flex flex-col items-center rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center">
           <span className="flex size-14 items-center justify-center rounded-2xl bg-[#ECFDF5]">
-            <ShieldCheck className="size-7 text-[#10B981]" />
+            <ShieldCheck className="size-7 text-brand" />
           </span>
           <h3 className="mt-5 text-lg font-semibold text-slate-900">{t("review.noApplications")}</h3>
           <p className="mt-1.5 max-w-sm text-sm text-slate-500">
@@ -280,7 +280,7 @@ export default function SellerVerificationQueue() {
             <Card key={row.id} className="border-slate-200 shadow-none">
               <CardContent className="px-4 py-3">
                 <div className="flex items-center gap-3">
-                  <Store className="size-4 shrink-0 text-[#10B981]" />
+                  <Store className="size-4 shrink-0 text-brand" />
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="truncate text-sm font-semibold text-slate-900">{row.shop_name ?? "—"}</p>
@@ -291,14 +291,14 @@ export default function SellerVerificationQueue() {
                       {row.application_type === "resubmitted" ? (
                         <Badge
                           variant="outline"
-                          className="shrink-0 border-amber-200 bg-amber-50 text-[11px] font-medium text-amber-700"
+                          className="shrink-0 border-amber-200 bg-amber-50 text-2xs font-medium text-amber-700"
                         >
                           {t("review.actionResubmitted")} ×{row.resubmission_count ?? 0}
                         </Badge>
                       ) : (
                         <Badge
                           variant="outline"
-                          className="shrink-0 border-slate-200 bg-slate-50 text-[11px] font-medium text-slate-500"
+                          className="shrink-0 border-slate-200 bg-slate-50 text-2xs font-medium text-slate-500"
                         >
                           {t("review.actionSubmitted")}
                         </Badge>
@@ -312,11 +312,11 @@ export default function SellerVerificationQueue() {
                     </p>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    <Button size="sm" variant="outline" className="rounded-[10px] text-xs" onClick={() => openReview(row)}>
+                    <Button size="sm" variant="outline" className="rounded-md text-xs" onClick={() => openReview(row)}>
                       <CheckCircle2 className="size-3.5 mr-1" /> {t("review.reviewAction")}
                     </Button>
                     {row.status === "pending" && (
-                      <Button size="sm" variant="outline" className="rounded-[10px] text-xs border-rose-200 text-rose-600 hover:bg-rose-50" onClick={() => openRevoke(row)}>
+                      <Button size="sm" variant="outline" className="rounded-md text-xs border-rose-200 text-rose-600 hover:bg-rose-50" onClick={() => openRevoke(row)}>
                         <Trash2 className="size-3.5" />
                       </Button>
                     )}
@@ -339,7 +339,7 @@ export default function SellerVerificationQueue() {
               <Button
                 variant="outline"
                 size="sm"
-                className="rounded-[10px] text-xs"
+                className="rounded-md text-xs"
                 disabled={page <= 1 || loading}
                 onClick={() => setPage((p) => Math.max(p - 1, 1))}
               >
@@ -348,7 +348,7 @@ export default function SellerVerificationQueue() {
               <Button
                 variant="outline"
                 size="sm"
-                className="rounded-[10px] text-xs"
+                className="rounded-md text-xs"
                 disabled={!pagination?.hasMore || loading}
                 onClick={() => setPage((p) => p + 1)}
               >
@@ -391,7 +391,7 @@ export default function SellerVerificationQueue() {
                   value={revokeReason}
                   onChange={(e) => setRevokeReason(e.target.value)}
                   placeholder={t("review.revokeReasonPlaceholder")}
-                  className="rounded-[10px] border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500/40"
+                  className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500/40"
                 />
               </div>
             </div>
