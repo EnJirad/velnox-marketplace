@@ -1,34 +1,57 @@
-# LATEST — 2026-11-09 · รายได้ seller ใช้ข้อมูลจริง + กราฟขึ้น + แก้ scroll
+# LATEST — 2026-11-10 · Unified domain migration: audit, plan, prep (PARKED)
 
-**Branch:** `main` · **HEAD:** `f8adf20` · **Status:** DONE — verified ด้วยข้อมูล production จริง
+**Branch:** `main` · **HEAD:** `96882b2` · **Status:** PARKED by owner — safe work done, infra blocked
 
-## 1. Seller income ขึ้น ฿0 / กราฟว่าง (แก้แล้ว)
+## 1. แกนของงานเปลี่ยน: `velnox.com` → `velnox.live`
 
-**ต้นเหตุ:** `/api/seller/income` นับรายได้เฉพาะ item ที่ **ทั้ง** order เป็น `completed|delivered` **และ** มีแถว `shipments` ที่ shipped
-production มี order `completed` 3 ใบ มูลค่ารวม **฿1,677.20** แต่ `shipment_items` = **0 แถว** (ขายแบบไม่บันทึกขนส่ง / ก่อนระบบขนส่งใช้งาน)
-→ gross, commission, payout เป็น 0 และ `grouped` (ข้อมูลกราฟ) ว่างตลอด → **ไม่ขึ้นแท่งกราฟ**
+โจทย์สั่งย้ายทั้งระบบไป `velnox.com` แต่ RDAP (Verisign) พิสูจน์ว่าโดเมนนั้นไม่ใช่ของโปรเจกต์:
+ลงทะเบียนที่ GoDaddy 2018-03-07 หมดอายุ 2032-03-07 nameserver `NS1/NS2.RENEWYOURNAME.NET` (parking)
+ตอบ `REFUSED` — ไม่มี DNS ใช้งาน. เจ้าของยืนยันว่าซื้อแค่ **`velnox.live`** ⇒ งานทั้งหมดถูก rebase ไปที่
+`velnox.live` และทุก phase ใน `.ai/tasks/active/unified-domain-migration.md` เขียนกับโดเมนนั้น
 
-**แก้:** แยกกฎเป็น pure helper ใน `backend/lib/seller-stats.ts`
-- `isOrderIncomeEligible(orderStatus)` — order คือผู้ตัดสิน ไม่ต้องมี shipment
-- `isReturnCounted(returnStatus)` — `received|restocked|completed` นับเป็นยอดตีกลับ
-ใช้ helper เดียวกันทั้ง KPI และ `grouped` (เดิมคนละเงื่อนไข ทำให้เลขกับกราฟไม่ตรงกัน)
+## 2. ข้อเท็จจริง infra ที่วัดได้ (ไม่ใช่สมมติ)
 
-**ผลลัพธ์ที่ควรเห็น (คำนวณจากข้อมูลจริงใน Neon):** gross ฿1,677.20 · commission 3% = ฿50.32 · payout ฿1,626.88 · กราฟ 3 แท่ง (2026-10-31, 11-08, 11-09)
+- **Convex ไม่มีอยู่ในระบบนี้เลย** — 0 reference, 0 dependency, ไม่มี `convex/`; realtime คือ WebSocket
+  ใน process เดียวกับ Express บน Render ⇒ phase Convex ของโจทย์ = N/A
+- **Cloudflare MCP เป็น read-only** — `POST /zones` → 403 (`com.cloudflare.api.account.zone.create`),
+  `PUT .../r2/buckets/.../cors` → 403, `GET /user/tokens` → 403 (ยืนยันซ้ำหลัง owner สั่งให้เดินหน้า)
+- **Render MCP ไม่มี custom-domain tool และอ่าน env ไม่ได้** ⇒ `api.velnox.live` ต้องเพิ่มที่ dashboard
+- **R2 CORS ขาด `velnox.live` / `www.velnox.live` / `velnox-theta.vercel.app`** — หน้าร้านจริงคือ
+  `www.velnox.live` (apex 308 → www, ตรวจด้วย HTTP) ⇒ อัปโหลดจากหน้าร้านถูกบล็อก (bug ที่มีอยู่ก่อน)
+- `velnox.live` zone มีแค่ A `@`, CNAME `www`, TXT `_dmarc` — ไม่มี MX/SPF/DKIM ⇒ ย้าย zone ไม่ทำเมลหาย
 
-**ซ่อมข้อมูลใน transactions ด้วย:** เดิม slice(0,50) จากลิสต์เก่า→ใหม่ = ได้ 50 ออเดอร์เก่าสุด; header แต่ละแถวโชว์ UUID กับ ฿0; ชื่อลูกค้าเป็น "—" เพราะ map key ผิด (user id vs order id) → แก้ครบ (order_number + total_amount จริง, เรียงใหม่→เก่า, key ด้วย order id)
+## 3. AI 02 ตีกลับแผนแรก — ถูก
 
-## 2. กราฟแท่งไม่ขึ้น (แก้ที่ layout)
+Verdict **REJECT** พร้อม R1–R8. ตรวจซ้ำเองแล้วว่า R2 ถูกที่สุด: `stripeWebhookSecret()` อ่าน secret
+ตัวเดียว (`payment-config.ts:177,254` → `stripe.ts:2605,2657`) ⇒ เพิ่ม Stripe endpoint ที่สองจะ verify
+signature ไม่ผ่าน ต้อง **แก้ URL ของ endpoint เดิม** แทน. ทุกข้อถูกใส่ในแผนแล้ว
 
-คอลัมน์เดิมเอา label ค่าไปวางเหนือแท่งภายในคอลัมน์ `h-full` → แท่ง `height: %` ล้นพื้นที่ที่เหลือและถูกตัด
-แก้เป็น 3 แถว: ค่า / พื้นที่แท่ง (`flex-1`, ความสูงแน่นอน) / label + min 6px ให้ยอดน้อยยังเห็น + `transition-[height]` (เดิมเป็น `[width]` จาก sed รอบก่อน = ผิดแกน)
+## 4. สิ่งที่ทำจริง
 
-## 3. Scroll (รายงานจาก owner ว่าเลื่อนไม่ได้ทั้ง 3 เว็บ)
+- เพิ่ม Vercel custom domain 3 ตัว คืน `verified: true`: `shop.` → velshop, `seller.` → velseller,
+  `center.` → velcenter (**apex ยังไม่สลับ** — `velnox.live` ยังเป็นหน้าร้านที่ใช้งานจริง)
+- อ่าน DNS target จาก Vercel `get_domain_config`: CNAME `b04e1ed0b385c8f3.vercel-dns-017.com`,
+  A `216.198.79.1` / `64.29.17.1` — ไม่ได้เดาค่า
+- แก้ hardcoded legacy host 3 จุดให้ใช้ `SITE_URLS` (`SellerProfile.tsx:287`, `ShopProfile.tsx:93-94`)
+- แก้ `@velnox.com` (โดเมนที่ไม่ได้ถือ) → `@velnox.live` ทั้ง 6 จุดผู้ใช้เห็น + placeholder
+  และ comment ที่อ้าง canonical domain ผิด ⇒ `velnox.com` ไม่เหลือใน source แล้ว
+- เตรียม BIND zone file (APPENDIX) ให้ import เข้า Cloudflare ได้ครั้งเดียว
 
-- `body { touch-action: pan-x pan-y }` → `manipulation` (pan + pinch, ปิด double-tap) — ค่าเดิมปิด pinch-zoom และบน Android WebView บางเวอร์ชันทำให้ลากนิ้วไม่เริ่ม scroll
-- ลบ `overscroll-behavior-y: none` ที่ใส่ไว้รอบ motion
-- **ยืนยันบน production:** CSS ที่ deploy มี `body{touch-action:manipulation}` และไม่มี overscroll lock; `scrollHeight 1329 > viewport 815`; `window.scrollTo` และ gesture scroll ของเบราว์เซอร์ทำงาน; synthetic touchmove ไม่ถูก `preventDefault`
-- **ตัวที่ยังขวางการเลื่อนในแอปคือ instrumentation ของ Harness เอง**: console เต็มไปด้วย `window.__harnessUpdateScroll is not a function` (ยิงทุก event) — เป็นสคริปต์ที่ Harness ฉีดเข้า WebView ไม่ใช่โค้ดของ marketplace; เปิดผ่าน browser จริงแล้วใช้ได้ปกติ (`browser_open_external`)
+## 5. ตรวจแล้ว
 
-## 4. ตรวจแล้ว
+`git diff --check` clean · `bun run typecheck` 4/4 exit 0 · `bun run i18n:check` th/en/my 2235 parity ·
+`bun run test` **1420 pass / 425 skip / 0 fail** (1845 tests, 101 ไฟล์)
 
-backend + 4 apps typecheck ✅ · `bun test` **1420 pass / 0 fail** (เพิ่ม 5 เคส: eligibility + 3% ของยอดจริง) ✅ · `build:apps` 4/4 ✅ · `git diff --check` ✅ · deployed CSS ตรวจแล้วทั้ง 3 แอป
+## 6. สถานะ production — ไม่ถูกกระทบ
+
+ไม่ได้แตะ env, DNS record, R2 rule, Stripe, Neon หรือ deployment ใด ๆ. Vercel domain ที่เพิ่มยังไม่
+resolve. Code change เป็น behaviour-neutral (ค่า default ของ `SITE_URLS` เท่ากับสตริงที่ลบออก)
+⇒ production เหมือนเดิม ยกเว้น mailto ที่ตายอยู่แล้ว 2 จุด
+
+**Caveat ที่ต้องจำ:** `velnox.live` ยังไม่มี MX ⇒ เมลไป `@velnox.live` ยังไม่ถึงเช่นกัน (เดิมก็ไม่ถึง)
+
+## 7. Resume ต้องมีอะไร
+
+ทาง A: สร้าง zone `velnox.live` ใน Cloudflare + import BIND + เปลี่ยน NS ที่ GoDaddy
+ทาง B: เปลี่ยน NS ที่ GoDaddy ไป `ns1/ns2.vercel-dns.com` แล้ว AI 01 สร้าง record ทั้ง 6 เองได้ผ่าน MCP
+ก่อน PHASE 5 ต้องให้ owner snapshot env ไว้ก่อน (MCP อ่าน Render env ไม่ได้ ⇒ ชั้นนั้น rollback ไม่ได้)
