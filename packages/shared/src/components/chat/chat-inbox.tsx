@@ -9,6 +9,7 @@
 import { ChevronLeft, Loader2, MessageCircle, MoreHorizontal, Search, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "@velnox/shared/lib/utils";
+import { Button } from "../ui/button";
 import { ChatAvatar } from "./chat-avatar";
 
 export type ChatFilter = "all" | "unread" | "support";
@@ -195,13 +196,13 @@ export function ChatListState({
       <p className="text-sm font-semibold text-slate-700">{title}</p>
       {description && <p className="max-w-xs text-xs leading-5 text-slate-500">{description}</p>}
       {kind === "error" && actionLabel && onAction && (
-        <button
+        <Button
           type="button"
           onClick={onAction}
-          className="mt-1 min-h-10 rounded-xl bg-slate-900 px-4 text-sm font-medium text-white hover:bg-slate-800"
+          className="mt-1 h-10 rounded-xl bg-slate-900 px-4 text-sm font-medium text-white hover:bg-slate-800"
         >
           {actionLabel}
-        </button>
+        </Button>
       )}
     </div>
   );

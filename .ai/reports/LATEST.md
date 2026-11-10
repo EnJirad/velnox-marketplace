@@ -192,3 +192,48 @@ typecheck 4/4 exit 0 · `bun --filter @velnox/velseller build` ผ่าน · `
 · `git diff --check` clean · **`.py-1\.5{` ยังถูก generate ใน CSS** (สำคัญ: class ย้ายจาก app ไป shared
 แล้ว ต้องยืนยันว่า Tailwind v4 `@source "./"` สแกนเจอจริง ไม่งั้น chip จะเสียสี/ระยะ) ·
 `<button key={p}>` ใน Income* เหลือ 0
+
+---
+
+# เพิ่มเติม — UI Phase C3 + การประเมิน C4
+
+## C3: ปุ่ม action จริงที่เหลือ
+
+สแกนทั้ง 4 แอป + shared หาปุ่มดิบที่ `className` เป็น string ตรง ๆ และมีพื้น `bg-slate-900` / `bg-brand`
+ได้ **2 ตัว** — ตัวหนึ่งเป็น action จริง อีกตัวเป็น floating pill:
+
+| ไฟล์ | ชนิด | การตัดสิน |
+|---|---|---|
+| `packages/shared/src/components/chat/chat-inbox.tsx:198` | ปุ่ม Retry ใน empty state | ✅ แปลงเป็น `<Button>` |
+| `apps/velshop/src/pages/ShopChat.tsx:766` | floating pill "ข้อความใหม่" | ❌ คงไว้ — เป็น affordance ลอย |
+| `apps/velseller/src/pages/SellerChat.tsx:746` | floating pill เลื่อนลงล่าง | ❌ คงไว้ |
+
+การแปลงใช้ `h-10` override `h-11 sm:h-9` ของ Button เพื่อคงความสูง 40px เดิม (ถ้าไม่ใส่จะกลายเป็น
+44px บนมือถือ), `rounded-xl` และสีเดิมทุกตัว
+
+⇒ **ปุ่ม action ที่เป็น `<Button>` ตอนนี้ครบแล้ว** เหลือแต่ widget ที่ไม่ควรเป็น Button (ตามที่
+วิเคราะห์ไว้ใน C1)
+
+## C4: การประเมิน overlay ที่ประกาศเอง 5 ไฟล์
+
+ตรวจว่าจัดการ keyboard/screen reader หรือไม่:
+
+| ไฟล์ | Escape | Focus | Trap | tabIndex | inert |
+|---|---|---|---|---|---|
+| `NotificationBell.tsx` | ✓ | **✗** | **✗** | **✗** | **✗** |
+| `SellerNotificationBell.tsx` | ✓ | **✗** | **✗** | **✗** | **✗** |
+| `chat-image.tsx` | ✓ | ✓ | ✓ | ✗ | ✗ |
+| `emoji-picker.tsx` | ✓ | ✓ | ✗ | ✓ | ✗ |
+| `GalleryLightbox.tsx` | ✓ | ✓ | ✗ | ✗ | ✗ |
+
+**สรุป:** ทั้ง 5 ปิดด้วย Escape ได้ แต่ **notification bell 2 ตัวไม่ย้าย focus เข้าไปเลย** ⇒ คนที่ใช้
+คีย์บอร์ดหรือ screen reader เปิดแผงแล้วยังTab อยู่ข้างหลัง
+
+**ยังไม่แก้ในรอบนี้ และไม่ควรแก้แบบเหวี่ยง:** bell ทั้งสองเป็น **popover ที่ผูกกับปุ่ม** ไม่ใช่ modal
+⇒ primitive ที่ถูกคือ Radix Popover (focus trap + focus return + outside click ให้ฟรี) ไม่ใช่ Dialog
+หรือ Sheet ที่มีอยู่ — ถ้าเอา Dialog มาแทนจะได้ backdrop ทึบและ scroll lock ซึ่งผิดบริบท
+จัดเป็นงานแยกที่ต้องทดสอบทีละตัว
+
+## ตรวจแล้ว
+
+typecheck 4/4 · `build:apps` 4/4 exit 0 · `bun run test` **1432 pass / 0 fail** · `git diff --check` clean
