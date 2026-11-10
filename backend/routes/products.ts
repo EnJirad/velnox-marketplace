@@ -2141,7 +2141,10 @@ export function setupProductRoutes(app: Express): void {
       const limit = Math.min(Number(limitStr) || 50, 200);
       const offset = Number(offsetStr) || 0;
 
-      let where = "WHERE p.status = 'published'";
+      // A product is only half the rule: a suspended shop must not keep selling,
+      // otherwise suspending a merchant leaves their listings live and buyable.
+      // (See .ai/tasks/active/launch-readiness-plan.md, step 4.)
+      let where = "WHERE p.status = 'published' AND sh.status = 'active'";
       const params: any[] = [];
       let idx = 1;
 
@@ -2297,7 +2300,7 @@ export function setupProductRoutes(app: Express): void {
          JOIN shops sh ON p.shop_id = sh.id
          LEFT JOIN sellers s ON s.id = sh.seller_id
          LEFT JOIN categories c ON c.slug = p.category_id
-         WHERE p.id = $1 AND p.status = 'published'`,
+         WHERE p.id = $1 AND p.status = 'published' AND sh.status = 'active'`,
         [productId]
       );
 

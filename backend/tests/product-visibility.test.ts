@@ -45,9 +45,10 @@ describe("product visibility — category key compatibility", () => {
 });
 
 describe("product visibility — catalog contract", () => {
-  test("the public catalog stays published-only", () => {
+  test("the public catalog stays published-only and hides suspended shops", () => {
     const src = read("backend/routes/products.ts");
-    expect(src).toContain(`let where = "WHERE p.status = 'published'"`);
+    // Publishing is only half the rule: a suspended shop must not keep selling.
+    expect(src).toContain(`let where = "WHERE p.status = 'published' AND sh.status = 'active'"`);
   });
 
   test("the product detail endpoint stays published-only", () => {

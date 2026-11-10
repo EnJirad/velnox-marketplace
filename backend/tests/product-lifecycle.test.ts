@@ -149,7 +149,7 @@ describe("catalog visibility", () => {
   });
 
   test("catalog + product detail queries filter on status = 'published'", () => {
-    expect(productsSrc).toContain(`let where = "WHERE p.status = 'published'"`);
+    expect(productsSrc).toContain(`let where = "WHERE p.status = 'published' AND sh.status = 'active'"`);
     expect(productsSrc).toContain("WHERE p.id = $1 AND p.status = 'published'");
     expect(productsSrc).toContain("WHERE p.shop_id = $1 AND p.status = 'published'");
   });
@@ -363,7 +363,7 @@ describe("variants + cart", () => {
 
   test("only published products are orderable through the catalog", () => {
     // The catalog is the only source the storefront uses to add to cart.
-    expect(productsSrc).toContain(`let where = "WHERE p.status = 'published'"`);
+    expect(productsSrc).toContain(`let where = "WHERE p.status = 'published' AND sh.status = 'active'"`);
   });
 });
 
