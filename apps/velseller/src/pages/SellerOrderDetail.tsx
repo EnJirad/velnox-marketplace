@@ -134,7 +134,14 @@ export default function SellerOrderDetail() {
   const [shipTracking, setShipTracking] = useState("");
 
   /** The carriers a seller may send with — resolved to a code server-side. */
-  const SHIP_CARRIER_OPTIONS = ["J&T Express", "Flash Express", "SPX Express", "TNT Express"];
+  const SHIP_CARRIER_OPTIONS = [
+    "J&T Express",
+    "Flash Express",
+    "Kerry Express",
+    "Thailand Post",
+    "SPX Express",
+    "TNT Express",
+  ];
 
   /** Refresh the parcel from its carrier (seller's own order only). */
   const trackingRefresh = useAction(api.seller.orderTrackingRefresh);

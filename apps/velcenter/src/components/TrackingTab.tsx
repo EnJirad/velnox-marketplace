@@ -41,7 +41,7 @@ import { useLanguage } from "@velnox/shared/lib/i18n";
 import { formatIsoDateTime } from "@velnox/shared/lib/commerce";
 import { Loader2, PackageSearch, RefreshCw, Search, Truck } from "lucide-react";
 
-export const CARRIER_FILTERS = ["JT", "FLASH", "SPX", "TNT"] as const;
+export const CARRIER_FILTERS = ["JT", "FLASH", "KERRY", "THAILANDPOST", "SPX", "TNT"] as const;
 
 const STATUS_OPTIONS = [
   "pending",

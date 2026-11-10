@@ -58,6 +58,7 @@ import {
   Loader2,
   MapPin,
   Package,
+  QrCode,
   RefreshCw,
   Star,
   Truck,
@@ -1109,6 +1110,21 @@ export default function ShopOrderDetail() {
                 returnPath={`/orders/${order.id}`}
                 size="default"
               />
+            )}
+            {/*
+              Owner-branded QR: pay by PromptPay WITHOUT leaving Velnox. This is
+              an ORDER-scoped intent (`POST /api/payments/promptpay/intent`), so
+              it is offered only where a single order is the subject. A
+              multi-shop purchase keeps the group Checkout Session until
+              group-level intents exist.
+            */}
+            {payability.payable && payability.method === "PROMPTPAY" && (
+              <Button variant="outline" className="gap-1.5 border-slate-200 text-slate-700" asChild>
+                <Link to={`/orders/${order.id}/pay`}>
+                  <QrCode className="size-4" />
+                  {t("orderDetail.payWithQr")}
+                </Link>
+              </Button>
             )}
             {order.shopId && (
               <Button

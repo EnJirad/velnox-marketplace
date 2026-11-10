@@ -493,9 +493,12 @@ const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
     const qs = p.toString();
     return apiGet(`/api/admin/tracking/search${qs ? `?${qs}` : ""}`);
   },
-  "api.tracking.adminHealth": () => apiGetFresh("/api/admin/tracking/health"),
-  "api.tracking.adminDetail": (a) => apiGet(`/api/admin/tracking/shipments/${a.shipmentId}`),
+  "api.tracking.adminHealth": () => apiGetFresh("/api/admin/tracking/health"),  "api.tracking.adminDetail": (a) => apiGet(`/api/admin/tracking/shipments/${a.shipmentId}`),
   "api.tracking.adminRefresh": (a) => apiPost(`/api/admin/orders/${a.orderId}/tracking/refresh`),
+  // Owner-branded PromptPay QR (no Stripe redirect)
+  "api.payments.promptpayIntent": (a) => apiPost("/api/payments/promptpay/intent", a),
+  "api.payments.promptpayStatus": (a) => apiGet(`/api/payments/promptpay/${a.paymentIntentId}`),
+  "api.payments.qrMethods": () => apiGet("/api/payments/qr/methods"),
   "api.public.shopVerification": (a) => apiGet(`/api/shops/${a.shopId}/verification`),
   // Categories (localized)
   "api.customer.categoriesLocalized": (a) => apiGet(`/api/categories?lang=${a?.lang ?? "th"}`),

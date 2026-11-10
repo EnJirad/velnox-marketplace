@@ -24,7 +24,7 @@
 
 // ─── Payment method domain ───────────────────────────────────────────────────
 
-export type PaymentMethodId = "CARD" | "PROMPTPAY" | "COD";
+export type PaymentMethodId = "CARD" | "PROMPTPAY" | "COD" | "TRUEMONEY" | "LINEPAY";
 export type PaymentProvider = "STRIPE" | "CARRIER";
 export type StripeMode = "test" | "live";
 
@@ -375,6 +375,11 @@ export interface PaymentMethodOption {
   enabled: boolean;
   /** Present only for methods that route through Stripe. */
   stripePaymentMethodType: string | null;
+  /**
+   * Why a method is not selectable, when it is a KNOWN method this platform
+   * cannot take yet. Shown by the UI so a launch roadmap is not a dead button.
+   */
+  unavailableReason?: "REQUIRES_PROVIDER_CONTRACT" | "NOT_AVAILABLE_IN_STOREFRONT";
 }
 
 /**
@@ -404,6 +409,26 @@ export function paymentMethodOptions(): PaymentMethodOption[] {
       provider: "CARRIER",
       enabled: isCodCustomerSelectable(),
       stripePaymentMethodType: null,
+    },
+    // ── Known wallets this deployment cannot take yet ──────────────────────
+    // Stripe does not support TrueMoney Wallet or LINE Pay for Thai merchant
+    // accounts through the standard rails, so both need a DIRECT provider
+    // contract before they can be enabled. They are listed (disabled, with a
+    // reason) so the roadmap is visible instead of hidden — never as a working
+    // option, and never as a fake success.
+    {
+      id: "TRUEMONEY",
+      provider: "STRIPE",
+      enabled: false,
+      stripePaymentMethodType: null,
+      unavailableReason: "REQUIRES_PROVIDER_CONTRACT",
+    },
+    {
+      id: "LINEPAY",
+      provider: "STRIPE",
+      enabled: false,
+      stripePaymentMethodType: null,
+      unavailableReason: "REQUIRES_PROVIDER_CONTRACT",
     },
   ];
 }

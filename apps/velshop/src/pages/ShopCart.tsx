@@ -77,6 +77,13 @@ export default function ShopCart() {
   // Pure view state: nothing here writes to the cart, the database, an order
   // or a payment.
   const [selectedKeys, setSelectedKeys] = useState<ReadonlySet<string>>(() => new Set());
+
+  /**
+   * Order size cap — mirrors `backend/lib/order-limits.ts`
+   * (`MAX_ORDER_UNITS = 100`). The server is authoritative; this copy exists so
+   * the customer is stopped at the CART instead of at payment.
+   */
+  const MAX_ORDER_UNITS = 100;
   const [summaryOpen, setSummaryOpen] = useState(false);
 
   const fallbackShopName = t("productDetail.defaultShop");
@@ -113,6 +120,13 @@ export default function ShopCart() {
     [lines, selectedKeys, fallbackShopName],
   );
 
+  /** Total units in the CURRENT selection (all shops together). */
+  const selectedUnits = useMemo(
+    () => selectedLines.reduce((sum, line) => sum + (Number(line.qty) || 0), 0),
+    [selectedLines],
+  );
+  const overUnitLimit = selectedUnits > MAX_ORDER_UNITS;
+
   const handleSelectItem = useCallback((id: string) => {
     setSelectedKeys((prev) => toggleLineSelection(prev, id));
   }, []);
@@ -142,6 +156,9 @@ export default function ShopCart() {
       navigate("/auth?returnTo=/checkout");
       return;
     }
+    // Over the 100-unit cap: stop here with a clear reason. The checkout
+    // endpoint enforces the same rule (a crafted request cannot bypass it).
+    if (overUnitLimit) return;
     if (checkoutSelectedOnly && selectedLines.length > 0) {
       // Pass selected cart item IDs via navigation state — unchanged flow.
       const ids = selectedLines.map((l) => l.id);
@@ -411,10 +428,16 @@ export default function ShopCart() {
               </span>
             </button>
 
+{overUnitLimit && (
+              <p className="mb-2 flex items-start gap-1.5 rounded-lg bg-amber-50 px-3 py-2 text-2xs font-medium text-amber-700">
+                <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+                {t("cartPage.overUnitLimit", { count: selectedUnits, limit: MAX_ORDER_UNITS })}
+              </p>
+            )}
             <Button
               className="h-12 flex-1 gap-1.5 rounded-xl bg-slate-900 text-white hover:bg-slate-800"
               style={{ minWidth: 0, flexShrink: 1 }}
-              disabled={isLoading || selectedLines.length === 0}
+              disabled={isLoading || selectedLines.length === 0 || overUnitLimit}
               onClick={() => handleCheckout(true)}
             >
               <ShoppingCart className="size-4 shrink-0" />
@@ -510,10 +533,18 @@ export default function ShopCart() {
             </div>
           </div>
 
+          <div className="flex flex-col gap-2 px-5 pb-1">
+{overUnitLimit && (
+              <p className="flex items-start gap-1.5 rounded-lg bg-amber-50 px-3 py-2 text-2xs font-medium text-amber-700">
+                <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+                {t("cartPage.overUnitLimit", { count: selectedUnits, limit: MAX_ORDER_UNITS })}
+              </p>
+            )}
+          </div>
           <div className="flex flex-col gap-2 border-t border-slate-100 px-5 py-4">
             <Button
               className="w-full gap-1.5 bg-slate-900 text-white hover:bg-slate-800"
-              disabled={isLoading || selectedLines.length === 0}
+              disabled={isLoading || selectedLines.length === 0 || overUnitLimit}
               onClick={() => handleCheckout(true)}
             >
               <ShieldCheck className="size-4" />

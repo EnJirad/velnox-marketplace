@@ -69,6 +69,7 @@ const ShopCheckoutCancel = lazy(() => import("@/pages/ShopCheckoutCancel"));
 const MyOrders = lazy(() => import("@/pages/MyOrders"));
 const ShopOrderDetail = lazy(() => import("@/pages/ShopOrderDetail"));
 const ShopTracking = lazy(() => import("@/pages/ShopTracking"));
+const ShopPaymentQr = lazy(() => import("@/pages/ShopPaymentQr"));
 const ShopWishlist = lazy(() => import("@/pages/ShopWishlist"));
 const ShopAddresses = lazy(() => import("@/pages/ShopAddresses"));
 const ShopProfile = lazy(() => import("@/pages/ShopProfile"));
@@ -133,6 +134,14 @@ createRoot(document.getElementById("root")!).render(
             element={
               <RequireAuth>
                 <ShopTracking />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/orders/:orderId/pay"
+            element={
+              <RequireAuth>
+                <ShopPaymentQr />
               </RequireAuth>
             }
           />

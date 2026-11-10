@@ -26,8 +26,8 @@
  * machine status (`shipments.status`), which stays the fulfilment authority.
  */
 
-/** The four supported carriers. */
-export type CarrierCode = "JT" | "FLASH" | "SPX" | "TNT";
+/** The six supported carriers. */
+export type CarrierCode = "JT" | "FLASH" | "SPX" | "TNT" | "KERRY" | "THAILANDPOST";
 
 export type TrackedEventStatus =
   | "info"

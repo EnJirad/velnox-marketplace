@@ -104,6 +104,30 @@ export const TNT_STATUS_KEYWORDS: StatusKeywordTable = {
   returned: ["returned"],
 };
 
+export const KERRY_STATUS_KEYWORDS: StatusKeywordTable = {
+  out_for_delivery: ["กำลังนำส่ง", "out for delivery", "นำส่ง", "on the way"],
+  arrived_at_hub: ["ถึงศูนย์", "ถึงสาขา", "arrived at", "at branch", "at hub"],
+  picked_up: ["รับพัสดุ", "picked up", "collected", "รับสินค้า"],
+  created: ["สร้างรายการ", "created", "received order", "รับออเดอร์"],
+  in_transit: ["อยู่ระหว่างขนส่ง", "in transit", "ขนส่ง", "transit"],
+  delivered: ["ส่งถึงแล้ว", "delivered", "จัดส่งสำเร็จ"],
+  failed: ["จัดส่งไม่สำเร็จ", "failed", "cannot deliver", "ปฏิเสธ"],
+  returning: ["ส่งคืน", "returning", "return to sender"],
+  returned: ["ส่งคืนแล้ว", "returned"],
+};
+
+export const THAILANDPOST_STATUS_KEYWORDS: StatusKeywordTable = {
+  out_for_delivery: ["นำจ่าย", "out for delivery", "อยู่ระหว่างนำจ่าย"],
+  arrived_at_hub: ["ถึงที่ทำการ", "arrived at", "รับเข้าระบบ", "เข้าในระบบ"],
+  picked_up: ["รับฝาก", "picked up", "collected", "ฝากส่ง"],
+  created: ["สร้างรายการ", "created", "รับข้อมูล"],
+  in_transit: ["อยู่ระหว่างการขนส่ง", "ระหว่างขนส่ง", "in transit", "ส่งต่อ"],
+  delivered: ["นำจ่ายสำเร็จ", "delivered", "ผู้รับได้รับ", "สำเร็จ"],
+  failed: ["นำจ่ายไม่สำเร็จ", "ไม่สำเร็จ", "failed", "ตีกลับ"],
+  returning: ["ส่งคืน", "ตีกลับ", "returning"],
+  returned: ["ส่งคืนแล้ว", "returned"],
+};
+
 /**
  * Map one raw carrier status string to the unified vocabulary, keeping the raw
  * text. `table` is the carrier's keyword table; `common` keywords run first.

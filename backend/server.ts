@@ -24,6 +24,7 @@ import { setupStripeRoutes } from "./routes/stripe.js";
 import { setupSellerOrderRoutes } from "./routes/seller-orders.js";
 import { setupSellerIntelligenceRoutes } from "./routes/seller-intelligence.js";
 import { setupTrackingRoutes } from "./routes/tracking.js";
+import { setupPaymentQrRoutes } from "./routes/payment-qr.js";
 import { setupCenterRoutes } from "./routes/center.js";
 import { setupAnnouncementRoutes } from "./routes/announcements.js";
 import { registerVerificationRoutes } from "./routes/verification.js";
@@ -464,6 +465,9 @@ setupSellerIntelligenceRoutes(app);
 
 // ─── Multi-carrier tracking (customer / seller / admin) ────────────────────
 setupTrackingRoutes(app);
+
+// ─── Owner-branded payment QR (PromptPay on our own page) ──────────────────
+setupPaymentQrRoutes(app);
 
 // ─── WebSocket ──────────────────────────────────────────
 // maxPayload caps WebSocket frames (control + presence frames only — chat

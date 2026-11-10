@@ -22,10 +22,14 @@ import { jtExpressAdapter } from "./carriers/jt.js";
 import { flashExpressAdapter } from "./carriers/flash.js";
 import { spxExpressAdapter } from "./carriers/spx.js";
 import { tntExpressAdapter } from "./carriers/tnt.js";
+import { kerryExpressAdapter } from "./carriers/kerry.js";
+import { thailandPostAdapter } from "./carriers/thailand-post.js";
 
 const ADAPTERS: readonly CarrierAdapter[] = [
   jtExpressAdapter,
   flashExpressAdapter,
+  kerryExpressAdapter,
+  thailandPostAdapter,
   spxExpressAdapter,
   tntExpressAdapter,
 ];
@@ -54,6 +58,16 @@ const CARRIER_ALIASES: Record<string, CarrierCode> = {
   shopee: "SPX",
   tnt: "TNT",
   "tnt express": "TNT",
+  kerry: "KERRY",
+  "kerry express": "KERRY",
+  kex: "KERRY",
+  เคอรี่: "KERRY",
+  thailandpost: "THAILANDPOST",
+  "thailand post": "THAILANDPOST",
+  thaipost: "THAILANDPOST",
+  ไปรษณีย์: "THAILANDPOST",
+  "ไปรษณีย์ไทย": "THAILANDPOST",
+  ems: "THAILANDPOST",
 };
 
 /** Resolve a carrier code from free text (case/space-insensitive). */
@@ -111,6 +125,24 @@ export function carrierIntegrationStatus(adapter: CarrierAdapter): {
         name: adapter.name,
         status: "UNSUPPORTED",
         note: "Provided endpoint is an internal Shopee-portal API (CORS-locked) that always errors for a bare caller. Requires official Shopee/SPX API partnership.",
+      };
+    case "KERRY":
+      return {
+        code: adapter.code,
+        name: adapter.name,
+        status: process.env.KERRY_API_KEY ? "PARTIAL" : "BLOCKED",
+        note: process.env.KERRY_API_KEY
+          ? "Merchant API credentials are configured; verify against a live consignment."
+          : "Requires Kerry Express merchant API access (KERRY_API_KEY / KERRY_API_SECRET). No public tracking endpoint exists.",
+      };
+    case "THAILANDPOST":
+      return {
+        code: adapter.code,
+        name: adapter.name,
+        status: process.env.THAILANDPOST_API_TOKEN ? "PARTIAL" : "BLOCKED",
+        note: process.env.THAILANDPOST_API_TOKEN
+          ? "Developer-portal token configured; verify against a live barcode."
+          : "Official Track & Trace API is documented and free-to-register; set THAILANDPOST_API_TOKEN to activate.",
       };
   }
 }

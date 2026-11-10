@@ -26,6 +26,7 @@ import { releaseOrderInventory, reserveInventoryStock, validateCheckoutQuantity 
 // rows through `lib/checkout-lines.ts`; the money itself is computed only in
 // `lib/shipping.ts` (exact decimals through `lib/money.ts`, never a float).
 import { loadCheckoutLines } from "../lib/checkout-lines.js";
+import { checkOrderUnits, checkLineQuantity } from "../lib/order-limits.js";
 import {
   SHIPPING_METHOD,
   ShippingError,
@@ -431,6 +432,19 @@ export function setupCartRoutes(app: Express): void {
 
       const qty = Math.max(1, Math.floor(Number(quantity) || 1));
 
+      // Line cap: the same 100-unit rule the checkout enforces, reported early
+      // so the customer is told at the cart instead of at payment.
+      {
+        const lineFailure = checkLineQuantity(qty);
+        if (lineFailure) {
+          res.status(400).json({
+            success: false,
+            error: { code: lineFailure.code, message: lineFailure.message },
+          });
+          return;
+        }
+      }
+
       // Validate product exists and is published
       const productResult = await query(
         "SELECT id, price, status FROM products WHERE id = $1",
@@ -580,6 +594,18 @@ export function setupCartRoutes(app: Express): void {
         await recalcCart(cartId);
         res.json({ success: true, data: { removed: true } });
         return;
+      }
+
+      // Line cap — same rule as checkout and cart add (max 100 units per line).
+      {
+        const lineFailure = checkLineQuantity(Math.floor(qty));
+        if (lineFailure) {
+          res.status(400).json({
+            success: false,
+            error: { code: lineFailure.code, message: lineFailure.message },
+          });
+          return;
+        }
       }
 
       // Validate stock
@@ -959,6 +985,28 @@ export function setupCartRoutes(app: Express): void {
         return;
       }
       const { cartId, items, priceChanged } = loadedLines.value;
+
+      // ── Order size cap (product rule: max 100 units per checkout) ────────
+      // Enforced AFTER the authoritative lines are loaded and BEFORE anything
+      // is written, so an over-limit checkout creates no order, no shipment and
+      // no payment. A crafted request cannot bypass this.
+      {
+        const limitFailure = checkOrderUnits(
+          items.map((it: any) => ({ quantity: Number(it.quantity), product_name: it.product_name ?? null })),
+        );
+        if (limitFailure) {
+          res.status(400).json({
+            success: false,
+            error: {
+              code: limitFailure.code,
+              message: limitFailure.message,
+              requested: limitFailure.requested ?? null,
+              limit: limitFailure.limit ?? null,
+            },
+          });
+          return;
+        }
+      }
 
       // Group items by shop
       const shopMap = new Map<string, typeof items>();

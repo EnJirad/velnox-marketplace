@@ -1,62 +1,55 @@
-# LATEST — 2026-11-11 · Brand-green headers + white Velnox logo
+# LATEST — 2026-11-09 · Cart rules, 6 carriers, QR checkout on our own page
 
-**Branch:** `main` · **HEAD:** `d823417` (pushed)
+**Branch:** `main` · **HEAD:** `7aa62e0` (in sync with origin) · **NOT pushed** (no commit — awaiting approval)
 
-## 1. สรุปงาน (Thai)
+## ทำอะไรไปแล้ว
 
-เจ้าของให้ใช้โลโก้สีขาว (`velnox-mark-white.svg`) ในเว็บ และไม่ต้องมีพื้นหลัง/กล่อง
-ของโลโก้ในหน้าอีก เพราะใช้โลโก้ขาวแล้ว
+### 1) กฎตะกร้าแบบ marketplace (Shopee / Lazada / TikTok Shop)
+- **เพดาน 100 ชิ้นต่อการสั่งซื้อ** — `backend/lib/order-limits.ts` (ใหม่) บังคับใช้ 3 จุด:
+  `POST /api/customer/cart/add`, `PUT /api/customer/cart/item/:id`, และ **authoritative** ที่
+  `POST /api/customer/checkout` (400 `ORDER_LIMIT_EXCEEDED` พร้อมบอกจำนวนที่เกิน) — client หลอกไม่ได้
+- **หน้าตะกร้า** แสดงจำนวนที่เลือก/เพดาน + แบนเนอร์เตือน + ปุ่มชำระเงินถูกล็อกเมื่อเกิน
+- **ติ๊กเลือกได้ต่อชิ้น / ต่อร้าน / ทั้งหมด** และ **แยกออเดอร์ต่อร้าน** — มีอยู่แล้วในระบบเดิม
+  (`cart-selection.ts`, `selectedCartItems`, `shop_id` grouping) → แต่ละร้าน = 1 ออเดอร์ = 1 พัสดุ = 1 เลขพัสดุ
 
-ตรวจก่อนแก้พบว่า **โลโก้ขาวจะมองไม่เห็นใน 9 จาก 10 จุด** เพราะพื้นหลังเป็นสีขาว/สว่าง
-(desktop header, velseller, velcenter, corporate header/footer, cart drawer, auth, 404)
-เหลือแค่ mobile header ของ velshop ที่เป็น `bg-brand` ซึ่งขาวจะเห็นชัด
+### 2) ขนส่ง 6 เจ้า พร้อมต่อ API
+- เพิ่ม **Kerry Express** (`KERRY_API_KEY`/`KERRY_API_SECRET`) และ **ไปรษณีย์ไทย**
+  (`THAILANDPOST_API_TOKEN` — official Track & Trace v1) เป็น adapter จริงใน registry
+- สถานะจริง: `THAILANDPOST` = **READY→PARTIAL** เมื่อใส่ token, `KERRY` = **BLOCKED** จนได้ merchant key,
+  J&T/Flash = BLOCKED, SPX = UNSUPPORTED, TNT = PARTIAL
+- seller ship dialog เลือกขนส่งได้ 6 เจ้า · VelCenter filter เพิ่ม KERRY/THAILANDPOST
+- **ใส่ key แล้วใช้งานได้ทันที ไม่ต้องแก้โค้ด**
 
-เจ้าของเลือกแนวทาง: **เปลี่ยน header ทุกแอปเป็นพื้นสีเขียวแบรนด์ + โลโก้ขาว (ไม่มีกล่อง)**
+### 3) จ่ายเงิน: QR PromptPay บนเว็บเราเอง
+- `backend/routes/payment-qr.ts` — `POST /api/payments/promptpay/intent` สร้าง Stripe PaymentIntent
+  (`promptpay`) คืน EMVCo payload + PNG; ยอดมาจาก `orders.total_amount` เท่านั้น, ownership อยู่ใน WHERE
+- หน้าใหม่ `apps/velshop/src/pages/ShopPaymentQr.tsx` (`/orders/:orderId/pay`) — QR ใน card ของเรา,
+  นับถอยหลัง, poll สถานะ, กดจ่ายแล้วเด้งกลับหน้าออเดอร์ (ไม่ไป checkout.stripe.com)
+- ปุ่ม "จ่ายด้วย PromptPay QR" ในหน้า Order Detail
+- **Fail-closed**: ไม่มี Stripe key → 503 `PAYMENTS_NOT_CONFIGURED` + หน้าอธิบายของเรา ไม่มี QR ปลอม
+- Payment registry เพิ่ม `TRUEMONEY` / `LINEPAY` เป็น **disabled + เหตุผล** (Stripe ไม่มี rail ให้ใน TH)
 
-## 2. สิ่งที่แก้
+## ไฟล์
+- **Add:** `backend/lib/order-limits.ts`, `backend/routes/payment-qr.ts`,
+  `backend/lib/tracking/carriers/{kerry,thailand-post}.ts`,
+  `apps/velshop/src/pages/ShopPaymentQr.tsx`, `backend/tests/order-limits.test.ts`,
+  `.ai/context/shipping-and-payments.md`
+- **Mod:** `cart.ts`, `server.ts`, `payment-config.ts`, `tracking/{types,normalizer,carrier-adapter}.ts`,
+  `ShopCart.tsx`, `ShopOrderDetail.tsx`, `main.tsx`, `SellerOrderDetail.tsx`, `TrackingTab.tsx`,
+  `api-routes.ts`, i18n th/en/my
 
-- **`Logo.tsx`** — มาร์คไม่มีกล่องพื้นหลังแล้ว · เพิ่ม `tone`: `light` (ขาว) / `dark`
-  (`text-slate-900`) ผ่าน `currentColor` (ไม่ใช้ hex ดิบ — เคารพงาน tokenise Phase A)
-- **header ทั้ง 4 แอปเป็น `bg-brand` + โลโก้ขาว**
-  - velshop `ShopHeader` (desktop bar + mobile mark)
-  - velseller `AppHeader`
-  - velcenter `Center`
-  - velnox `CorporateLayout` (รวมเมนูมือถือ)
-  - nav / ปุ่ม / ไอคอน / badge ปรับเป็นโทนขาวทั้งหมด
-- **คอมโพเนนต์ใน header รองรับ `tone="brand"`** — `LanguageSwitcher` (shared),
-  `NotificationBell`, `SellerNotificationBell`, `UserMenu`
-- **favicon** — พื้นเขียว `#10B981` + มาร์คขาว ใช้ทั้ง 4 แอป + `packages/shared/src/assets/logo.svg`
-  (โลโก้ขาวล้วนบนแท็บสว่างจะมองไม่เห็น จึงต้องมีพื้นเขียว)
-- โลโก้บนพื้นสว่าง (footer, auth, 404, cart drawer) คงโทน ink ตามเดิม
+## ทดสอบ (รันจริง)
+- `bun test tests/order-limits.test.ts` → **10 pass**
+- cart / multi-shop checkout / payment foundation / tracking adapters+normalizer → **152 pass, 0 fail**
+- typecheck 4 apps ✅ · i18n parity **2256 × 3** ✅ · `git diff --check` ✅
 
-## 3. การตัดสินใจ
+## ยังไม่ได้ทดสอบ (ต้องมี key)
+- เรียก carrier จริง (Kerry / ไปรษณีย์ / J&T / Flash) — BLOCKED ไม่มี credential
+- Stripe PaymentIntent จริง — BLOCKED ไม่มี key ใน environment นี้
+- Multi-shop group ยังใช้ Stripe Checkout Session (group-level intent ยังไม่ทำ — ระบุใน §5 ของเอกสาร)
 
-- wordmark บนพื้นเขียวเป็น **ขาวล้วน** — วัดได้ว่ามินต์ `#A7F3D0` บน `#10B981`
-  ให้ contrast แค่ 1.98:1 (มองไม่เห็น)
-- คง `bg-brand` (#10b981) ตามที่เจ้าของระบุ และตรงกับ pattern `bg-brand text-white`
-  ที่มีอยู่ทั่วระบบ — บันทึกค่าที่วัดได้: ขาวบน brand = **2.54:1**,
-  `--brand-strong` (#059669) = **3.77:1**, `--brand-deep` (#0f766e) = **5.47:1**
-  (ถ้าต้องการ AA เปลี่ยนคลาส `bg-brand` → `bg-brand-deep` ที่ header)
-
-## 4. ไฟล์ที่เปลี่ยน
-
-`packages/shared/src/components/{Logo,AppHeader,LanguageSwitcher,SellerNotificationBell,UserMenu}.tsx`
-· `apps/velshop/src/components/shop/{ShopHeader,NotificationBell}.tsx`
-· `apps/velcenter/src/pages/Center.tsx` · `apps/velnox/src/pages/corporate/CorporateLayout.tsx`
-· favicon: `apps/{velshop,velseller,velcenter,velnox}/public/logo.svg`,
-  `packages/shared/src/assets/logo.svg`, `public/logo.svg`
-
-## 5. ผลการทดสอบ
-
-- `bun run typecheck` → **4/4 apps ผ่าน** ✅
-- build → **4/4 apps ผ่าน** (`dist/logo.svg` อยู่ root ทุกแอป) ✅
-- render favicon ลง canvas วัดสี: เขียว 90.7% / ขาว 5.8% / โปร่งใส 3.0% ✅
-- `git diff --check` → สะอาด ✅
-- **ยังไม่ได้ตรวจด้วยตาในเบราว์เซอร์จริง** — browser preview ถูกซ่อน (screenshot ไม่ได้)
-  ควรเปิดดูหลัง deploy 1 รอบ
-
-## 6. หมายเหตุ
-
-- repo มี commit refactor UI จาก session อื่นคั่นระหว่างงาน (tokenise hex → token)
-  งานนี้จึงใช้ `text-brand` / `currentColor` ไม่ใช่ hex ดิบ
-- Stripe live ยังระงับตามคำสั่งเจ้าของ
+## Next
+1. อนุมัติ commit/push
+2. ขอ token ไปรษณีย์ไทย (ฟรี) → ทดสอบ 1 เลขจริง → เปลี่ยนเป็น VERIFIED
+3. ขอ merchant API Kerry/J&T/Flash
+4. ทำ group-level PromptPay intent ให้ multi-shop จ่าย QR บนเว็บเราได้ทั้งหมด
