@@ -1,6 +1,6 @@
 # Velnox AI Handoff — Current State
 
-**Last verified:** 2026-11-10 · **Branch:** `main` · **HEAD:** `76eada0` — **CI GREEN** (`Tests` + `Production DB Verify` success)
+**Last verified:** 2026-11-11 · **Branch:** `main` · **HEAD:** `d823417` — brand-green headers + white Velnox logo
 
 ## 1. Current Project State
 
@@ -21,6 +21,7 @@
 - **Logo/favicon rollout (2026-11-09)** — ✅ committed + pushed:
   - `41fe884` — use new Velnox V-mark (`public/logo.svg`, #0F172A) as favicon across velshop/velseller/velcenter/velnox + shared asset; `Logo.tsx` LogoMark now white box + dark V-mark (design B); fixed manifest icon refs that pointed at missing `logo.png` → `/logo.svg`.
   - `b5819df` — fixed velnox `public/public/` double-nesting: files moved up one level so the favicon actually serves at `/logo.svg` (index.html already referenced it). All 4 apps build cleanly; `dist/logo.svg` at root of each build.
+  - `d823417` (2026-11-11) — **brand-green headers + white logo.** Owner supplied the white mark (`velnox-mark-white.svg` → `public/logo.svg`) and asked for it in-page with no background plate. A white mark is invisible on the 9 light surfaces, so owner chose: **every app header becomes a solid brand-green bar with the white lockup.** `Logo.tsx` renders the mark with no plate and takes `tone` (`light` = white / `dark` = `text-slate-900` via `currentColor`, no raw hex — respects the Phase A token pass); `ShopHeader` desktop bar, `AppHeader` (velseller), velcenter `Center`, velnox `CorporateLayout` are `bg-brand` with white nav/buttons/icons; `LanguageSwitcher`, `NotificationBell`, `SellerNotificationBell`, `UserMenu` gained `tone="brand"`; wordmark on brand is all-white (mint `nox` measured 1.98:1 — invisible). Favicon is now brand green `#10B981` + white mark so it survives light browser tabs. Light surfaces (footers, auth, 404, cart drawer) keep the ink tone. Contrast: white on `--brand` = 2.54:1 (same as the system-wide `bg-brand text-white` buttons); `--brand-strong` = 3.77:1, `--brand-deep` = 5.47:1 are one-class upgrades. typecheck 4/4 + build 4/4.
 - **Phase 2 UI/UX Overhaul** — **Group 1 complete** ✅; **Group 2 complete (2026-11-09)** ✅
   - Group 2: shared `ProductGrid` (server-paginated) ใช้ทั้ง `ShopProducts.tsx` และ `ShopHome.tsx`, `GalleryLightbox` ใช้ใน `ShopProductDetail.tsx`, home rails ใช้ `HorizontalRail`/`RailCard` — ตรวจบน production จริงแล้ว (velshop.vercel.app แสดงสินค้า/ส่วนลด/รีวิวครบ)
   - ของค้างที่เจอระหว่างตรวจ (แก้แล้วรอบนี้): tablet nav หาย 768–1023px, seller order row ทำ full reload, ราคา `฿419.3`, ปุ่ม like/save/share ตายบนการ์ดสินค้า
