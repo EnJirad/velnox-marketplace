@@ -1,6 +1,10 @@
 # VELNOX-UNIFIED-DOMAIN-MIGRATION — Unified Domain Migration & Infrastructure Configuration
 
 **Task ID:** VELNOX-UNIFIED-DOMAIN-MIGRATION
+**Status:** 🔶 **PARKED (2026-11-10)** — owner decided to keep the current setup running and switch
+later. All audit, planning and reversible prep is committed; **no live traffic path was changed**.
+Resume at PHASE 4 the moment the owner either creates the Cloudflare zone or re-scopes the MCP token.
+
 **Level:** T3 CRITICAL (production DNS / auth / payment surfaces)
 **Owner:** project owner · **Executor:** AI 01 · **Reviewer:** AI 02
 **Updated:** 2026-11-10
@@ -17,6 +21,24 @@
 > **Status legend:** PASS = verified by real behaviour · FAIL = operation failed ·
 > BLOCKED = needs access or owner approval · NOT TESTED = not verified yet ·
 > N/A = not relevant to the actual architecture.
+
+---
+
+## RESUME HERE (parked 2026-11-10)
+
+The owner chose to stay on the current URLs for now. Nothing below is half-applied: the three added
+Vercel domains do not resolve, no DNS record, env var, R2 rule or Stripe setting was changed, and the
+code edits are behaviour-neutral. **Production is exactly as it was, minus two dead mailto links.**
+
+To resume, the only prerequisite is a DNS write path — pick one:
+
+| Path | Owner does | Then AI 01 does |
+|---|---|---|
+| **A — Cloudflare** | Add site `velnox.live`, import the APPENDIX zone file, change NS at GoDaddy | verify, then PHASE 5–11 |
+| **B — Vercel DNS** | Change NS at GoDaddy to `ns1/ns2.vercel-dns.com` | create all 6 records itself via MCP, then PHASE 5–11 |
+
+Before PHASE 5, an **env baseline snapshot** must be captured by the owner (neither MCP can read Render
+env), or that layer cannot be rolled back. See ROLLBACK.
 
 ---
 
