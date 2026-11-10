@@ -1,4 +1,4 @@
-import { api } from "@velnox/shared/lib/api-routes";
+import { api, useAction } from "@velnox/shared/lib/api-routes";
 import { useAuth } from "@velnox/shared/hooks/use-auth";
 import { userHasPermission } from "@velnox/shared/lib/api-client";
 import { Badge } from "@velnox/shared/components/ui/badge";
@@ -84,33 +84,34 @@ export default function PaymentIncidentTab() {
   const canView = userHasPermission(user, "orders.view");
   const canResolve = userHasPermission(user, "orders.manage");
 
+  // These were called as `api(...)` — `api` is a Proxy over a lookup table, not a
+  // function, so every load threw a TypeError and the tab could never show data.
+  const incidentsAction = useAction(api.centerAdmin.paymentIncidents);
+  const resolveIncidentAction = useAction(api.centerAdmin.resolvePaymentIncident);
+
   const load = useCallback(async () => {
     if (!canView) return;
     setLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams();
-      params.set("limit", "200");
-      if (onlyOpen) params.set("status", "open");
-      if (search.trim()) params.set("q", search.trim());
-      const res = await api(`/api/admin/payment-incidents?${params.toString()}`);
-      const body = res as {
-        success?: boolean;
-        data?: {
-          total?: number;
-          rows?: IncidentRow[];
-          schemaMissing?: boolean;
-        };
-      };
-      setSchemaMissing(Boolean(body?.data?.schemaMissing));
-      setRows(body?.data?.rows ?? []);
-      setTotal(body?.data?.total ?? 0);
+      const res = (await incidentsAction({
+        limit: 200,
+        ...(onlyOpen ? { status: "open" } : {}),
+        ...(search.trim() ? { q: search.trim() } : {}),
+      })) as {
+        total?: number;
+        rows?: IncidentRow[];
+        schemaMissing?: boolean;
+      } | null;
+      setSchemaMissing(Boolean(res?.schemaMissing));
+      setRows(res?.rows ?? []);
+      setTotal(res?.total ?? 0);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load payment incidents");
     } finally {
       setLoading(false);
     }
-  }, [canView, onlyOpen, search]);
+  }, [canView, onlyOpen, search, incidentsAction]);
 
   useEffect(() => {
     void load();
@@ -121,9 +122,9 @@ export default function PaymentIncidentTab() {
       setBusyId(id);
       setError(null);
       try {
-        await api(`/api/admin/payment-incidents/${id}`, {
-          method: "PATCH",
-          body: JSON.stringify({ note: "ตรวจสอบแล้ว (บันทึกเท่านั้น — การคืนเงินทำผ่านเมนูคืนเงินของ Center)" }),
+        await resolveIncidentAction({
+          incidentId: id,
+          note: "ตรวจสอบแล้ว (บันทึกเท่านั้น — การคืนเงินทำผ่านเมนูคืนเงินของ Center)",
         });
         await load();
       } catch (err) {
@@ -132,7 +133,7 @@ export default function PaymentIncidentTab() {
         setBusyId(null);
       }
     },
-    [load],
+    [load, resolveIncidentAction],
   );
 
   if (!canView) return null;

@@ -385,6 +385,19 @@ const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
   "api.centerAdmin.ordersPageAction": (a) =>
     apiGet(`/api/admin/orders?paginated=1&limit=${a?.limit ?? 100}&offset=${a?.offset ?? 0}`),
   "api.centerAdmin.updateOrderStatusAction": (a) => apiPatch(`/api/admin/orders/${a.orderId}/status`, a),
+  // Payment incidents — money Stripe captured that the order lifecycle could not
+  // settle. Both routes existed on the backend but had NO key here, so the tab
+  // called `api(...)` directly (a Proxy, not a function) and every load threw.
+  "api.centerAdmin.paymentIncidents": (a) =>
+    apiGet(
+      `/api/admin/payment-incidents${buildQuery({
+        limit: a?.limit ?? 200,
+        status: a?.status,
+        q: a?.q,
+      })}`,
+    ),
+  "api.centerAdmin.resolvePaymentIncident": (a) =>
+    apiPatch(`/api/admin/payment-incidents/${a.incidentId}`, { note: a?.note }),
   "api.centerAdmin.auditLogs": (a) =>
     apiGet(
       `/api/admin/audit-logs${buildQuery({

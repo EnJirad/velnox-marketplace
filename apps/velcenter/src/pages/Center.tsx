@@ -77,6 +77,7 @@ import {
   shortOrderId,
   type CenterOrderStatus,
 } from "@velnox/shared/lib/shop";
+import { formatCommissionRate } from "@velnox/shared/lib/commerce";
 import { useAction, useMutation, useQuery } from "@velnox/shared/lib/api-routes";
 import {
   AlertTriangle,
@@ -114,7 +115,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { toast } from "sonner";
 
-type Tab = "overview" | "marketing" | "orders" | "incidents" | "intel" | "products" | "sellers" | "categories" | "staff" | "audit" | "settings" | "chat" | "tracking";
+type Tab = "overview" | "marketing" | "orders" | "incidents" | "products" | "sellers" | "categories" | "staff" | "audit" | "settings" | "chat" | "tracking";
 
 const DEPARTMENTS: { id: string; label: string }[] = [
   { id: "general", label: "ทั่วไป" },
@@ -155,7 +156,7 @@ const SETTINGS_SECTIONS = [
  * - admin:  business data + the customer directory + the read-only employee
  *           roster, but NO employee management (create/reset/permissions)
  *           (department-scoped in production; e.g. marketing admin)
- * - staff:  overview/intel, plus exactly the business tabs their
+ * - staff:  overview, plus exactly the business tabs their
  *           `employees.permissions` grants (orders.view, products.moderate,
  *           sellers.manage, audit.view, …) — a staff account with no grants
  *           sees only totals
@@ -194,7 +195,6 @@ function canSeeTab(
   switch (tab) {
     // Aggregate market numbers only — every center member may look.
     case "overview":
-    case "intel":
       return true;
 
     // Company chat is an operational surface for every VelCenter member
@@ -459,19 +459,36 @@ export default function Center() {
     }
   }, [verificationsAction]);
 
-  /** Re-read the three queues behind the overview counters. */
+  /**
+   * Which queue reads this account is ALLOWED to make.
+   *
+   * The overview counters used to fire all three unconditionally. A staff account
+   * that was granted `orders.view` + `products.moderate` but not `sellers.manage`
+   * therefore called the reviewer queue, got `403 Admin access required`, and the
+   * page reported "โหลดตัวเลขคิวงานไม่สำเร็จ" — a permission it never had read as a
+   * broken dashboard. Each counter now follows its own permission, so a staff
+   * member sees the numbers they can actually act on and nothing else.
+   */
+  const queueRights = useMemo(
+    () => ({
+      sellers: roleHoldsPermission(user?.role, user?.permissions, "sellers.manage"),
+      products: roleHoldsPermission(user?.role, user?.permissions, "products.moderate"),
+      verifications: roleHoldsPermission(user?.role, user?.permissions, "sellers.manage"),
+    }),
+    [user?.role, user?.permissions],
+  );
+
+  /** Re-read the queues behind the overview counters, within this account's rights. */
   const retryQueues = useCallback(() => {
     setQueueError(null);
-    void reloadSellers();
-    void reloadProducts();
-    void reloadVerifications();
-  }, [reloadSellers, reloadProducts, reloadVerifications]);
+    if (queueRights.sellers) void reloadSellers();
+    if (queueRights.products) void reloadProducts();
+    if (queueRights.verifications) void reloadVerifications();
+  }, [reloadSellers, reloadProducts, reloadVerifications, queueRights]);
 
   useEffect(() => {
-    reloadSellers();
-    reloadProducts();
-    reloadVerifications();
-  }, [reloadSellers, reloadProducts, reloadVerifications]);
+    retryQueues();
+  }, [retryQueues]);
 
   // One realtime signal, one refetch per consumer. Whichever source raises
   // "sellers" — the WebSocket handler above, or the verification queue right
@@ -480,10 +497,10 @@ export default function Center() {
   useEffect(
     () =>
       onCenterEvent("sellers", () => {
-        void reloadSellers();
-        void reloadVerifications();
+        if (queueRights.sellers) void reloadSellers();
+        if (queueRights.verifications) void reloadVerifications();
       }),
-    [reloadSellers, reloadVerifications],
+    [reloadSellers, reloadVerifications, queueRights],
   );
 
   // Realtime for VelCenter queues — the ONE shared socket (same client the
@@ -731,6 +748,9 @@ export default function Center() {
 
   interface MarketOverview {
     revenue: number;
+    /** The company's own cut of that revenue — 3% of every sold item. */
+    commissionRevenue?: number;
+    commissionRate?: number;
     orderCount: number;
     pendingOrders: number;
     completedOrders: number;
@@ -857,25 +877,6 @@ export default function Center() {
   // tree is owned by CategoriesManagement, which listens to the same event.
   useEffect(() => onCenterEvent("config", () => { void loadSettings(); }), [loadSettings]);
 
-  // ---- Intelligence rows (computed from learned cycles) ----
-  const intelRows = useMemo(() => {
-    const list = products ?? [];
-    const rows = list.map((p: any) => {
-      const info = reorderInfo(p);
-      const cycle = effectiveCycleDays(p);
-      const predictedAt =
-        p.lastOrderedAt !== undefined && cycle !== undefined
-          ? p.lastOrderedAt + cycle * DAY_MS
-          : undefined;
-      const daysLeft =
-        predictedAt !== undefined ? (predictedAt - Date.now()) / DAY_MS : undefined;
-      return { product: p, info, cycle, predictedAt, daysLeft };
-    });
-    const rank: Record<string, number> = { due: 0, upcoming: 1, unlearned: 2, ok: 3 };
-    return rows.sort((a: any, b: any) => rank[a.info.status] - rank[b.info.status]);
-  }, [products]);
-
-  const dueCount = intelRows.filter((r: any) => r.info.status === "due").length;
   const pendingOrders = (ordersData ?? []).filter((o) => o.status === "pending").length;
 
   // Next valid statuses per the Neon fulfilment state machine (mirrors
@@ -1065,10 +1066,18 @@ export default function Center() {
   };
 
   const stats = useMemo(() => {
-    const o = overview; // goals + reorder intelligence
+    const o = overview; // company goals
     const m = marketKpi; // marketplace KPIs (Neon commerce core — real data)
     return [
       { icon: TrendingUp, label: "ยอดขายรวม", value: m ? formatBaht(m.revenue) : "—", sub: "ออเดอร์ที่เสร็จสิ้น", accent: "text-emerald-600" },
+      // Company income, not seller income: the commission kept from each sold item.
+      {
+        icon: Coins,
+        label: "รายได้บริษัท",
+        value: m && m.commissionRevenue != null ? formatBaht(m.commissionRevenue) : "—",
+        sub: m?.commissionRate != null ? formatCommissionRate(m.commissionRate) + " ต่อชิ้นที่ขายได้" : "—",
+        accent: "text-emerald-700",
+      },
       { icon: ShoppingBag, label: "ออเดอร์ทั้งหมด", value: m ? String(m.orderCount) : "—", sub: m ? `${m.pendingOrders ?? 0} รอจัดการ` : "—", accent: "text-sky-600" },
       { icon: Target, label: "เป้าหมายสำเร็จ", value: o ? `${o.goalsAchieved}/${o.goalsTotal}` : "—", sub: "จากทั้งหมด", accent: "text-slate-700" },
       { icon: Users, label: "ลูกค้า", value: m ? String(m.customerCount) : "—", sub: "บัญชีลูกค้า", accent: "text-amber-600" },
@@ -1254,14 +1263,7 @@ export default function Center() {
                 </span>
               )}
             </TabsTrigger>
-            <TabsTrigger value="intel" onClick={() => selectTab("intel")} className="gap-1.5 rounded-[10px]">
-              <BrainCircuit className="size-4" /> <span className="nav-label">{t("velcenter.nav.intel")}</span>
-              {dueCount > 0 && (
-                <span className="rounded-full bg-rose-500 px-1.5 text-[11px] font-bold text-white">
-                  {dueCount}
-                </span>
-              )}
-            </TabsTrigger>
+
             <TabsTrigger value="products" onClick={() => selectTab("products")} className="gap-1.5 rounded-[10px]">
               <Package className="size-4" /> <span className="nav-label">{t("velcenter.nav.products")}</span>
               {pendingProducts > 0 && (
@@ -1375,21 +1377,19 @@ export default function Center() {
               </Card>
             )}
 
+            {/* The "Velnox Intelligence" summary card is gone with the tab: it
+                led with a restock counter nobody used. What is left is the real
+                marketplace picture — sales that actually completed, and orders
+                still waiting on a decision. */}
             <Card className="mt-6 border-slate-200 shadow-none">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-base">
                   <Sparkles className="size-4 text-[#10B981]" />
-                  Velnox Intelligence สรุป
+                  สรุปภาพรวมร้านค้า
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <div className="rounded-xl bg-rose-50 p-4">
-                    <p className="text-xs font-medium text-rose-600">ถึงเวลาสั่งซื้อซ้ำ</p>
-                    <p className="mt-1 text-2xl font-bold tabular-nums text-rose-700">
-                      {dueCount} รายการ
-                    </p>
-                  </div>
+                <div className="grid gap-3 sm:grid-cols-2">
                   <div className="rounded-xl bg-emerald-50 p-4">
                     <p className="text-xs font-medium text-emerald-600">ยอดขายจาก velshop</p>
                     <p className="mt-1 text-2xl font-bold tabular-nums text-emerald-700">
@@ -1626,353 +1626,11 @@ export default function Center() {
             )}
           </TabsContent>
 
-          {/* ============ Intelligence ============ */}
-          <TabsContent value="intel" className="mt-6">
-            {intelRows.length === 0 ? (
-              <div className="flex flex-col items-center rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center">
-                <span className="flex size-14 items-center justify-center rounded-2xl bg-[#ECFDF5]">
-                  <BrainCircuit className="size-7 text-[#10B981]" />
-                </span>
-                <h2 className="mt-5 text-lg font-semibold text-slate-900">ยังไม่มีข้อมูลให้วิเคราะห์</h2>
-                <p className="mt-1.5 max-w-sm text-sm leading-6 text-slate-500">
-                  เพิ่มสินค้าและสั่งซื้อสัก 2-3 รอบ Velnox จะเริ่มคาดการณ์รอบถัดไปให้
-                </p>
-              </div>
-            ) : (
-              <>
-              {/* Desktop: table */}
-              <div className="hidden overflow-x-auto rounded-xl border border-slate-200 bg-white md:block">
-                <Table className="min-w-[820px]">
-                  <TableHeader>
-                    <TableRow className="hover:bg-transparent">
-                      <TableHead className="pl-5 text-slate-400">สินค้า</TableHead>
-                      <TableHead className="text-slate-400">รอบการซื้อ</TableHead>
-                      <TableHead className="text-slate-400">สั่งล่าสุด</TableHead>
-                      <TableHead className="text-slate-400">คาดสั่งครั้งหน้า</TableHead>
-                      <TableHead className="text-slate-400">เหลืออีก</TableHead>
-                      <TableHead className="pr-5 text-right text-slate-400">สถานะ</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {intelRows.map(({ product, info, cycle, predictedAt, daysLeft }: any) => {
-                      const meta = resolveCategoryMeta(product.category);
-                      const statusMeta = STATUS_META[info.status as keyof typeof STATUS_META];
-                      const Icon = meta.icon;
-                      return (
-                        <TableRow key={product._id} className="hover:bg-slate-50/60">
-                          <TableCell className="pl-5">
-                            <div className="flex items-center gap-3">
-                              <span className={`flex size-8 shrink-0 items-center justify-center rounded-[10px] ring-1 ring-inset ${meta.chip}`}>
-                                <Icon className={`size-4 ${meta.iconClass}`} />
-                              </span>
-                              <div>
-                                <p className="font-medium text-slate-900">{product.name}</p>
-                                <p className="text-xs text-slate-400">
-                                  สต็อก {formatNumber(product.currentStock ?? 0)} {product.unit}
-                                </p>
-                              </div>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            {cycle !== undefined ? (
-                              <p className="font-medium tabular-nums text-slate-900">{formatDays(cycle)}</p>
-                            ) : (
-                              <p className="text-slate-400">—</p>
-                            )}
-                            <p className="text-xs text-slate-400">
-                              {product.lastOrderedAt !== undefined
-                                ? "เรียนรู้จากรอบการสั่งจริง"
-                                : "คาดการณ์จากที่ตั้งไว้"}
-                            </p>
-                          </TableCell>
-                          <TableCell>
-                            {product.lastOrderedAt !== undefined ? (
-                              <p className="text-sm text-slate-600">{formatThaiDate(product.lastOrderedAt)}</p>
-                            ) : (
-                              <p className="text-slate-400">—</p>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            {predictedAt !== undefined ? (
-                              <p className="text-sm text-slate-600">{formatThaiDate(predictedAt)}</p>
-                            ) : (
-                              <p className="text-slate-400">—</p>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            {daysLeft !== undefined ? (
-                              daysLeft > 0 ? (
-                                <p className="font-medium tabular-nums text-slate-900">
-                                  {formatDays(daysLeft)}
-                                </p>
-                              ) : (
-                                <p className="font-medium text-rose-600">เลยกำหนด</p>
-                              )
-                            ) : (
-                              <p className="text-slate-400">—</p>
-                            )}
-                          </TableCell>
-                          <TableCell className="pr-5 text-right">
-                            <Badge className={`gap-1 rounded-full ring-1 ring-inset ${statusMeta.badge}`}>
-                              <span className={`size-1.5 rounded-full ${statusMeta.dot}`} />
-                              {statusMeta.label}
-                            </Badge>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
+          {/* Intelligence (restock prediction) was removed 2026-11-09 — the
+              company does not use it, and a tab nobody opens is a maintenance
+              surface with no user. The learned-cycle data it read is still on the
+              seller side (reorder), which is where restocking actually happens. */}
 
-              {/* Mobile: app-like intelligence cards */}
-              <div className="space-y-3 md:hidden">
-                {intelRows.map(({ product, info, cycle, predictedAt, daysLeft }: any) => {
-                  const meta = resolveCategoryMeta(product.category);
-                  const statusMeta = STATUS_META[info.status as keyof typeof STATUS_META];
-                  const Icon = meta.icon;
-                  return (
-                    <div
-                      key={product._id}
-                      className="rounded-xl border border-slate-200 bg-white p-4 transition-[transform,border-color,box-shadow,background-color] duration-200 active:scale-[0.99]"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex min-w-0 items-center gap-3">
-                          <span className={`flex size-9 shrink-0 items-center justify-center rounded-[10px] ring-1 ring-inset ${meta.chip}`}>
-                            <Icon className={`size-4 ${meta.iconClass}`} />
-                          </span>
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold text-slate-900">{product.name}</p>
-                            <p className="text-xs text-slate-400">{meta.label}</p>
-                          </div>
-                        </div>
-                        <Badge className={`shrink-0 gap-1 rounded-full ring-1 ring-inset ${statusMeta.badge}`}>
-                          <span className={`size-1.5 rounded-full ${statusMeta.dot}`} />
-                          {statusMeta.label}
-                        </Badge>
-                      </div>
-
-                      <div className="mt-3 grid grid-cols-2 gap-2 rounded-[10px] bg-slate-50 p-3 text-xs">
-                        <div>
-                          <p className="text-slate-400">สต็อกปัจจุบัน</p>
-                          <p className="mt-0.5 font-semibold tabular-nums text-slate-900">
-                            {formatNumber(product.currentStock ?? 0)} {product.unit}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-slate-400">รอบการซื้อ</p>
-                          <p className="mt-0.5 font-semibold tabular-nums text-slate-900">
-                            {cycle !== undefined ? formatDays(cycle) : "—"}
-                            {product.lastOrderedAt !== undefined && (
-                              <span className="ml-1 font-normal text-slate-400">(เรียนรู้แล้ว)</span>
-                            )}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-slate-400">สั่งล่าสุด</p>
-                          <p className="mt-0.5 font-medium text-slate-700">
-                            {product.lastOrderedAt !== undefined ? formatThaiDate(product.lastOrderedAt) : "—"}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-slate-400">คาดสั่งครั้งหน้า</p>
-                          <p className="mt-0.5 font-medium text-slate-700">
-                            {predictedAt !== undefined ? formatThaiDate(predictedAt) : "—"}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="mt-3 flex items-center justify-between">
-                        <p className="text-xs text-slate-400">เหลืออีก</p>
-                        {daysLeft !== undefined ? (
-                          daysLeft > 0 ? (
-                            <p className="text-sm font-bold tabular-nums text-slate-900">{formatDays(daysLeft)}</p>
-                          ) : (
-                            <p className="text-sm font-bold text-rose-600">เลยกำหนด</p>
-                          )
-                        ) : (
-                          <p className="text-sm text-slate-400">—</p>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              </>
-            )}
-            <p className="mt-4 flex items-center gap-1.5 text-xs text-slate-400">
-              <BrainCircuit className="size-3.5 text-[#10B981]" />
-              Velnox คำนวณจากรอบการสั่งจริงที่ระบบเรียนรู้ — ยิ่งสั่งมาก ยิ่งแม่นยำ
-            </p>
-
-            {/* CPNS: what customers are interested in right now (aggregates only) */}
-            {market &&
-              (market.topSearches.length > 0 ||
-                market.topCategories.length > 0 ||
-                market.popularProducts.length > 0) && (
-                <Card className="mt-6 border-slate-200 shadow-none">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-base">
-                      <TrendingUp className="size-4 text-[#10B981]" />
-                      ลูกค้ากำลังสนใจอะไร · 30 วัน
-                    </CardTitle>
-                    <p className="text-xs text-slate-400">
-                      สรุปจากพฤติกรรมการใช้งานจริงของลูกค้าทั่วตลาด (รวมกัน ไม่ระบุตัวตน) ·{" "}
-                      {formatNumber(market.eventCount)} เหตุการณ์
-                    </p>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid gap-6 lg:grid-cols-3">
-                      {/* Top searches */}
-                      <div>
-                        <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">
-                          <Search className="size-3.5" />
-                          คำค้นหายอดนิยม
-                        </p>
-                        <div className="mt-3 flex flex-wrap gap-1.5">
-                          {market.topSearches.slice(0, 6).map((s) => (
-                            <span
-                              key={s.q}
-                              className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700"
-                            >
-                              “{s.q}”{" "}
-                              <span className="ml-0.5 text-slate-400">×{s.count}</span>
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Top categories */}
-                      <div>
-                        <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">
-                          <Boxes className="size-3.5" />
-                          หมวดที่ถูกเข้าดูบ่อย
-                        </p>
-                        <div className="mt-3 space-y-2">
-                          {market.topCategories.slice(0, 6).map((c) => {
-                            const max = Math.max(1, market.topCategories[0]?.count ?? 1);
-                            return (
-                              <div key={c.category} className="flex items-center gap-2">
-                                <span className="w-28 shrink-0 truncate text-xs text-slate-600">{c.label}</span>
-                                <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
-                                  <div
-                                    className="h-full rounded-full bg-[#10B981]"
-                                    style={{ width: `${Math.round((c.count / max) * 100)}%` }}
-                                  />
-                                </div>
-                                <span className="w-8 shrink-0 text-right text-xs font-semibold tabular-nums text-slate-900">
-                                  {c.count}
-                                </span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                      {/* Popular products */}
-                      <div>
-                        <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">
-                          <Sparkles className="size-3.5" />
-                          สินค้าที่ถูกมองบ่อย
-                        </p>
-                        <div className="mt-3 space-y-2">
-                          {market.popularProducts.slice(0, 6).map(({ product, views }) => (
-                            <div key={product.id} className="flex items-center gap-3">
-                              <span className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-[8px] bg-slate-100">
-                                {product.primaryImage ? (
-                                  <img src={product.primaryImage.displayUrl} alt="" className="size-full object-cover" />
-                                ) : (
-                                  <Package className="size-3.5 text-slate-400" />
-                                )}
-                              </span>
-                              <span className="min-w-0 flex-1">
-                                <span className="block truncate text-xs font-medium text-slate-900">{product.name}</span>
-                                <span className="text-[11px] text-slate-400">
-                                  {formatBaht(product.price)}/{product.unit}
-                                </span>
-                              </span>
-                              <span className="shrink-0 text-xs font-semibold tabular-nums text-slate-500">
-                                {formatNumber(views)} ครั้ง
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-          </TabsContent>
-
-          {/* Reject dialogs (reason is required before rejecting — spec §36–37) */}
-          <Dialog open={rejectingSeller !== null} onOpenChange={(open) => !open && setRejectingSeller(null)}>
-            <DialogContent className="sm:max-w-md">
-              <DialogHeader>
-                <DialogTitle>ปฏิเสธใบสมัครพ่อค้า</DialogTitle>
-                <DialogDescription>
-                  ระบุเหตุผล — พ่อค้าจะเห็นเหตุผลนี้ และสามารถส่งใบสมัครใหม่ได้
-                </DialogDescription>
-              </DialogHeader>
-              <Textarea
-                value={rejectReason}
-                onChange={(e) => setRejectReason(e.target.value)}
-                placeholder="เช่น เอกสารไม่ครบ หรือข้อมูลร้านไม่ตรงตามข้อกำหนด"
-                rows={3}
-              />
-              <DialogFooter>
-                <Button variant="ghost" onClick={() => setRejectingSeller(null)} disabled={modBusy}>
-                  ยกเลิก
-                </Button>
-                <Button
-                  className="bg-rose-600 text-white hover:bg-rose-700"
-                  onClick={() => rejectingSeller && handleSellerStatus(rejectingSeller, "rejected")}
-                  disabled={modBusy || !rejectReason.trim()}
-                >
-                  {modBusy && <Loader2 className="size-4 animate-spin" />}
-                  ยืนยันการปฏิเสธ
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-
-          <Dialog open={rejectingProduct !== null} onOpenChange={(open) => !open && setRejectingProduct(null)}>
-            <DialogContent className="sm:max-w-md">
-              <DialogHeader>
-                <DialogTitle>ปฏิเสธ / ระงับสินค้า</DialogTitle>
-                <DialogDescription>
-                  ระบุเหตุผล — พ่อค้าจะเห็นเหตุผลนี้ และสามารถแก้ไขแล้วส่งตรวจสอบใหม่ได้
-                </DialogDescription>
-              </DialogHeader>
-              <Textarea
-                value={rejectReason}
-                onChange={(e) => setRejectReason(e.target.value)}
-                placeholder="เช่น รูปไม่ชัดเจน หรือข้อมูลสินค้าไม่ตรงตามข้อกำหนด"
-                rows={3}
-              />
-              <DialogFooter>
-                <Button variant="ghost" onClick={() => setRejectingProduct(null)} disabled={modBusy}>
-                  ยกเลิก
-                </Button>
-                <Button
-                  className="bg-rose-600 text-white hover:bg-rose-700"
-                  onClick={() =>
-                    rejectingProduct &&
-                    handleProductModeration(
-                      rejectingProduct,
-                      rejectingProduct.status === "published" ? "suspended" : "rejected",
-                    )
-                  }
-                  disabled={modBusy || !rejectReason.trim()}
-                >
-                  {modBusy && <Loader2 className="size-4 animate-spin" />}
-                  ยืนยัน
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-
-          {/* Seller verification review workspace — the reviewer sees the exact
-          {/* ============ Products — moderation queue (Neon, spec §37) ============ */}
           <TabsContent value="products" className="mt-6">
             <div className="mb-4 flex items-center gap-2 text-sm text-slate-500">
               <Package className="size-4 text-[#10B981]" />

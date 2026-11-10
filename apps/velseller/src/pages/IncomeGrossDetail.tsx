@@ -7,7 +7,7 @@ import { Badge } from "@velnox/shared/components/ui/badge";
 import { Button } from "@velnox/shared/components/ui/button";
 import { api, useAction } from "@velnox/shared/lib/api-routes";
 import {
-  formatBaht, formatIsoDate, getOrderStatusMeta,
+  commissionOf, formatBaht, formatIsoDate, getOrderStatusMeta,
   shortOrderNumber, type StoreOrderItem,
 } from "@velnox/shared/lib/commerce";
 import { useLanguage } from "@velnox/shared/lib/i18n";
@@ -169,7 +169,7 @@ export default function IncomeGrossDetail() {
                         </div>
                         <div className="text-right shrink-0">
                           <p className="text-sm font-semibold tabular-nums text-slate-900">{formatBaht(item.quantity * item.unitPrice)}</p>
-                          <p className="text-[11px] text-slate-400">ค่าธรรมเนียม -{formatBaht(Math.round(item.quantity * item.unitPrice * (report?.commissionRate ?? 3) / 100))}</p>
+                          <p className="text-[11px] text-slate-400">ค่าธรรมเนียม -{formatBaht(commissionOf(item.quantity * item.unitPrice, report?.commissionRate ?? 0.03))}</p>
                         </div>
                       </div>
                     ))}

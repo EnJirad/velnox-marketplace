@@ -7,7 +7,7 @@ import { Badge } from "@velnox/shared/components/ui/badge";
 import { Button } from "@velnox/shared/components/ui/button";
 import { api, useAction } from "@velnox/shared/lib/api-routes";
 import {
-  formatBaht, formatIsoDate, getOrderStatusMeta,
+  commissionOf, formatBaht, formatIsoDate, getOrderStatusMeta,
   shortOrderNumber,
 } from "@velnox/shared/lib/commerce";
 import { useLanguage } from "@velnox/shared/lib/i18n";
@@ -208,7 +208,7 @@ export default function IncomePayoutDetail() {
               </div>
               <div className="divide-y divide-slate-100">
                 {report.transactions.map((tx) => {
-                  const fee = tx.subtotal * (report.commissionRate / 100);
+                  const fee = commissionOf(tx.subtotal, report.commissionRate);
                   const net = tx.subtotal - fee;
                   return (
                     <div key={tx.order.id} className="p-4 sm:p-5 hover:bg-slate-50/60 transition-colors">

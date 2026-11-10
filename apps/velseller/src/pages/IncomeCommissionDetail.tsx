@@ -7,7 +7,7 @@ import { Badge } from "@velnox/shared/components/ui/badge";
 import { Button } from "@velnox/shared/components/ui/button";
 import { api, useAction } from "@velnox/shared/lib/api-routes";
 import {
-  formatBaht, formatIsoDate, getOrderStatusMeta,
+  commissionOf, formatBaht, formatCommissionRate, formatIsoDate, getOrderStatusMeta,
   shortOrderNumber, type StoreOrder, type StoreOrderItem,
 } from "@velnox/shared/lib/commerce";
 import { useLanguage } from "@velnox/shared/lib/i18n";
@@ -119,7 +119,7 @@ export default function IncomeCommissionDetail() {
               {[
                 { icon: BadgePercent, label: t("sellerDash.income.commissionDetail.totalFee"), value: `-${formatBaht(report.commission)}`, sub: `3% ของ ${formatBaht(report.gross)}`, color: "text-slate-600", bg: "bg-slate-50" },
                 { icon: PackageCheck, label: t("sellerDash.income.kpiGross"), value: formatBaht(report.gross), sub: `${report.grossCount} ชิ้น`, color: "text-emerald-600", bg: "bg-emerald-50" },
-                { icon: BadgePercent, label: "อัตราค่าธรรมเนียม", value: `${report.commissionRate}%`, sub: "ต่อชิ้น", color: "text-slate-600", bg: "bg-slate-50" },
+                { icon: BadgePercent, label: "อัตราค่าธรรมเนียม", value: formatCommissionRate(report.commissionRate), sub: "ต่อชิ้น", color: "text-slate-600", bg: "bg-slate-50" },
                 { icon: BadgePercent, label: "ค่าธรรมเนียมเฉลี่ย/ชิ้น", value: report.grossCount > 0 ? formatBaht(Math.round(report.commission / report.grossCount)) : "-", sub: report.grossCount > 0 ? `จาก ${report.grossCount.toLocaleString("th-TH")} ชิ้น` : "", color: "text-slate-600", bg: "bg-slate-50" },
               ].map(({ icon: Icon, label, value, sub, color, bg }) => (
                 <div key={label} className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
@@ -185,7 +185,7 @@ export default function IncomeCommissionDetail() {
               </div>
               <div className="divide-y divide-slate-100">
                 {report.transactions.map((tx) => {
-                  const fee = tx.subtotal * (report.commissionRate / 100);
+                  const fee = commissionOf(tx.subtotal, report.commissionRate);
                   return (
                     <div key={tx.order.id} className="p-4 sm:p-5 hover:bg-slate-50/60 transition-colors">
                       <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -207,7 +207,7 @@ export default function IncomeCommissionDetail() {
                           </div>
                           <div className="text-right shrink-0">
                             <p className="text-sm font-semibold tabular-nums text-slate-900">{formatBaht(item.quantity * item.unitPrice)}</p>
-                            <p className="text-[11px] text-slate-400">-{formatBaht(Math.round(item.quantity * item.unitPrice * report.commissionRate / 100))}</p>
+                            <p className="text-[11px] text-slate-400">-{formatBaht(commissionOf(item.quantity * item.unitPrice, report.commissionRate))}</p>
                           </div>
                         </div>
                       ))}

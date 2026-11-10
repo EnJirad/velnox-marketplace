@@ -32,6 +32,7 @@ import type { Express, Request, Response } from "express";
 import { requireAuth, optionalAuth } from "../middleware/auth.js";
 import { query, withTransaction } from "../db/index.js";
 import { auditClientIp, writeAuditLog } from "../lib/audit-log.js";
+import { SELLER_COMMISSION_RATE } from "../lib/seller-stats.js";
 import { isUndefinedTableError } from "../lib/payment-incidents.js";
 import {
   FulfillmentError,
@@ -398,10 +399,19 @@ export function setupCenterRoutes(app: Express): void {
         query("SELECT COUNT(*)::int AS count FROM sellers WHERE status = 'approved'"),
       ]);
 
+      // The company's own income: the commission it keeps from every SOLD item.
+      // Computed here from the same completed-order total the card above shows, so
+      // the two numbers can never drift, and sent with the rate so the UI labels it
+      // "3% ต่อชิ้น" instead of guessing.
+      const grossRevenue = parseFloat(revenue.rows[0]?.total) || 0;
+      const commissionRevenue = Math.round(grossRevenue * SELLER_COMMISSION_RATE * 100) / 100;
+
       res.json({
         success: true,
         data: {
-          revenue: parseFloat(revenue.rows[0]?.total) || 0,
+          revenue: grossRevenue,
+          commissionRevenue,
+          commissionRate: SELLER_COMMISSION_RATE,
           orderCount: orders.rows[0]?.total ?? 0,
           pendingOrders: orders.rows[0]?.pending ?? 0,
           completedOrders: orders.rows[0]?.completed ?? 0,

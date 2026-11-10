@@ -1059,6 +1059,31 @@ export function formatBaht(value: number): string {
   })}`;
 }
 
+/**
+ * Commission, in the ONE unit the API uses.
+ *
+ * The backend sends the seller commission as a FRACTION — `0.03` means 3%. Four
+ * screens divided it by 100 again before using it, so a ฿419.30 sale was charged
+ * a ฿0.13 fee and the rate chip read "0.03%" (a fee 100× too small and a label
+ * that hid the error). Everything now goes through these helpers so the unit can
+ * never be in doubt at a call site.
+ */
+export function commissionPercent(rate: number): number {
+  return Math.round((Number.isFinite(rate) ? rate : 0) * 100 * 100) / 100;
+}
+
+/** The fee for ONE line, in satang (2dp), from a fraction rate. */
+export function commissionOf(amount: number, rate: number): number {
+  const value = (Number.isFinite(amount) ? amount : 0) * (Number.isFinite(rate) ? rate : 0);
+  return Math.round(value * 100) / 100;
+}
+
+/** "3%" — never "0.03%". */
+export function formatCommissionRate(rate: number): string {
+  const pct = commissionPercent(rate);
+  return `${pct.toLocaleString("th-TH", { maximumFractionDigits: 2 })}%`;
+}
+
 export function formatIsoDate(iso: string | number): string {
   return new Intl.DateTimeFormat("th-TH", {
     day: "numeric",

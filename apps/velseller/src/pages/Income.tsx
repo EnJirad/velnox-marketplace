@@ -14,7 +14,7 @@ import { Badge } from "@velnox/shared/components/ui/badge";
 import { Button } from "@velnox/shared/components/ui/button";
 import { api, useAction } from "@velnox/shared/lib/api-routes";
 import {
-  formatBaht, formatIsoDate, getOrderStatusMeta,
+  commissionOf, formatBaht, formatCommissionRate, formatIsoDate, getOrderStatusMeta,
   shortOrderNumber, type StoreOrder, type StoreOrderItem,
 } from "@velnox/shared/lib/commerce";
 import { useLanguage } from "@velnox/shared/lib/i18n";
@@ -81,7 +81,7 @@ export default function Income() {
     return () => { alive = false; };
   }, [load]);
 
-  const { gross, grossCount, grossDeliveredCount, returns, returnCount, returnShippedCount, commission, commissionRate, returnRate, returnCoverage, payout, transactions, grouped, items } = report ?? { gross: 0, grossCount: 0, grossDeliveredCount: 0, returns: 0, returnCount: 0, returnShippedCount: 0, commission: 0, commissionRate: 3, returnRate: 0, returnCoverage: 0, payout: 0, transactions: [] as TransactionRow[], grouped: undefined as GroupedDay[] | undefined, items: [] };
+  const { gross, grossCount, grossDeliveredCount, returns, returnCount, returnShippedCount, commission, commissionRate, returnRate, returnCoverage, payout, transactions, grouped, items } = report ?? { gross: 0, grossCount: 0, grossDeliveredCount: 0, returns: 0, returnCount: 0, returnShippedCount: 0, commission: 0, commissionRate: 0.03, returnRate: 0, returnCoverage: 0, payout: 0, transactions: [] as TransactionRow[], grouped: undefined as GroupedDay[] | undefined, items: [] };
 
   // Real per-day buckets from the backend, aggregated to the selected period.
   // Empty until actual orders exist — never a synthetic spread.
@@ -308,7 +308,7 @@ export default function Income() {
                 </div>
                 <div className="divide-y divide-slate-100">
                   {transactions.map((tx) => {
-                    const fee = tx.subtotal * (commissionRate / 100);
+                    const fee = commissionOf(tx.subtotal, commissionRate);
                     return (
                       <div key={tx.order.id} className="p-4 sm:p-5 hover:bg-slate-50/60 transition-colors">
                         <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -332,7 +332,7 @@ export default function Income() {
                             </div>
                             <div className="text-right shrink-0">
                               <p className="text-sm font-semibold tabular-nums text-slate-900">{formatBaht(item.quantity * item.unitPrice)}</p>
-                              <p className="text-[11px] text-slate-400">ค่าธรรมเนียม -{formatBaht(Math.round(item.quantity * item.unitPrice * commissionRate / 100))}</p>
+                              <p className="text-[11px] text-slate-400">ค่าธรรมเนียม -{formatBaht(commissionOf(item.quantity * item.unitPrice, commissionRate))}</p>
                             </div>
                           </div>
                         ))}

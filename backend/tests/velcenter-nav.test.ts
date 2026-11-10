@@ -18,7 +18,6 @@ const NAV_TABS = [
   "overview",
   "chat",
   "orders",
-  "intel",
   "products",
   "sellers",
   "categories",
