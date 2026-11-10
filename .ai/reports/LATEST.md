@@ -106,3 +106,43 @@ Tailwind (1rem = 16px) เอกสารจึงระบุให้เลื
 `git diff --check` clean · ไม่มีไฟล์โค้ดเปลี่ยน (`git status` = 2 ไฟล์เอกสาร) ·
 ตรวจว่าเอกสารไม่ขัดความจริง: ไม่มี `| Buttons | rounded-[10px]` เหลือ (0) · ไม่มี `| 11px | text-xs`
 เหลือ (0) · มี `text-2xs` 4 จุด · มี `--brand` 2 จุด
+
+---
+
+# เพิ่มเติม — UI Phase C (เริ่ม): velnox + การแก้เป้าของแผน
+
+## ทำแล้ว
+
+ปุ่มดิบ 2 ตัวใน `velnox` → `<Button>` โดยคงหน้าตาเดิมด้วยการ override ผ่าน `tailwind-merge`
+(`cn()` = `twMerge(clsx(...))` ⇒ class ที่ส่งไปทีหลังชนะ):
+
+| ไฟล์ | เดิม | ใหม่ |
+|---|---|---|
+| `Contact.tsx:118` | `<button className="… rounded-xl bg-slate-900 px-6 py-3.5 …">` | `<Button className="h-12 … rounded-xl bg-slate-900 …">` (h-12 = 48px = py-3.5 + line-height 20px เดิม) |
+| `CorporateLayout.tsx:102` | `<button className="… size-10 rounded-lg …">` | `<Button variant="ghost" size="icon" className="size-10 …">` (+ `hover:text-slate-700` เพื่อ neutralize ghost's text color) |
+
+`velnox` เหลือ `<button>` ดิบ **0** · typecheck 4/4 · build ผ่าน · test 1432/0
+
+## ข้อค้นพบที่ทำให้ต้องแก้เป้าของ Phase C
+
+แผนเดิมเขียนว่า "`<button>` ดิบ 204 → 0" ผมแยกประเภทจริงก่อนลงมือ แล้วพบว่าตัวเลขนั้นทำให้เข้าใจผิด:
+
+| ประเภท | จำนวน | ควรเป็น `<Button>`? |
+|---|---|---|
+| segmented / pill toggle (className เป็น template literal + ternary) | **40** | ไม่ |
+| filter chip ที่มี `aria-pressed` | **10** | ไม่ |
+| list row / disclosure / upload wrapper / floating pill | ~145 | ไม่ |
+| action button จริง (`bg-slate-900` / `bg-brand`) | **5** | ใช่ (บางตัวเป็น floating pill) |
+
+`Button` มี base class `h-11 px-4 py-2 rounded-md text-sm font-medium` ซึ่งจะทับ layout ของ
+filter chip / list row / overlay ⇒ **บังคับให้ครบ 204 จะทำให้ UI แย่ลง**
+
+**ปัญหาจริงคือ pattern เดียวกันถูกเขียนซ้ำ ~40 ที่** (period picker ใน `Income*.tsx` 5 ไฟล์,
+status filter ใน `SellerOrders.tsx` + `MyShop.tsx`, segment tab ใน `SellerProfile.tsx`)
+⇒ Phase C2 ควรสร้าง primitive กลาง (2 variant: pill / tab) แทนที่จะไล่เปลี่ยนเป็น `Button`
+
+## ยังไม่ได้ทำ
+
+- primitive segmented/toggle (C2) — ต้องตัดสินใจเรื่องหน้าตาก่อน
+- ปุ่ม action จริงที่เหลือ ~5 ตัวใน `velshop` / `velcenter`
+- dialog/sheet ที่ประกาศเอง 5 ไฟล์ (C4)

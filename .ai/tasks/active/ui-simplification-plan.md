@@ -129,12 +129,33 @@ generate ออกมา ไม่ใช่จากการอ่านโค�
 
 | ขั้น | ทำอะไร | ที่ไหน | พิสูจน์ |
 |---|---|---|---|
-| C1 | `<button>` ดิบ 204 ตัว → `<Button>` (มี 4 variant อยู่แล้ว) | ทั้ง 4 แอป | จำนวน `<button>` เหลือ 0 · typecheck · หน้าจอไม่เปลี่ยน |
-| C2 | รวมการ์ดที่เขียนมือให้เป็น `Card` เดียว | `packages/shared/src/components/ui/card.tsx` | จำนวน `rounded-2xl border border-slate-200 bg-white` ลดลง |
-| C3 | ตรวจว่า dialog/sheet ที่ประกาศเอง 5 ไฟล์ใช้ primitive กลางได้ไหม | 5 ไฟล์ที่ grep เจอ | ไม่มี `createPortal` ที่เขียนเองใหม่ |
+| ~~C1~~ | ~~`<button>` ดิบ 204 → `<Button>`~~ **เป้านี้ผิด** — ดูข้อค้นพบด้านล่าง | — | — |
+| C1 (ทำแล้ว) | ปุ่ม action จริงของ `velnox` 2 ตัว → `<Button>` | `Contact.tsx`, `CorporateLayout.tsx` | `<button>` เหลือ 0 · build ผ่าน |
+| C2 (เสนอ) | สร้าง primitive กลางสำหรับ **segmented / pill toggle** แล้วแทนที่ของซ้ำ | `packages/shared/src/components/ui/` | class string ที่ซ้ำกันหายไป · `aria-pressed` ครบทุกตัว |
+| C3 | ปุ่ม action ที่เหลือ (สแกนแล้วมีน้อย) | `velshop`, `velcenter` | นับจริงก่อน-หลัง |
+| C4 | ตรวจว่า dialog/sheet ที่ประกาศเอง 5 ไฟล์ใช้ primitive กลางได้ไหม | 5 ไฟล์ที่ grep เจอ | ไม่มี `createPortal` ที่เขียนเองใหม่ |
 
-**ความเสี่ยง:** กลาง — ปุ่มที่เขียนดิบมักมี class พิเศษ (สี/ขนาด) ต้อง map ให้ตรง variant ไม่ใช่ทับ
-**วิธีลดเสี่ยง:** ทำทีละแอป เริ่มจาก `velnox` (5 ไฟล์) → `velcenter` → `velseller` → `velshop`
+### ข้อค้นพบ: ตัวเลข "204 ปุ่มดิบ" ทำให้เข้าใจผิด
+
+พอแยกประเภทจริง (2026-11-10):
+
+| ประเภท | จำนวน | ควรใช้ `<Button>` ไหม |
+|---|---|---|
+| segmented / toggle (className เป็น template literal + ternary) | **40** | **ไม่** — ต้องมี primitive ของตัวเอง |
+| มี `aria-pressed` (filter chip) | **10** | **ไม่** |
+| list row / disclosure / upload wrapper / floating pill | ~145 | **ไม่** — เป็น widget ไม่ใช่ปุ่ม |
+| action button จริง (bg-slate-900 / bg-brand) | **5** | ใช่ (และบางตัวเป็น floating pill) |
+
+**สรุป:** การบังคับ 204 ปุ่มให้เป็น `<Button>` จะทำให้ UI **แย่ลง** เพราะ `Button` มี base class
+(`h-11 px-4 py-2 rounded-md text-sm font-medium`) ที่จะไปทับ layout ของ filter chip, list row
+และ overlay
+
+**ปัญหาจริงไม่ใช่ "ไม่ได้ใช้ Button" — แต่คือ "เขียน pattern เดียวกันซ้ำ 40 ที่"**
+(period picker ใน 5 ไฟล์ Income*, status filter ใน SellerOrders/MyShop, segment tab ใน SellerProfile)
+นั่นคือสิ่งที่ C2 ควรแก้ และได้ผลทั้งความสม่ำเสมอและลดโค้ด
+
+**ความเสี่ยง:** ปานกลาง — primitive ใหม่ต้องรองรับทั้ง pill (rounded-full) และ tab (rounded-md)
+จึงควรมี 2 variant ไม่ใช่ 1
 
 ---
 

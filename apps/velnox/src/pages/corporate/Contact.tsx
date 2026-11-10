@@ -1,5 +1,6 @@
 import { Mail, MapPin, MessageCircle } from "lucide-react";
 import { useState } from "react";
+import { Button } from "@velnox/shared/components/ui/button";
 
 const CHANNELS = [
   {
@@ -115,12 +116,12 @@ export function Contact() {
               className="mt-1.5 w-full resize-none rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
             />
           </label>
-          <button
+          <Button
             type="submit"
-            className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-6 py-3.5 text-sm font-semibold text-white transition-colors hover:bg-slate-800 sm:w-auto"
+            className="mt-6 h-12 w-full rounded-xl bg-slate-900 px-6 text-sm font-semibold text-white hover:bg-slate-800 sm:w-auto"
           >
             ส่งข้อความ
-          </button>
+          </Button>
         </form>
       </div>
     </div>

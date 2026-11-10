@@ -1,4 +1,5 @@
 import { Logo } from "@velnox/shared/components/Logo";
+import { Button } from "@velnox/shared/components/ui/button";
 import { cn } from "@velnox/shared/lib/utils";
 import { SITE_URLS } from "@velnox/shared/lib/sites";
 import { ArrowUpRight, Menu, X } from "lucide-react";
@@ -99,15 +100,17 @@ export function CorporateLayout() {
             <ArrowUpRight className="size-4" />
           </a>
 
-          <button
+          <Button
+            variant="ghost"
+            size="icon"
             type="button"
-            className="inline-flex size-10 items-center justify-center rounded-lg text-slate-700 hover:bg-slate-100 lg:hidden"
+            className="size-10 rounded-lg text-slate-700 hover:bg-slate-100 hover:text-slate-700 lg:hidden"
             onClick={() => setOpen((v) => !v)}
             aria-label={open ? "ปิดเมนู" : "เปิดเมนู"}
             aria-expanded={open}
           >
             {open ? <X className="size-5" /> : <Menu className="size-5" />}
-          </button>
+          </Button>
         </div>
 
         {open && (
