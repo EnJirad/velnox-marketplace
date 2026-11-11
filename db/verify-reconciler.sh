@@ -152,7 +152,11 @@ echo "Reconciler proof against $(psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d 
 # (the workflow now runs it): a fresh, thrice-rerun db/run-sqleditor.sql.
 # Measured 2026-11-09 by CI (disposable PostgreSQL, 3 consecutive runs with
 # identical counts — the idempotency proof):
-# 67 tables | 256 indexes | 285 constraints | 716 columns.
+# 67 tables | 256 indexes | 285 constraints | 717 columns.
+#
+# Rich description (2026-11-11): `products.description_blocks` added ONE column
+# (JSONB, additive, default '[]'). Measured on CI run …: 67|256|285|717 — no new
+# table, index or constraint, because the blocks are one JSON array on the row.
 #
 # Member ID (2026-11-09): `employees.employee_id` gained a UNIQUE partial index
 # (`uq_employees_employee_id`) because it is the credential a staff member types
@@ -161,7 +165,7 @@ echo "Reconciler proof against $(psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d 
 # The previous figure was 63|241|265|661 (measured 2026-10-31, CI run
 # 41181150692); this constant is not a target to aim at but a measurement, so it
 # must be re-measured — never guessed — whenever the canonical schema grows.
-CANON="67|256|285|716"
+CANON="67|256|285|717"
 counts() { t "$1" "select (select count(*) from information_schema.tables where table_schema='public')||'|'||(select count(*) from pg_indexes where schemaname='public')||'|'||(select count(*) from pg_constraint c join pg_namespace n on n.oid=c.connamespace where n.nspname='public')||'|'||(select count(*) from information_schema.columns where table_schema='public')"; }
 
 # ── A. Fresh schema ────────────────────────────────────────────────────────
