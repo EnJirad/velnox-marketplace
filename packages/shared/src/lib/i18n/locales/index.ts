@@ -181,7 +181,14 @@ const myAuthPatch = {
   terms: "ဝင်ရောက်ခြင်းဖြင့် ဝန်ဆောင်မှုစည်းမျဉ်းနှင့် ကိုယ်ရေးအချက်အလက်မူဝါဒကို သဘောတူပါသည်",
   termsLink: "ဝန်ဆောင်မှုစည်းမျဉ်း",
   privacyLink: "ကိုယ်ရေးအချက်အလက်မူဝါဒ",
-} satisfies Partial<Dict["auth"]>;
+  login: {
+    submit: "Sign in",
+  } as Partial<Dict["auth"]["login"]>,
+  register: {
+    submit: "Create account",
+    desc: "Create a new account to start buying and selling on Velnox",
+  } as Partial<Dict["auth"]["register"]>,
+};
 
 /**
  * Burmese strings added in the VelShop production e-commerce redesign.

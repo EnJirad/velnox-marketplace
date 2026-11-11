@@ -1571,6 +1571,7 @@ export const en: Dict = {
       signingIn: "Signing in...",
       continueAsGuest: "Continue as guest",
       noAccount: "Don't have an account?",
+      submit: "Sign in",
     },
     register: {
       title: "Sign up",
@@ -1581,6 +1582,8 @@ export const en: Dict = {
       signingUp: "Signing up...",
       later: "Sign up later",
       already: "Already have an account?",
+      submit: "Create account",
+      desc: "Create a new account to start buying and selling on Velnox",
     },
     passwordTooShort: "Password must be at least 8 characters",
     loginError: "Sign-in failed. Please try again.",

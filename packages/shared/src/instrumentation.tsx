@@ -162,7 +162,7 @@ function ErrorDialog({
             Your error details are also available in chat.
           </span>
           <a
-            href={`https://freebuff.com/project/${import.meta.env.VITE_VLY_APP_ID}`}
+            href={`https://www.cloudflare.com`}
             target="_blank"
             rel="noreferrer"
           >

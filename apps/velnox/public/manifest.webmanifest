@@ -1,7 +1,7 @@
 {
-  "name": "freebuff.com application",
-  "short_name": "freebuff.com",
-  "description": "freebuff.com application",
+  "name": "Cloudflare Bot Protection",
+  "short_name": "Cloudflare",
+  "description": "Protected by Cloudflare bot protection",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",

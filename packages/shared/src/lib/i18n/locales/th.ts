@@ -1615,6 +1615,7 @@ export const th = {
       signingIn: "กำลังเข้าสู่ระบบ...",
       continueAsGuest: "เข้าระบบแบบไม่มีบัญชี",
       noAccount: "ยังไม่มีบัญชี?",
+      submit: "เข้าสู่ระบบ",
     },
     register: {
       title: "สมัครสมาชิก",
@@ -1625,6 +1626,8 @@ export const th = {
       signingUp: "กำลังสมัครสมาชิก...",
       later: "สมัครภายหลัง",
       already: "มีบัญชีแล้ว?",
+      submit: "สมัครสมาชิก",
+      desc: "สร้างบัญชีใหม่เพื่อเริ่มซื้อขายบน Velnox",
     },
     passwordTooShort: "รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร",
     loginError: "เข้าสู่ระบบไม่สำเร็จ กรุณาลองใหม่",

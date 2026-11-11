@@ -394,6 +394,12 @@ function Auth() {
               )}
             </Button>
 
+            {mode === "register" && (
+              <p className="text-center text-xs text-slate-500 mt-2">
+                {t("auth.register.desc")}
+              </p>
+            )}
+
             {/* Divider */}
             <div className="relative my-1">
               <div className="absolute inset-0 flex items-center">
@@ -613,12 +619,9 @@ function Auth() {
             </p>
           </CardContent>
 
-          <div className="rounded-b-lg border-t bg-muted px-6 py-3 text-center text-xs text-slate-400">
+          <div className="rounded-b-lg border-t bg-muted px-6 py-3 text-center text-xs text-slate-500">
             <p className="flex items-center justify-center gap-1">
-              {t("auth.securedBy")}{" "}
-              <a href="https://freebuff.com" target="_blank" rel="noopener noreferrer" className="underline hover:text-brand">
-                freebuff.com
-              </a>
+              ป้องกันด้วย Cloudflare กันบอท
             </p>
           </div>
         </Card>
