@@ -100,6 +100,7 @@ Do not create a second competing source of truth. Frontend is never the source o
 - **Whenever schema changes**, update **both** canonical files (tables, columns, types, constraints, indexes, functions, triggers, views) and regenerate the reconciler's additive passes from `db/schema.sql`. No SQL comments inside them.
 - **Fresh DB contract:** an empty Postgres must become the complete current Velnox DB by running `db/run-sqleditor.sql` once — no prior migrations required — and running it a second and third time must change nothing (no duplicate table, column, constraint, index or trigger).
 - **Dependency order:** respect PG dependency order; use deferred `ALTER TABLE ADD CONSTRAINT` for circular FKs. There is no migration directory any more — only the two canonical files get written.
+- **Neon table protection (Thai):** ห้ามรันคำสั่งลบตารางฐานข้อมูล Neon (`DROP TABLE`, `DROP COLUMN`, `TRUNCATE`, `DELETE` ทำลายข้อมูล) เด็ดขาดจนกว่าเจ้าของโปรเจกต์จะอนุญาต ต้องถามเจ้าของโปรเจกต์และได้รับอนุญาตก่อนเท่านั้น
 
 Full rules: `.ai/context/database.md`.
 

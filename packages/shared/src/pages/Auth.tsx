@@ -191,7 +191,7 @@ function Auth() {
     setError(null);
     try {
       sessionStorage.setItem(GOOGLE_AUTH_START_KEY, String(Date.now()));
-      const apiBase = apiBaseUrl;
+      const apiBase = apiUrl;
       const backendReturnTo = returnTo || "/";
       window.location.href = `${apiBase}/auth/google?returnTo=${encodeURIComponent(backendReturnTo)}`;
     } catch (error) {
