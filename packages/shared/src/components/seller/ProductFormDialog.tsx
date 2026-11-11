@@ -17,6 +17,11 @@ import { Label } from "@velnox/shared/components/ui/label";
 import { Switch } from "@velnox/shared/components/ui/switch";
 import { Textarea } from "@velnox/shared/components/ui/textarea";
 import { Checkbox } from "@velnox/shared/components/ui/checkbox";
+import { ProductGallery } from "@velnox/shared/components/shop/ProductGallery";
+import {
+  ProductDescriptionEditor,
+  type DescriptionBlock,
+} from "@velnox/shared/components/shop/ProductDescriptionEditor";
 import { ImageUploader } from "@velnox/shared/components/seller/ImageUploader";
 import { useAction } from "@velnox/shared/lib/api-routes";
 import {
@@ -33,6 +38,7 @@ import {
   CalendarClock,
   ChevronDown,
   ChevronUp,
+  Star,
 } from "lucide-react";
 import { Badge } from "@velnox/shared/components/ui/badge";
 import { CategoryPicker } from "@velnox/shared/components/seller/CategoryPicker";
@@ -441,6 +447,13 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
       : { ...defaultForm, unit: t("productForm.defaultUnit") },
   );
   const [current, setCurrent] = useState<StoreProduct | null>(product ?? null);
+  /** Rich description blocks. Reopening a product shows the seller's own order. */
+  const [blocks, setBlocks] = useState<DescriptionBlock[]>(
+    () => (((product as any)?.descriptionBlocks ?? []) as DescriptionBlock[]),
+  );
+  useEffect(() => {
+    setBlocks((((product as any)?.descriptionBlocks ?? []) as DescriptionBlock[]));
+  }, [product]);
   const [saving, setSaving] = useState(false);
 
   // ─── Categories (DB-backed, localized) ────────────────────────────────
@@ -501,6 +514,28 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
   const [galleryImages, setGalleryImages] = useState<DraftImage[]>(initialImages.gallery);
   const [detailImages, setDetailImages] = useState<DraftImage[]>(initialImages.detail);
   const [uploadingGallery, setUploadingGallery] = useState(false);
+  /**
+   * Open the system file picker and resolve with the chosen image.
+   *
+   * A detached input is created per call so the rich-description blocks can add an
+   * image without the dialog growing a second hidden input per block. Cancelling
+   * resolves `null` — never a rejection — so the caller can simply do nothing.
+   */
+  const pickImageFile = (): Promise<File | null> =>
+    new Promise((resolve) => {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = "image/jpeg,image/png,image/webp,image/avif";
+      input.onchange = () => resolve(input.files?.[0] ?? null);
+      // `cancel` is not universally supported; the change handler still fires with
+      // no files on the platforms that lack it.
+      input.oncancel = () => resolve(null);
+      input.click();
+    });
+
+  /** Which thumbnail the preview is showing, and which tile is being dragged. */
+  const [previewIndex, setPreviewIndex] = useState(0);
+  const [dragFrom, setDragFrom] = useState<number | null>(null);
   const [uploadingDetail, setUploadingDetail] = useState(false);
 
   // ─── Option groups state ──────────────────────────────────────────────
@@ -637,6 +672,24 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
 
   // Existing images are deleted on the server immediately (ownership enforced
   // there); new drafts are just dropped from local state.
+  /**
+   * Reorder the gallery. The ARRAY ORDER is the product's gallery order (index 0
+   * is the primary image, persisted as `sort_order` 0), so this is the whole
+   * "change primary" operation — the shop then shows the same image first.
+   */
+  const moveGalleryImage = (from: number, to: number) => {
+    setGalleryImages((prev) => {
+      if (from < 0 || from >= prev.length || to < 0 || to >= prev.length || from === to) return prev;
+      const next = [...prev];
+      const [moved] = next.splice(from, 1);
+      if (!moved) return prev;
+      next.splice(to, 0, moved);
+      return next;
+    });
+    // Keep the preview pointed at a real image.
+    setPreviewIndex((prev) => (prev === from ? to : prev));
+  };
+
   const removeGalleryImage = async (index: number) => {
     const img = galleryImages[index];
     if (img?.id) {
@@ -803,7 +856,9 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
           description: form.description || undefined,
           supplier: form.supplier || undefined,
           status: form.published ? "published" : "draft",
-        });
+          // Saves in the seller's chosen order; the shopfront renders the same.
+          descriptionBlocks: blocks,
+        } as any);
         if (updated) {
           // Product-level stock removed — variant stock is source of truth
           await saveOptions(current.id);
@@ -863,6 +918,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
             description: form.description || "",
             supplier: form.supplier || null,
             status: "pending_review",
+            descriptionBlocks: blocks,
           },
           previewImages: galleryImages.map((img, i) => ({ url: img.url, alt: img.alt || "" })),
           detailImages: detailImages.map((img, i) => ({ url: img.url, alt: img.alt || "" })),
@@ -1026,6 +1082,44 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
           </div>
         </div>
 
+        {/* ═══ Rich description blocks ════════════════════════════════
+            Words and pictures interleaved, in the seller's own order. A block
+            image is uploaded as a DETAIL image, which is exactly what keeps it
+            out of the gallery thumbnail strip. */}
+        <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <div className="mb-3">
+            <h3 className="text-sm font-semibold text-slate-900">รายละเอียดแบบมีรูปภาพ</h3>
+            <p className="text-xs text-slate-500">
+              เพิ่มหัวข้อ ข้อความ และรูปสลับกันได้ตามต้องการ — รูปในส่วนนี้จะไม่ไปปนกับรูปสินค้าด้านบน
+            </p>
+          </div>
+          <ProductDescriptionEditor
+            blocks={blocks}
+            onChange={setBlocks}
+            onPickImage={async () => {
+              const file = await pickImageFile();
+              if (!file) return null;
+              try {
+                const uploaded = await draftUpload(draftId, file, "details");
+                toast.success("อัปโหลดรูปในรายละเอียดแล้ว");
+                return uploaded.url;
+              } catch (err) {
+                toast.error(err instanceof Error ? err.message : t("productForm.uploadFailed"));
+                return null;
+              }
+            }}
+            labels={{
+              title: "รายละเอียดแบบมีรูปภาพ",
+              add: "เพิ่มบล็อก",
+              empty: "ยังไม่มีบล็อก — เริ่มจากปุ่มด้านบน แล้วพิมพ์หรือเพิ่มรูปได้เลย",
+              textPlaceholder: (type) => `พิมพ์${type}...`,
+              imageHint: "คำอธิบายรูป (สำหรับผู้ใช้โปรแกรมอ่านหน้าจอ)",
+              preview: "ดูตัวอย่าง",
+              uploading: "กำลังอัปโหลด...",
+            }}
+          />
+        </div>
+
 
 
         {/* ═══ Section 3: Option Groups ══════════════════════════════ */}
@@ -1178,9 +1272,14 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
           </div>
         )}
 
-        {/* ═══ Section 5: Gallery Images ═════════════════════════════ */}
+        {/* ═══ Section 5: Gallery Images ═════════════════════════════
+            This editor IS the shopfront order: index 0 is the primary image the
+            buyer sees first, and the rest fill the thumbnail column. Reordering
+            here reorders the product, and the preview on the right renders the
+            real VelShop gallery (same component, same vertical divider), so the
+            seller never has to imagine what they are publishing. */}
         <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <div className="mb-3 flex items-center justify-between">
+          <div className="mb-3 flex items-center justify-between gap-2">
             <div>
               <h3 className="text-sm font-semibold text-slate-900">{t("productForm.gallerySection")}</h3>
               <p className="text-xs text-slate-500">{t("productForm.galleryHint")}</p>
@@ -1189,26 +1288,104 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
               {galleryImages.length} / 10
             </span>
           </div>
-          <div className="flex flex-wrap gap-2">
-            {galleryImages.map((img, i) => (
-              <div key={img.id ?? `new-${i}`} className="relative size-20 shrink-0 overflow-hidden rounded-lg border border-slate-200">
-                <img src={img.url} alt={img.alt || ""} className="size-full object-cover" loading="eager" />
-                <button
-                  type="button"
-                  className="absolute -right-1.5 -top-1.5 flex size-6 items-center justify-center rounded-full bg-red-500 text-white shadow hover:bg-red-600"
-                  aria-label={t("productForm.removeGalleryAria")}
-                  onClick={() => void removeGalleryImage(i)}
-                >
-                  <X className="size-3.5" />
-                </button>
+
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,260px)_minmax(0,1fr)]">
+            {/* Live preview — the same ProductGallery the shop renders. */}
+            <div>
+              <p className="mb-1.5 text-2xs font-semibold uppercase tracking-wide text-slate-400">
+                ตัวอย่างหน้าร้าน
+              </p>
+              <ProductGallery
+                images={galleryImages.map((img, i) => ({
+                  id: img.id ?? `draft-${i}`,
+                  url: img.url,
+                }))}
+                activeIndex={previewIndex}
+                onIndexChange={setPreviewIndex}
+                labels={{
+                  mainImageAlt: form.name || "ตัวอย่างรูปสินค้า",
+                  thumbAlt: (n) => `รูปที่ ${n}`,
+                  prev: "รูปก่อนหน้า",
+                  next: "รูปถัดไป",
+                  noImage: "ยังไม่มีรูปสินค้า",
+                }}
+                thumbSize={52}
+              />
+            </div>
+
+            {/* The editable grid: drag to reorder, star to make primary. */}
+            <div>
+              <p className="mb-1.5 text-2xs font-semibold uppercase tracking-wide text-slate-400">
+                ลากเพื่อจัดลำดับ · ดาว = รูปหลัก (รูปแรก)
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {galleryImages.map((img, i) => {
+                  const isPrimary = i === 0;
+                  return (
+                    <div
+                      key={img.id ?? `new-${i}`}
+                      draggable
+                      onDragStart={(event) => {
+                        event.dataTransfer.effectAllowed = "move";
+                        event.dataTransfer.setData("text/plain", String(i));
+                        setDragFrom(i);
+                      }}
+                      onDragOver={(event) => {
+                        event.preventDefault();
+                        event.dataTransfer.dropEffect = "move";
+                      }}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        const fromRaw = event.dataTransfer.getData("text/plain");
+                        const from = fromRaw === "" ? dragFrom : Number(fromRaw);
+                        setDragFrom(null);
+                        if (from === null || Number.isNaN(from) || from === i) return;
+                        moveGalleryImage(from, i);
+                      }}
+                      onDragEnd={() => setDragFrom(null)}
+                      className={`group relative size-20 shrink-0 cursor-grab overflow-hidden rounded-lg border-2 bg-white active:cursor-grabbing ${
+                        isPrimary ? "border-brand ring-1 ring-brand/20" : "border-slate-200"
+                      } ${dragFrom === i ? "opacity-40" : ""}`}
+                      title={isPrimary ? "รูปหลัก (แสดงเป็นรูปแรก)" : "ลากสลับตำแหน่ง"}
+                    >
+                      <img src={img.url} alt={img.alt || ""} className="size-full object-cover" loading="eager" draggable={false} />
+                      {isPrimary && (
+                        <span className="absolute left-1 top-1 rounded-full bg-brand px-1.5 py-0.5 text-2xs font-semibold text-white">
+                          หลัก
+                        </span>
+                      )}
+                      {/* Make primary = move to the front, which is exactly the
+                          order the backend persists (sort_order 0). */}
+                      <button
+                        type="button"
+                        className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-0.5 bg-slate-900/70 py-0.5 text-2xs font-medium text-white opacity-0 transition-opacity group-hover:opacity-100"
+                        onClick={() => moveGalleryImage(i, 0)}
+                        aria-label="ตั้งเป็นรูปหลัก"
+                      >
+                        <Star className="size-2.5" /> ตั้งเป็นหลัก
+                      </button>
+                      <button
+                        type="button"
+                        className="absolute -right-1.5 -top-1.5 flex size-6 items-center justify-center rounded-full bg-red-500 text-white shadow hover:bg-red-600"
+                        aria-label={t("productForm.removeGalleryAria")}
+                        onClick={() => void removeGalleryImage(i)}
+                      >
+                        <X className="size-3.5" />
+                      </button>
+                    </div>
+                  );
+                })}
+                {galleryImages.length < 10 && (
+                  <label className="flex size-20 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50 text-slate-400 hover:border-brand hover:text-brand">
+                    <input type="file" accept="image/jpeg,image/png,image/webp,image/avif" multiple className="hidden" onChange={(e) => { if (e.target.files) handleGalleryUpload(e.target.files); e.target.value = ""; }} />
+                    {uploadingGallery ? <Loader2 className="size-5 animate-spin" /> : <ImagePlus className="size-5" />}
+                  </label>
+                )}
               </div>
-            ))}
-            {galleryImages.length < 10 && (
-              <label className="flex size-20 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50 text-slate-400 hover:border-brand hover:text-brand">
-                <input type="file" accept="image/jpeg,image/png,image/webp,image/avif" multiple className="hidden" onChange={(e) => { if (e.target.files) handleGalleryUpload(e.target.files); e.target.value = ""; }} />
-                {uploadingGallery ? <Loader2 className="size-5 animate-spin" /> : <ImagePlus className="size-5" />}
-              </label>
-            )}
+              <p className="mt-2 text-2xs text-slate-400">
+                รูปแรกคือรูปหลักที่ลูกค้าเห็นก่อน — ลากหรือกด “ตั้งเป็นหลัก” เพื่อเปลี่ยน
+              </p>
+            </div>
           </div>
         </div>
 

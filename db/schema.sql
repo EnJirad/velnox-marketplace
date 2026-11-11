@@ -216,6 +216,11 @@ CREATE TABLE IF NOT EXISTS products (
   name TEXT NOT NULL,
   slug TEXT NOT NULL UNIQUE,
   description TEXT NOT NULL DEFAULT '',
+  -- Rich description: ordered content blocks (heading / text / image / image_caption /
+  -- image_text). Empty array = the product has no rich description and the page
+  -- falls back to the plain `description` text above it. Owned by the seller, so
+  -- it is written through the same ownership-checked product update route.
+  description_blocks JSONB NOT NULL DEFAULT '[]'::jsonb,
   short_description TEXT,
   price NUMERIC(12, 2) NOT NULL,
   compare_at_price NUMERIC(12, 2),

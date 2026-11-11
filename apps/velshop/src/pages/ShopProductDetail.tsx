@@ -1,6 +1,8 @@
 import { ShopHeader } from "@/components/shop/ShopHeader";
 import { ShopFooter } from "@/components/shop/ShopFooter";
 import { ProductCard } from "@/components/shop/ProductCard";
+import { ProductGallery } from "@velnox/shared/components/shop/ProductGallery";
+import { ProductDescriptionContent, type DescriptionBlock } from "@velnox/shared/components/shop/ProductDescriptionEditor";
 import { Badge } from "@velnox/shared/components/ui/badge";
 import { Button } from "@velnox/shared/components/ui/button";
 import { Skeleton } from "@velnox/shared/components/ui/skeleton";
@@ -519,35 +521,27 @@ export default function ShopProductDetail() {
       }
     }
 
-    // Group 2: Product detail images (sorted by sortOrder)
-    const detailImages = (product as any)?.detailImages as Array<Record<string, unknown>> | undefined;
-    if (Array.isArray(detailImages)) {
-      const sorted = [...detailImages].sort((a, b) => ((a.sortOrder as number) ?? 0) - ((b.sortOrder as number) ?? 0));
-      for (let i = 0; i < sorted.length; i++) {
-        const img = sorted[i];
-        allRaw.push({
-          img: {
-            id: `di-${(img.id as string) ?? i}`,
-            productId: product?.id ?? '',
-            url: img.url as string,
-            displayUrl: (img.displayUrl as string) ?? img.url as string,
-            thumbUrl: (img.thumbUrl as string) ?? img.url as string,
-            storageProvider: 'r2' as const,
-            storageKey: (img.storageKey as string) ?? '',
-            alt: (img.alt as string) || '',
-            sortOrder: (img.sortOrder as number) ?? i,
-            isPrimary: false,
-            width: null,
-            height: null,
-            createdAt: Date.now(),
-          },
-          group: 2,
-        });
-      }
-    }
-
+    // Group 2 (detail images) is DELIBERATELY not added here: the gallery and the
+    // long description are separate surfaces, and mixing them put the seller's
+    // detail shots into the thumbnail strip. `detailImages` is built below and
+    // rendered in order, with the description text.
     return allRaw;
   }, [product, selectedVariant]);
+
+  /** Detail images in their stored order — used by the rich description only. */
+  const detailImages = useMemo(() => {
+    const raw = (product as any)?.detailImages as Array<Record<string, unknown>> | undefined;
+    if (!Array.isArray(raw)) return [];
+    return [...raw]
+      .sort((a, b) => ((a.sortOrder as number) ?? 0) - ((b.sortOrder as number) ?? 0))
+      .map((img, i) => ({
+        id: `di-${(img.id as string) ?? i}`,
+        url: (img.url as string) ?? "",
+        displayUrl: (img.displayUrl as string) ?? (img.url as string) ?? "",
+        alt: (img.alt as string) ?? "",
+      }))
+      .filter((img) => img.url);
+  }, [product]);
   // Clamp active index only if the image list shrinks — never auto-moves on selection.
   useEffect(() => {
     if (activeIndex >= images.length && images.length > 0) setActiveIndex(0);
@@ -1100,127 +1094,30 @@ export default function ShopProductDetail() {
 
         {/* ═══════════ TOP: Gallery + Info + Purchase ═══════════ */}
         <div className="mt-5 grid gap-6 lg:grid-cols-2 lg:gap-8">
-          {/* Gallery — single source activeIndex, contain, swipe, dots, a11y */}
-          <div className="min-w-0">
-            <div
-              className="relative flex aspect-square items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white"
-              style={{ maxWidth: "100%" }}
-              onTouchStart={onGalleryTouchStart}
-              onTouchEnd={onGalleryTouchEnd}
-            >
-              {activeImage ? (
-                <>
-                  {!mainImageLoaded && (
-                    <span className="pointer-events-none absolute inset-0 z-[1] flex items-center justify-center bg-white/60">
-                      <Loader2 className="size-6 animate-spin text-slate-300" aria-hidden />
-                    </span>
-                  )}
-                  <img
-                    key={activeImage.url}
-                    src={activeImage.displayUrl || activeImage.url}
-                    alt={activeImage.alt || product.name}
-                    className="size-full object-contain p-1.5 sm:p-2 cursor-zoom-in"
-                    loading="eager"
-                    decoding="async"
-                    draggable={false}
-                    onLoad={() => setMainImageLoaded(true)}
-                    onError={handleMainImageError}
-                    onClick={() => setGalleryOpen(true)}
-                  />
-                  {validGallery.length > 1 && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={goPrev}
-                        className="absolute left-2 top-1/2 hidden size-8 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white/95 text-slate-600 shadow-sm backdrop-blur transition hover:bg-white hover:text-slate-900 sm:flex"
-                        aria-label={t("productDetail.prevImage") as string}
-                      >
-                        <ChevronLeft className="size-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={goNext}
-                        className="absolute right-2 top-1/2 hidden size-8 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white/95 text-slate-600 shadow-sm backdrop-blur transition hover:bg-white hover:text-slate-900 sm:flex"
-                        aria-label={t("productDetail.nextImage") as string}
-                      >
-                        <ChevronRight className="size-4" />
-                      </button>
-                    </>
-                  )}
-                  {/* One indicator set only: the dots ON the image were a second,
-                      duplicate control (the tappable dot row below the image and
-                      the 3/9 counter stay). Two sets made the gallery look busy
-                      and the overlay ate the photo. */}
-                  {validGallery.length > 1 && (
-                    <span className="pointer-events-none absolute bottom-2 right-2 hidden rounded-full bg-black/55 px-2 py-0.5 text-2xs font-medium tabular-nums text-white backdrop-blur sm:inline-flex">
-                      {activeValidIndex + 1} / {validGallery.length}
-                    </span>
-                  )}
-                </>
-              ) : (
-                <span className="flex size-full flex-col items-center justify-center gap-2 bg-slate-50 px-6 text-center">
-                  <ImageOff className="size-10 text-slate-300" aria-hidden />
-                  <span className="text-xs font-medium text-slate-400">{(t as any)("productDetail.noImage") ?? "\u0e44\u0e21\u0e48\u0e21\u0e35\u0e23\u0e39\u0e1b\u0e20\u0e32\u0e1e\u0e2a\u0e34\u0e19\u0e04\u0e49\u0e32"}</span>
-                </span>
-              )}
-              <button type="button" onClick={handleWishlist} disabled={wishToggling} className={`absolute right-3 top-3 flex size-9 items-center justify-center rounded-full bg-white/90 shadow-sm backdrop-blur transition-colors ${wishlisted ? "text-rose-500" : "text-slate-400 hover:text-rose-500"}`} aria-label={t("productDetail.ariaWishlist")}>
-                {wishToggling ? <Loader2 className="size-4 animate-spin" /> : <Heart className={`size-4 ${wishlisted ? "fill-rose-500" : ""}`} />}
-              </button>
-              <button type="button" onClick={handleShare} className="absolute right-3 top-14 flex size-9 items-center justify-center rounded-full bg-white/90 text-slate-400 shadow-sm backdrop-blur transition-colors hover:text-slate-600" aria-label={t("productDetail.share")}>
-                <Share2 className="size-4" />
-              </button>
-            </div>
-            {validGallery.length > 1 && (
-              <div className="mt-2 flex justify-center gap-1 sm:hidden" role="tablist" aria-label={(t as any)("productDetail.imageAlt") ?? "Product images"}>
-                {validGallery.map((entry, i) => (
-                  <button
-                    key={"dot-" + (entry.img.id ?? i)}
-                    type="button"
-                    role="tab"
-                    aria-selected={i === activeValidIndex}
-                    aria-label={t("productDetail.imageAlt", { n: i + 1 })}
-                    onClick={() => goToImage(i)}
-                    className={"h-1.5 rounded-full transition-[width,background-color] duration-300 " + (i === activeValidIndex ? "w-5 bg-brand" : "w-1.5 bg-slate-200 hover:bg-slate-300")}
-                  />
-                ))}
-              </div>
-            )}
-            {validGallery.length > 1 && (
-              <div
-                ref={thumbStripRef}
-                className="mt-3 flex min-w-0 gap-2 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch] [&::-webkit-scrollbar]:hidden"
-                style={{ scrollbarWidth: "none" }}
-              >
-                {validGallery.map((entry, i) => {
-                  const thumbUrl = entry.img.thumbUrl || entry.img.displayUrl || entry.img.url;
-                  const isActive = i === activeValidIndex;
-                  const showDivider = i > 0 && validGallery[i].group !== validGallery[i - 1].group;
-                  return (
-                    <span key={"gi-" + (entry.img.id ?? i)} className="flex items-center gap-2">
-                      {showDivider && <span className="h-8 w-px shrink-0 bg-slate-200" aria-hidden />}
-                      <button
-                        type="button"
-                        data-thumb-index={i}
-                        onClick={() => goToImage(i)}
-                        className={"size-16 shrink-0 overflow-hidden rounded-md border-2 bg-white transition-colors " + (isActive ? "border-brand ring-1 ring-brand/20" : "border-slate-200 hover:border-slate-300")}
-                        aria-label={t("productDetail.imageAlt", { n: i + 1 })}
-                        aria-current={isActive ? "true" : undefined}
-                      >
-                        <img
-                          src={thumbUrl}
-                          alt=""
-                          className="size-full object-cover"
-                          loading="lazy"
-                          decoding="async"
-                          onError={() => handleThumbError(entry.img.url)}
-                        />
-                      </button>
-                    </span>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+          {/* Gallery — main image LEFT, the other images as a VERTICAL column on
+              the right, separated by a real divider. One shared component (used by
+              the VelSeller preview too), so the seller sees what the buyer sees. */}
+          <ProductGallery
+            images={validGallery.map((entry) => ({
+              id: entry.img.id ?? entry.img.url,
+              url: entry.img.url,
+              displayUrl: entry.img.displayUrl,
+              thumbUrl: entry.img.thumbUrl,
+              alt: entry.img.alt,
+            }))}
+            activeIndex={activeValidIndex}
+            initialIndex={0}
+            onIndexChange={goToImage}
+            onOpenZoom={() => setGalleryOpen(true)}
+            labels={{
+              mainImageAlt: product.name,
+              thumbAlt: (n: number) => t("productDetail.imageAlt", { n }),
+              prev: (t as any)("productDetail.prevImage") ?? "รูปก่อนหน้า",
+              next: (t as any)("productDetail.nextImage") ?? "รูปถัดไป",
+              noImage: (t as any)("productDetail.noImage") ?? "ไม่มีรูปภาพสินค้า",
+            }}
+            thumbSize={72}
+          />
 
           {/* Product Info */}
           <div className="flex min-w-0 flex-col">
@@ -1365,7 +1262,36 @@ export default function ShopProductDetail() {
             {activeTab === "details" && (
               <div className="rounded-2xl border border-slate-200 bg-white p-5">
                 <h3 className="mb-3 text-base font-bold text-slate-900">{t("productDetail.detailsTabTitle")}</h3>
-                <ExpandableDescription text={product.description ?? ""} t={t} />
+                {/* Rich description: the seller's content blocks in their own
+                    order (heading / text / image / image+caption / image+text),
+                    then any detail images uploaded before blocks existed, then
+                    the plain description as the summary. Detail images are NOT
+                    part of the gallery — that separation is the point. */}
+                <ProductDescriptionContent
+                  blocks={((product as any)?.descriptionBlocks ?? []) as DescriptionBlock[]}
+                  labels={{
+                    imageAlt: (n: number) => t("productDetail.imageAlt", { n }),
+                    noImage: (t as any)("productDetail.noImage") ?? "ไม่มีรูปภาพสินค้า",
+                  }}
+                />
+                {detailImages.length > 0 && (
+                  <div className="mt-4 space-y-3">
+                    {detailImages.map((img, i) => (
+                      <figure key={img.id} className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                        <img
+                          src={img.displayUrl || img.url}
+                          alt={img.alt || t("productDetail.imageAlt", { n: i + 1 })}
+                          className="w-full object-contain"
+                          loading="lazy"
+                          decoding="async"
+                        />
+                      </figure>
+                    ))}
+                  </div>
+                )}
+                {((product as any)?.descriptionBlocks ?? []).length === 0 && (
+                  <ExpandableDescription text={product.description ?? ""} t={t} />
+                )}
                 <div className="mt-5 grid grid-cols-2 gap-3 border-t border-slate-100 pt-5 text-sm">
                   <div><span className="text-slate-400">{t("productDetail.name")}</span><p className="mt-0.5 font-medium text-slate-900">{product.name}</p></div>
                   <div><span className="text-slate-400">{t("productDetail.shippingFrom")}</span><p className="mt-0.5 font-medium text-slate-900">{t("productDetail.thailand")}</p></div>

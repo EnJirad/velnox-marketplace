@@ -34,6 +34,7 @@ import {
 } from "../lib/product-lifecycle.js";
 import { S3Client, PutObjectCommand, HeadObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { sanitiseSegment, sanitiseSubfolder } from "../lib/upload-paths.js";
+import { parseDescriptionBlocks, validateDescriptionBlocks } from "../lib/description-blocks.js";
 import { isUploadTooLarge } from "../lib/media-config.js";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { optionalAuth, requireAuth } from "../middleware/auth.js";
@@ -188,6 +189,9 @@ function formatProduct(row: Record<string, any>, images: any[], inventory: any):
     sellerId: row.seller_id || "",
     name: row.name,
     description: row.description || null,
+    // Rich description blocks, in the seller's chosen order. Parsed defensively:
+    // a legacy row has no column value, a hand-edited row may hold a string.
+    descriptionBlocks: parseDescriptionBlocks(row.description_blocks),
     category: row.category_id || "general",
     // Canonical category slug (resolved from the categories table). Legacy
     // products keep their raw string; new products resolve to a real slug.
@@ -593,6 +597,9 @@ export function setupProductRoutes(app: Express): void {
           const fv = productVariants.find((v: any) => v.id === row.featured_variant_id);
           if (fv) formatted.featuredVariant = fv;
         }
+        // Rich description blocks travel with the product so the editor can be
+        // reopened and show the seller's own order and images again.
+        formatted.descriptionBlocks = parseDescriptionBlocks(row.description_blocks);
         return formatted;
       });
 
@@ -838,6 +845,12 @@ export function setupProductRoutes(app: Express): void {
         suffix++;
       }
 
+      const createBlocks = validateDescriptionBlocks(productData.descriptionBlocks);
+      if (!createBlocks.ok) {
+        res.status(400).json({ success: false, error: { code: "INVALID_DESCRIPTION_BLOCKS", message: createBlocks.reason } });
+        return;
+      }
+
       const productStatus = resolveCreationStatus(productData.status);
       const stockQty = productData.stock != null ? Math.max(0, Number(productData.stock)) : 0;
       const reorder = productData.reorderLevel != null ? Math.max(0, Number(productData.reorderLevel)) : 5;
@@ -849,8 +862,8 @@ export function setupProductRoutes(app: Express): void {
 
         // 1. Create product
         const insertResult = await client.query(
-          `INSERT INTO products (shop_id, name, slug, description, short_description, price, compare_at_price, currency, unit, supplier, status, category_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, 'THB', $8, $9, $10, $11)
+          `INSERT INTO products (shop_id, name, slug, description, short_description, price, compare_at_price, currency, unit, supplier, status, category_id, description_blocks)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, 'THB', $8, $9, $10, $11, $12)
            RETURNING *`,
           [
             shop.id,
@@ -864,6 +877,9 @@ export function setupProductRoutes(app: Express): void {
             productData.supplier || null,
             productStatus,
             cat,
+            // Rich description blocks written with the product, in one statement:
+            // a product can never exist with blocks that belong to no row.
+            JSON.stringify(createBlocks.ok ? createBlocks.blocks : []),
           ]
         );
         const product = insertResult.rows[0];
@@ -1107,7 +1123,17 @@ export function setupProductRoutes(app: Express): void {
         }
       }
 
-      const { name, category, unit, price, description, supplier, status, compareAtPrice, shortDescription } = req.body;
+      const { name, category, unit, price, description, supplier, status, compareAtPrice, shortDescription, descriptionBlocks } = req.body;
+
+      // Rich description blocks: validated by ONE module so the shape is the same
+      // for create and update, and a malformed payload is a 400, never a 500.
+      if (descriptionBlocks !== undefined) {
+        const parsed = validateDescriptionBlocks(descriptionBlocks);
+        if (!parsed.ok) {
+          res.status(400).json({ success: false, error: { code: "INVALID_DESCRIPTION_BLOCKS", message: parsed.reason } });
+          return;
+        }
+      }
 
       // Validate category via DB-backed categories table
       const catPatchResult = category !== undefined ? await resolveCategory(category) : null;
@@ -1123,6 +1149,14 @@ export function setupProductRoutes(app: Express): void {
       if (name !== undefined) { updates.push(`name = $${idx++}`); values.push(name.trim()); }
       if (description !== undefined) { updates.push(`description = $${idx++}`); values.push(description); }
       if (shortDescription !== undefined) { updates.push(`short_description = $${idx++}`); values.push(shortDescription); }
+      if (descriptionBlocks !== undefined) {
+        const parsed = validateDescriptionBlocks(descriptionBlocks);
+        // The payload was already validated above, so this cannot fail here; the
+        // empty array is the honest fallback rather than a crash.
+        updates.push(`description_blocks = $${idx++}`);
+        // Stored as JSON text in a JSONB column: PostgreSQL casts the parameter.
+        values.push(JSON.stringify(parsed.ok ? parsed.blocks : []));
+      }
       if (price !== undefined) { updates.push(`price = $${idx++}`); values.push(Number(price)); }
       if (compareAtPrice !== undefined) { updates.push(`compare_at_price = $${idx++}`); values.push(compareAtPrice ? Number(compareAtPrice) : null); }
       if (unit !== undefined) { updates.push(`unit = $${idx++}`); values.push(unit); }
