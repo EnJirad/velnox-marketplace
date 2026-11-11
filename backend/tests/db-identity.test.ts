@@ -96,7 +96,12 @@ describe("describeDatabaseIdentity — reads the catalog, never asserts a wish",
     "on a reconciled database it reports every payment object present and nothing missing",
     async () => {
       const identity = await describeDatabaseIdentity();
-      expect(identity.database).toBe("velnox_test");
+      // The database the TEST run is pointed at — not a hard-coded name. Pinning
+      // "velnox_test" made this assertion fail (for the right reason, in the wrong
+      // place) on any disposable cluster named differently, e.g. a temporary Neon
+      // branch used to run these DB-gated suites off CI.
+      const configured = new URL(process.env.TEST_DATABASE_URL ?? "").pathname.replace(/^\//, "");
+      expect(identity.database).toBe(configured);
       expect(identity.serverVersion).toMatch(/^\d+/);
       expect(identity.missing).toEqual([]);
       // The column must be reported WITH ITS TYPE — a bare name would let a
