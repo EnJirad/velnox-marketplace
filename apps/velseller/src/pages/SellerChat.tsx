@@ -156,7 +156,7 @@ export default function SellerChat() {
               c.id === message.conversationId
                 ? {
                     ...c,
-                    lastMessage: message.body || (message.attachmentUrl ? "📷" : c.lastMessage),
+                    lastMessage: message.body || (message.attachmentUrl ? "[รูปภาพ]" : c.lastMessage),
                     lastMessageAt: message.createdAt,
                     updatedAt: message.createdAt,
                     unreadCount:
@@ -455,7 +455,7 @@ export default function SellerChat() {
             c.id === active.id
               ? {
                   ...c,
-                  lastMessage: saved.body || (saved.attachmentUrl ? "📷" : ""),
+                  lastMessage: saved.body || (saved.attachmentUrl ? "[รูปภาพ]" : ""),
                   lastMessageAt: saved.createdAt,
                   updatedAt: saved.createdAt,
                 }
@@ -623,7 +623,7 @@ export default function SellerChat() {
                         key={c.id}
                         name={company ? t("chat.supportTitle") : c.participantName ?? t("sellerChat.customerFallback")}
                         avatarUrl={company ? "/logo.svg" : c.participantAvatar}
-                        preview={c.lastMessage ?? (c.lastMessageAt ? "📷" : "—")}
+                        preview={c.lastMessage ?? (c.lastMessageAt ? "[รูปภาพ]" : "—")}
                         timeLabel={formatRelativeTime(c.lastMessageAt ?? c.updatedAt, lang, t)}
                         unread={c.unreadCount}
                         online={company ? null : c.participantOnline ?? null}

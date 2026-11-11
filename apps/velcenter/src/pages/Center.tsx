@@ -611,7 +611,7 @@ export default function Center() {
         status,
         reason: rejectReason.trim() || undefined,
       });
-      toast.success(status === "approved" ? "อนุมัติพ่อค้าแล้ว 🎉" : status === "rejected" ? "ปฏิเสธใบสมัครแล้ว" : "อัปเดตสถานะแล้ว");
+      toast.success(status === "approved" ? "อนุมัติพ่อค้าแล้ว" : status === "rejected" ? "ปฏิเสธใบสมัครแล้ว" : "อัปเดตสถานะแล้ว");
       setRejectingSeller(null);
       setRejectReason("");
       await reloadSellers();
@@ -631,7 +631,7 @@ export default function Center() {
         status,
         reason: rejectReason.trim() || undefined,
       });
-      toast.success(status === "published" ? "อนุมัติสินค้าแล้ว 🛍️" : "ปฏิเสธสินค้าแล้ว");
+      toast.success(status === "published" ? "อนุมัติสินค้าแล้ว" : "ปฏิเสธสินค้าแล้ว");
       setRejectingProduct(null);
       setRejectReason("");
       await reloadProducts();

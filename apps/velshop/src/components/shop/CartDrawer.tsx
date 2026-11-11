@@ -140,7 +140,7 @@ export function CartDrawer({ open, onOpenChange }: CartDrawerProps) {
                         <Minus className="size-3" />
                       </Button>
                       <span className="w-8 text-center text-sm font-semibold tabular-nums text-slate-900">
-                        {line.qty}
+                        {line.qty} {line.unit}
                       </span>
                       <Button
                         variant="outline"

@@ -475,7 +475,7 @@ export default function ChatManagement() {
             c.id === active.id
               ? {
                   ...c,
-                  lastMessage: saved.body || (saved.attachmentUrl ? "📷" : ""),
+                  lastMessage: saved.body || (saved.attachmentUrl ? "[รูปภาพ]" : ""),
                   lastMessageAt: saved.createdAt,
                   updatedAt: saved.createdAt,
                   status:

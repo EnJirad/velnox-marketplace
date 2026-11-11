@@ -160,7 +160,7 @@ export default function ShopChat() {
           c.id === conversationId
             ? {
                 ...c,
-                lastMessage: message.body || (message.attachmentUrl ? "📷" : c.lastMessage),
+                lastMessage: message.body || (message.attachmentUrl ? "[รูปภาพ]" : c.lastMessage),
                 lastMessageAt: message.createdAt,
                 updatedAt: message.createdAt,
                 unreadCount:
@@ -467,7 +467,7 @@ export default function ShopChat() {
             c.id === active.id
               ? {
                   ...c,
-                  lastMessage: saved.body || (saved.attachmentUrl ? "📷" : ""),
+                  lastMessage: saved.body || (saved.attachmentUrl ? "[รูปภาพ]" : ""),
                   lastMessageAt: saved.createdAt,
                   updatedAt: saved.createdAt,
                 }
@@ -631,7 +631,7 @@ export default function ShopChat() {
                       key={c.id}
                       name={c.isSupport ? t("chat.supportTitle") : c.shopName}
                       avatarUrl={c.isSupport ? "/logo.svg" : c.shopLogo}
-                      preview={c.lastMessage ?? (c.lastMessageAt ? "📷" : "—")}
+                      preview={c.lastMessage ?? (c.lastMessageAt ? "[รูปภาพ]" : "—")}
                       timeLabel={formatRelativeTime(c.lastMessageAt ?? c.updatedAt, lang, t)}
                       unread={c.unreadCount}
                       online={c.isSupport ? null : c.participantOnline ?? null}

@@ -39,6 +39,15 @@ import {
   ChevronDown,
   ChevronUp,
   Star,
+  Folder,
+  ShoppingBag,
+  Shirt,
+  Book,
+  Smartphone,
+  Laptop,
+  Home,
+  Gift,
+  Utensils,
 } from "lucide-react";
 import { Badge } from "@velnox/shared/components/ui/badge";
 import { CategoryPicker } from "@velnox/shared/components/seller/CategoryPicker";
@@ -389,7 +398,7 @@ function VariantManager({ productId, price }: { productId: string; price: number
 // ─── Category options ────────────────────────────────────────────────
 // Loaded from the Category API at runtime so the seller selector always
 // matches the real `categories` table — no hard-coded slugs.
-type CategoryOption = { id: string; slug: string; name: string; depth: number; parent_id?: string | null };
+type CategoryOption = { id: string; slug: string; name: string; icon?: string; depth: number; parent_id?: string | null };
 type CategoryTreeNode = { id: string; slug: string; name?: string; display_name?: string; icon?: string; parent_id?: string | null; sort_order?: number; is_active?: boolean; names?: Record<string, string>; children?: CategoryTreeNode[] };
 
 /** Flatten a category tree into a flat list with depth for indentation. */
@@ -400,6 +409,7 @@ function flattenCategoryTree(nodes: any[], depth = 0): CategoryOption[] {
       id: String(node?.id ?? ""),
       slug: String(node?.slug ?? ""),
       name: String(node?.display_name ?? node?.name ?? node?.slug ?? ""),
+      icon: node?.icon ?? undefined,
       depth,
       parent_id: node?.parent_id ?? null,
     });
@@ -504,6 +514,40 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
     const found = categories.find((c) => c.slug === form.category);
     return found?.name ?? null;
   }, [form.category, categories]);
+
+  const selectedCategoryIconName = useMemo(() => {
+    if (!form.category) return null;
+    const found = categories.find((c) => c.slug === form.category);
+    return found?.icon ?? null;
+  }, [form.category, categories]);
+
+  const CATEGORY_ICONS: Record<string, React.ElementType> = {
+  folder: Folder,
+  shopping: ShoppingBag,
+  bag: ShoppingBag,
+  shirt: Shirt,
+  clothing: Shirt,
+  fashion: Shirt,
+  shoe: Book,
+  footwear: Book,
+  book: Book,
+  phone: Smartphone,
+  mobile: Smartphone,
+  laptop: Laptop,
+  computer: Laptop,
+  home: Home,
+  house: Home,
+  gift: Gift,
+  present: Gift,
+  food: Utensils,
+  restaurant: Utensils,
+  dining: Utensils,
+};
+
+function CategoryIcon({ name }: { name?: string | null }) {
+  const Icon = name ? (CATEGORY_ICONS[name] ?? Tag) : Tag;
+  return <Icon className="size-4 shrink-0 text-slate-400" />;
+}
   const isEdit = product !== null;
 
   // ─── Draft state (for new products) ──────────────────────────────────
@@ -1056,6 +1100,7 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
                     <span className="min-w-0 flex-1 truncate text-slate-400">{t("productForm.loadingCategories")}</span>
                   ) : selectedCategoryName ? (
                     <span className="min-w-0 flex-1 truncate text-slate-900">
+                      <CategoryIcon name={selectedCategoryIconName} />{" "}
                       {selectedCategoryName}
                     </span>
                   ) : (
@@ -1088,9 +1133,9 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
             out of the gallery thumbnail strip. */}
         <div className="rounded-xl border border-slate-200 bg-white p-4">
           <div className="mb-3">
-            <h3 className="text-sm font-semibold text-slate-900">รายละเอียดแบบมีรูปภาพ</h3>
+            <h3 className="text-sm font-semibold text-slate-900">รายละเอียดสินค้า</h3>
             <p className="text-xs text-slate-500">
-              เพิ่มหัวข้อ ข้อความ และรูปสลับกันได้ตามต้องการ — รูปในส่วนนี้จะไม่ไปปนกับรูปสินค้าด้านบน
+              เพิ่มข้อความและรูปภาพสลับกันได้ตามต้องการ — รูปในส่วนนี้จะแสดงในหน้ารายละเอียดสินค้า ไม่ไปปนกับรูปสินค้าด้านบน
             </p>
           </div>
           <ProductDescriptionEditor
@@ -1109,14 +1154,14 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
               }
             }}
             labels={{
-              title: "รายละเอียดแบบมีรูปภาพ",
-              add: "เพิ่มบล็อก",
-              empty: "ยังไม่มีบล็อก — เริ่มจากปุ่มด้านบน แล้วพิมพ์หรือเพิ่มรูปได้เลย",
-              textPlaceholder: (type) => `พิมพ์${type}...`,
-              imageHint: "คำอธิบายรูป (สำหรับผู้ใช้โปรแกรมอ่านหน้าจอ)",
-              preview: "ดูตัวอย่าง",
-              uploading: "กำลังอัปโหลด...",
-            }}
+            title: "รายละเอียดสินค้า",
+            add: "เพิ่มบล็อก",
+            empty: "ยังไม่มีบล็อก — เริ่มจากปุ่มด้านบน แล้วพิมพ์หรือเพิ่มรูปได้เลย",
+            textPlaceholder: (type) => `พิมพ์${type}...`,
+            imageHint: "คำอธิบายรูป (สำหรับผู้ใช้โปรแกรมอ่านหน้าจอ)",
+            preview: "ดูตัวอย่าง",
+            uploading: "กำลังอัปโหลด...",
+          }}
           />
         </div>
 
@@ -1439,6 +1484,9 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
               </div>
             ))}
             <Button type="button" variant="outline" className="w-full gap-1.5 border-dashed border-slate-300 text-sm text-slate-600" onClick={addAttribute}><Plus className="size-4" />{t("productForm.addAttr")}</Button>
+            <p className="mt-2 text-xs text-slate-400">
+              ตัวอย่าง: แบรนด์ = Nike · วัสดุ = ผ้าฝ้าย · สี = ขาว · ขนาด = L
+            </p>
           </div>
         </div>
 

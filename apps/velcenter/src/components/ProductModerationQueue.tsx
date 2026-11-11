@@ -669,7 +669,7 @@ export default function ProductModerationQueue() {
         status: moderationChoice === "approve" ? "published" : "rejected",
         rejectionReason: moderationChoice === "reject" ? rejectReason.trim() : undefined,
       });
-      toast.success(moderationChoice === "approve" ? "อนุมัติสินค้าแล้ว 🛍️" : "ปฏิเสธสินค้าแล้ว");
+      toast.success(moderationChoice === "approve" ? "อนุมัติสินค้าแล้ว" : "ปฏิเสธสินค้าแล้ว");
       setDetailOpen(false);
       setDetailProduct(null);
       void loadProducts();

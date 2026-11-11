@@ -253,7 +253,7 @@ export default function Reorder() {
           ))}
         </div>
 
-        <Section title="ถึงเวลาสั่งซื้อซ้ำ" items={due} empty="ไม่มีสินค้าที่ต้องสั่งซื้อตอนนี้ 🎉" />
+        <Section title="ถึงเวลาสั่งซื้อซ้ำ" items={due} empty="ไม่มีสินค้าที่ต้องสั่งซื้อตอนนี้" />
 
         <Section
           title="คาดว่าจะถึงกำหนดใน 14 วัน"

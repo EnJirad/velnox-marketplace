@@ -492,12 +492,16 @@ function Auth() {
                 </div>
               </div>
 
-              {/* Turnstile Widget */}
+              {/* Turnstile Widget — Cloudflare bot protection (visible checkbox) */}
               <div
                 ref={turnstileRef}
-                className="w-full"
+                className="w-full flex flex-col items-center gap-2 py-3"
                 data-testid="turnstile-widget"
-              />
+              >
+                <p className="text-xs text-slate-500 leading-none">
+                  ยืนยันว่าไม่ใช่บอท — แตะช่องด้านล่างเพื่อดำเนินการต่อ
+                </p>
+              </div>
 
               {error && (
                 <div className="flex items-center gap-2 rounded-lg bg-red-50 p-3 text-red-600 text-sm" role="alert">
