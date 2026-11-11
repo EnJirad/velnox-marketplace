@@ -9,7 +9,6 @@ import { Link, useLocation, useNavigate } from "react-router";
 const NAV_ITEMS = [
   { to: "/seller/goals", labelKey: "sellerNav.goals", icon: Target },
   { to: "/seller/shop", labelKey: "sellerNav.shop", icon: Store },
-  { to: "/seller/reorder", labelKey: "sellerNav.reorder", icon: RefreshCw },
   { to: "/seller/orders", labelKey: "sellerNav.orders", icon: ShoppingBag },
   { to: "/seller/chat", labelKey: "sellerNav.chat", icon: MessageCircle },
   { to: "/seller/income", labelKey: "sellerNav.income", icon: Wallet },
@@ -38,7 +37,7 @@ export function AppHeader() {
           <button type="button" onClick={() => navigate("/")} aria-label="Velnox">
             <Logo tone="light" />
           </button>
-          <nav className="hidden items-center gap-1 md:flex">
+          <nav className="hidden items-center gap-1 md:flex md:flex-nowrap">
             {NAV_ITEMS.map((item) => {
               const active = location.pathname.startsWith(item.to);
               return (

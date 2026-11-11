@@ -22,13 +22,31 @@
  *   • Buttons are ≥44 px targets and the bar sits above the mobile safe area.
  */
 import { Loader2, Plus, Send, Smile } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { cn } from "@velnox/shared/lib/utils";
 import { ComposerImagePreview } from "./chat-image";
 import { EmojiPicker } from "./emoji-picker";
 
 /** Must stay a subset of `CHAT_IMAGE_TYPES` — the server re-validates anyway. */
 const ACCEPT = "image/jpeg,image/png,image/webp,image/avif";
+
+/** When the mobile keyboard opens, scroll the nearest scrollable chat container
+ *  to the bottom so the user can see what they are typing (like Messenger). */
+function scrollChatToBottom(el: HTMLElement | null) {
+  if (!el) return;
+  let container: HTMLElement | null = el;
+  while (container && container !== document.body) {
+    const style = window.getComputedStyle(container);
+    if (style.overflowY === "auto" || style.overflow === "auto" || style.overflowY === "scroll") {
+      container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+      return;
+    }
+    container = container.parentElement;
+  }
+  // Fallback: scroll the document scrolling element.
+  const scrollingElement = document.scrollingElement;
+  if (scrollingElement) scrollingElement.scrollTo({ top: scrollingElement.scrollHeight, behavior: "smooth" });
+}
 
 export interface ChatPendingImage {
   /** Local object URL of the file the user picked. */
@@ -189,6 +207,7 @@ export function ChatComposer({
             disabled={disabled}
             aria-label={inputLabel ?? placeholder}
             placeholder={placeholder}
+            onFocus={() => scrollChatToBottom(inputRef.current)}
             onChange={(event) => {
               onChange(event.target.value);
               if (event.target.value.trim().length > 0) onTyping?.();

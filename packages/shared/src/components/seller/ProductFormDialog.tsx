@@ -544,9 +544,9 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
   dining: Utensils,
 };
 
-function CategoryIcon({ name }: { name?: string | null }) {
+function CategoryIcon({ name, className }: { name?: string | null; className?: string }) {
   const Icon = name ? (CATEGORY_ICONS[name] ?? Tag) : Tag;
-  return <Icon className="size-4 shrink-0 text-slate-400" />;
+  return <Icon className={`size-4 shrink-0 text-slate-400 ${className ?? ""}`} />;
 }
   const isEdit = product !== null;
 
@@ -1099,10 +1099,10 @@ function CategoryIcon({ name }: { name?: string | null }) {
                   {categoriesLoading ? (
                     <span className="min-w-0 flex-1 truncate text-slate-400">{t("productForm.loadingCategories")}</span>
                   ) : selectedCategoryName ? (
-                    <span className="min-w-0 flex-1 truncate text-slate-900">
-                      <CategoryIcon name={selectedCategoryIconName} />{" "}
-                      {selectedCategoryName}
-                    </span>
+                    <span className="min-w-0 flex-1 truncate text-slate-900 flex items-center gap-1">
+                        <CategoryIcon name={selectedCategoryIconName} className="size-3.5 shrink-0" />{" "}
+                        {selectedCategoryName}
+                      </span>
                   ) : (
                     <span className="min-w-0 flex-1 truncate text-slate-400">{t("productForm.selectCategory")}</span>
                   )}
@@ -1506,13 +1506,7 @@ function CategoryIcon({ name }: { name?: string | null }) {
             <p className="text-sm font-medium text-slate-900">
               {isEdit ? t("productForm.submitEdit") : t("productForm.submitCreate")}
             </p>
-            <p className="text-xs text-slate-400">
-              {isEdit ? t("productForm.editHint") : t("productForm.createHint")}
-            </p>
           </div>
-          {!isEdit && (
-            <Switch checked={form.published} onCheckedChange={(v) => set("published", v)} aria-label={t("productForm.reviewAria")} />
-          )}
         </div>
 
         <DialogFooter className="mt-2 gap-2">

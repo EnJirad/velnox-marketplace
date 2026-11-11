@@ -161,12 +161,7 @@ export function ShopHeader() {
             <Logo tone="light" wordmarkClassName="hidden sm:inline" />
           </Link>
 
-          {/* Desktop navigation */}
-          <nav className="ml-3 hidden items-center gap-1 md:flex" aria-label={t("nav.home")}>
-            {navItem("/", t("nav.home"), true)}
-            {navItem("/products", t("nav.market"))}
-            {navItem("/categories", t("nav.categories"))}
-          </nav>
+
 
           {/* Utility actions */}
           <div className="ml-auto flex items-center gap-1 lg:ml-2">

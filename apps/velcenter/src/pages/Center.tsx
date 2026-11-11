@@ -13,7 +13,7 @@ import ProductModerationQueue from "../components/ProductModerationQueue";
 import { MarketingBanners } from "../components/MarketingBanners";
 import SellerVerificationQueue from "../components/SellerVerificationQueue";
 import TrackingTab from "../components/TrackingTab";
-import { VBadge, VerificationStatusLabel } from "@velnox/shared/components/VBadge";
+import { VerificationStatusLabel } from "@velnox/shared/components/VerificationStatusLabel";
 import ChangePasswordScreen from "../components/ChangePasswordScreen";
 import EmployeeManager from "../components/EmployeeManager";
 import { Badge } from "@velnox/shared/components/ui/badge";

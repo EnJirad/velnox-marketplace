@@ -58,7 +58,6 @@ initMonitoring();
 
 const SellerGoals = lazy(() => import("@/pages/SellerGoals"));
 const MyShop = lazy(() => import("@/pages/MyShop"));
-const Reorder = lazy(() => import("@/pages/Reorder"));
 const SellerOrders = lazy(() => import("@/pages/SellerOrders"));
 const SellerOrderDetail = lazy(() => import("@/pages/SellerOrderDetail"));
 const SellerChat = lazy(() => import("@/pages/SellerChat"));
@@ -95,14 +94,6 @@ createRoot(document.getElementById("root")!).render(
             element={
               <RequireRole role="seller">
                 <MyShop />
-              </RequireRole>
-            }
-          />
-          <Route
-            path="/seller/reorder"
-            element={
-              <RequireRole role="seller">
-                <Reorder />
               </RequireRole>
             }
           />

@@ -9,7 +9,7 @@ import {
 import { Button } from "@velnox/shared/components/ui/button";
 import { Card, CardContent } from "@velnox/shared/components/ui/card";
 import { Input } from "@velnox/shared/components/ui/input";
-import { VerificationStatusLabel } from "@velnox/shared/components/VBadge";
+import { VerificationStatusLabel } from "@velnox/shared/components/VerificationStatusLabel";
 import { VerificationReviewDialog, type ReviewDecision, type VerificationReviewRow } from "./VerificationReviewDialog";
 import { api, useAction } from "@velnox/shared/lib/api-routes";
 import { useLanguage } from "@velnox/shared/lib/i18n";

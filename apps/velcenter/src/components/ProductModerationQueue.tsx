@@ -19,8 +19,8 @@ import {
 import { Input } from "@velnox/shared/components/ui/input";
 import { Label } from "@velnox/shared/components/ui/label";
 import { Textarea } from "@velnox/shared/components/ui/textarea";
-import { VBadge } from "@velnox/shared/components/VBadge";
 import type { VerificationStatus } from "@velnox/shared/lib/commerce";
+import { VerificationStatusLabel } from "@velnox/shared/components/VerificationStatusLabel";
 import { api, useAction } from "@velnox/shared/lib/api-routes";
 import { formatBaht } from "@velnox/shared/lib/shop";
 import { cn } from "@velnox/shared/lib/utils";
@@ -130,17 +130,7 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-/** The Velnox verification mark is the letter V and nothing else. */
-function SellerVMark({ status, size = "md" }: { status?: string | null; size?: "sm" | "md" | "lg" }) {
-  if (status !== "verified") return null;
-  return (
-    <VBadge
-      sellerOnly
-      size={size}
-      sellerVerification={status as VerificationStatus}
-    />
-  );
-}
+
 
 /**
  * Section wrapper for the inspection workspace.
@@ -300,7 +290,7 @@ function ProductSummaryCard({ detail }: { detail: ProductDetail }) {
       <p className="mt-1.5 flex min-w-0 items-center gap-1.5 text-xs text-slate-500">
         <Store className="size-3.5 shrink-0 text-slate-400" />
         <span className="truncate">{detail.shop.name}</span>
-        <SellerVMark status={detail.shop.seller_verification_status} size="sm" />
+        <VerificationStatusLabel status={detail.shop.seller_verification_status as any} />
       </p>
       <div className="mt-3 flex flex-wrap items-end justify-between gap-2 border-t border-slate-100 pt-3">
         <div className="min-w-0">
@@ -355,7 +345,7 @@ function ShopCard({ shop }: { shop: ProductDetail["shop"] }) {
         <div className="min-w-0 flex-1">
           <p className="flex items-center gap-1.5 text-sm font-semibold text-slate-900">
             <span className="truncate">{shop.name}</span>
-            <SellerVMark status={shop.seller_verification_status} size="sm" />
+            <VerificationStatusLabel status={shop.seller_verification_status as any} />
           </p>
           <p className="truncate text-xs text-slate-400">/{shop.slug}</p>
         </div>
@@ -780,7 +770,7 @@ export default function ProductModerationQueue() {
                   <div className="min-w-0">
                     <p className="flex items-center gap-1.5 text-sm font-semibold text-slate-900">
                       <span className="truncate">{group.shopName}</span>
-                      <SellerVMark status={group.sellerVerificationStatus} size="sm" />
+                      <VerificationStatusLabel status={group.sellerVerificationStatus as any} />
                     </p>
                     <p className="truncate text-xs text-slate-400">{group.sellerName} · {group.sellerEmail}</p>
                   </div>

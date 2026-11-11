@@ -12,7 +12,7 @@ import { Input } from "@velnox/shared/components/ui/input";
 import { Label } from "@velnox/shared/components/ui/label";
 import { Badge } from "@velnox/shared/components/ui/badge";
 import { AppHeader } from "@velnox/shared/components/AppHeader";
-import { VBadge, VerificationStatusLabel } from "@velnox/shared/components/VBadge";
+import { VerificationStatusLabel } from "@velnox/shared/components/VerificationStatusLabel";
 import { type VerificationStatus } from "@velnox/shared/lib/commerce";
 import { apiBaseUrl, SITE_URLS } from "@velnox/shared/lib/sites";
 import { formatBaht } from "@velnox/shared/lib/commerce";

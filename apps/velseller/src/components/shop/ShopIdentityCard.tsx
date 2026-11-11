@@ -29,7 +29,7 @@ import {
 import { Input } from "@velnox/shared/components/ui/input";
 import { Label } from "@velnox/shared/components/ui/label";
 import { Textarea } from "@velnox/shared/components/ui/textarea";
-import { VerificationStatusLabel } from "@velnox/shared/components/VBadge";
+import { VerificationStatusLabel } from "@velnox/shared/components/VerificationStatusLabel";
 import { api, useAction } from "@velnox/shared/lib/api-routes";
 import { useLanguage } from "@velnox/shared/lib/i18n";
 import { SITE_URLS } from "@velnox/shared/lib/sites";

@@ -25,11 +25,47 @@ import {
   ChevronLeft,
   Search,
   Check,
-  FolderOpen,
-  Folder,
   X,
+  Folder,
+  ShoppingBag,
+  Shirt,
+  Book,
+  Smartphone,
+  Laptop,
+  Home,
+  Gift,
+  Utensils,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+
+// Category icons mapped from backend category.icon field
+const CATEGORY_ICONS: Record<string, React.ElementType> = {
+  folder: Folder,
+  shopping: ShoppingBag,
+  bag: ShoppingBag,
+  shirt: Shirt,
+  clothing: Shirt,
+  fashion: Shirt,
+  shoe: Book,
+  footwear: Book,
+  book: Book,
+  phone: Smartphone,
+  mobile: Smartphone,
+  laptop: Laptop,
+  computer: Laptop,
+  home: Home,
+  house: Home,
+  gift: Gift,
+  present: Gift,
+  food: Utensils,
+  restaurant: Utensils,
+  dining: Utensils,
+};
+
+function CategoryIcon({ name, className }: { name?: string | null; className?: string }) {
+  const Icon = name ? (CATEGORY_ICONS[name] ?? Folder) : Folder;
+  return <Icon className={`size-4 shrink-0 text-slate-400 ${className ?? ""}`} />;
+}
 
 // ─── Types ────────────────────────────────────────────────────────────
 export interface CategoryNode {
@@ -284,7 +320,7 @@ export function CategoryPicker({
                         : "hover:bg-slate-50 text-slate-700"
                     }`}
                   >
-                    <FolderOpen className="size-4 shrink-0 text-slate-400" />
+                    <CategoryIcon name={node.icon} />
                     <div className="min-w-0 flex-1 overflow-hidden">
                       <p className="w-full truncate text-sm font-medium">
                         {getLocalizedName(node, lang)}
@@ -304,7 +340,7 @@ export function CategoryPicker({
             )
           ) : currentLevel.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-slate-400">
-              <Folder className="mb-2 size-8 text-slate-200" />
+              <CategoryIcon className="mb-2 size-8 shrink-0 text-slate-200" />
               <p className="text-sm">{t("categoryPicker.empty")}</p>
             </div>
           ) : (
@@ -342,7 +378,7 @@ export function CategoryPicker({
                         className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2.5 text-left"
                       >
                         {isParent ? (
-                          <Folder className="size-4 shrink-0 text-brand" />
+                          <CategoryIcon name={node.icon} className="size-4 shrink-0 text-brand" />
                         ) : (
                           <span className="size-4 shrink-0" />
                         )}
