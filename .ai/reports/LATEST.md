@@ -1,55 +1,113 @@
-# LATEST — 2026-11-09 · Cart rules, 6 carriers, QR checkout on our own page
+# LATEST — 2026-11-11 · Product Gallery + Rich Description (VelShop ↔ VelSeller)
 
-**Branch:** `main` · **HEAD:** `7aa62e0` (in sync with origin) · **NOT pushed** (no commit — awaiting approval)
+**Branch:** `main` · **HEAD:** `301a483` · **Status:** DONE — push แล้ว, CI เขียวทั้งสอง workflow, gallery ตรวจบน production จริง
 
-## ทำอะไรไปแล้ว
+## 1. สรุป
 
-### 1) กฎตะกร้าแบบ marketplace (Shopee / Lazada / TikTok Shop)
-- **เพดาน 100 ชิ้นต่อการสั่งซื้อ** — `backend/lib/order-limits.ts` (ใหม่) บังคับใช้ 3 จุด:
-  `POST /api/customer/cart/add`, `PUT /api/customer/cart/item/:id`, และ **authoritative** ที่
-  `POST /api/customer/checkout` (400 `ORDER_LIMIT_EXCEEDED` พร้อมบอกจำนวนที่เกิน) — client หลอกไม่ได้
-- **หน้าตะกร้า** แสดงจำนวนที่เลือก/เพดาน + แบนเนอร์เตือน + ปุ่มชำระเงินถูกล็อกเมื่อเกิน
-- **ติ๊กเลือกได้ต่อชิ้น / ต่อร้าน / ทั้งหมด** และ **แยกออเดอร์ต่อร้าน** — มีอยู่แล้วในระบบเดิม
-  (`cart-selection.ts`, `selectedCartItems`, `shop_id` grouping) → แต่ละร้าน = 1 ออเดอร์ = 1 พัสดุ = 1 เลขพัสดุ
+ทำระบบ gallery + rich description ให้ VelShop และ VelSeller ใช้ข้อมูลชุดเดียวกันจริง
+ตั้งแต่ Seller → Backend → R2 → Neon → Public API → VelShop ไม่ใช่แค่ปรับ UI
 
-### 2) ขนส่ง 6 เจ้า พร้อมต่อ API
-- เพิ่ม **Kerry Express** (`KERRY_API_KEY`/`KERRY_API_SECRET`) และ **ไปรษณีย์ไทย**
-  (`THAILANDPOST_API_TOKEN` — official Track & Trace v1) เป็น adapter จริงใน registry
-- สถานะจริง: `THAILANDPOST` = **READY→PARTIAL** เมื่อใส่ token, `KERRY` = **BLOCKED** จนได้ merchant key,
-  J&T/Flash = BLOCKED, SPX = UNSUPPORTED, TNT = PARTIAL
-- seller ship dialog เลือกขนส่งได้ 6 เจ้า · VelCenter filter เพิ่ม KERRY/THAILANDPOST
-- **ใส่ key แล้วใช้งานได้ทันที ไม่ต้องแก้โค้ด**
+## 2. Gallery ตาม reference
 
-### 3) จ่ายเงิน: QR PromptPay บนเว็บเราเอง
-- `backend/routes/payment-qr.ts` — `POST /api/payments/promptpay/intent` สร้าง Stripe PaymentIntent
-  (`promptpay`) คืน EMVCo payload + PNG; ยอดมาจาก `orders.total_amount` เท่านั้น, ownership อยู่ใน WHERE
-- หน้าใหม่ `apps/velshop/src/pages/ShopPaymentQr.tsx` (`/orders/:orderId/pay`) — QR ใน card ของเรา,
-  นับถอยหลัง, poll สถานะ, กดจ่ายแล้วเด้งกลับหน้าออเดอร์ (ไม่ไป checkout.stripe.com)
-- ปุ่ม "จ่ายด้วย PromptPay QR" ในหน้า Order Detail
-- **Fail-closed**: ไม่มี Stripe key → 503 `PAYMENTS_NOT_CONFIGURED` + หน้าอธิบายของเรา ไม่มี QR ปลอม
-- Payment registry เพิ่ม `TRUEMONEY` / `LINEPAY` เป็น **disabled + เหตุผล** (Stripe ไม่มี rail ให้ใน TH)
+`packages/shared/src/components/shop/ProductGallery.tsx` (ใหม่ — ใช้ทั้ง 2 แอป)
 
-## ไฟล์
-- **Add:** `backend/lib/order-limits.ts`, `backend/routes/payment-qr.ts`,
-  `backend/lib/tracking/carriers/{kerry,thailand-post}.ts`,
-  `apps/velshop/src/pages/ShopPaymentQr.tsx`, `backend/tests/order-limits.test.ts`,
-  `.ai/context/shipping-and-payments.md`
-- **Mod:** `cart.ts`, `server.ts`, `payment-config.ts`, `tracking/{types,normalizer,carrier-adapter}.ts`,
-  `ShopCart.tsx`, `ShopOrderDetail.tsx`, `main.tsx`, `SellerOrderDetail.tsx`, `TrackingTab.tsx`,
-  `api-routes.ts`, i18n th/en/my
+```
+[ MAIN ]  |  [ t1 ]        รูปหลักซ้าย · thumbnail คอลัมน์แนวตั้งขวา
+          |  [ t2 ]        เส้นแบ่งแนวตั้งจริง กึ่งกลางช่องว่าง
+          |  [ t3 ]        เลือกแล้วกรอบ accent
+```
 
-## ทดสอบ (รันจริง)
-- `bun test tests/order-limits.test.ts` → **10 pass**
-- cart / multi-shop checkout / payment foundation / tracking adapters+normalizer → **152 pass, 0 fail**
-- typecheck 4 apps ✅ · i18n parity **2256 × 3** ✅ · `git diff --check` ✅
+**วัดบน production จริง (velshop.vercel.app, viewport 415px):**
 
-## ยังไม่ได้ทดสอบ (ต้องมี key)
-- เรียก carrier จริง (Kerry / ไปรษณีย์ / J&T / Flash) — BLOCKED ไม่มี credential
-- Stripe PaymentIntent จริง — BLOCKED ไม่มี key ใน environment นี้
-- Multi-shop group ยังใช้ Stripe Checkout Session (group-level intent ยังไม่ทำ — ระบุใน §5 ของเอกสาร)
+| องค์ประกอบ | ค่าที่วัดได้ |
+|---|---|
+| main image | x=16, width=282 |
+| divider | x=308, width=1, height=312 (เต็มความสูง) |
+| ระยะห่าง divider ↔ main | **10 px** |
+| ระยะห่าง divider ↔ thumbnails | **10 px** |
+| thumbnail column | x=319, width=80, เรียงแนวตั้ง |
+| ขนาด thumbnail | 72 px ทุกใบ (uniform) |
+| กรอบรูปที่เลือก | `rgb(16, 185, 129)` = brand |
+| ตัวนับ | `1 / 4` |
 
-## Next
-1. อนุมัติ commit/push
-2. ขอ token ไปรษณีย์ไทย (ฟรี) → ทดสอบ 1 เลขจริง → เปลี่ยนเป็น VERIFIED
-3. ขอ merchant API Kerry/J&T/Flash
-4. ทำ group-level PromptPay intent ให้ multi-shop จ่าย QR บนเว็บเราได้ทั้งหมด
+**ทดสอบ interaction บน production:** คลิก thumbnail ใบที่ 2 → รูปหลักเปลี่ยน (cdfdab… → 109623…), ตัวนับ `2 / 4`, ใบที่ 2 ได้ `aria-selected`
+
+มี: swipe · prev/next · ลูกศรซ้าย-ขวาบนเดสก์ท็อป · คลิกซูม · loading/error/empty · กล่อง 1:1 จองที่ไว้ (ไม่มี layout shift)
+ไม่มีเส้นแบ่งเมื่อมีรูปเดียว (`hasMoreThanOne &&`)
+
+## 3. การแยกภาพ 3 ประเภท — แก้บั๊กจริง
+
+**เดิม:** `ShopProductDetail` push detail images เข้า carousel เป็น `group: 2`
+→ รูปประกอบรายละเอียดไปโผล่ในแถบ thumbnail ของ gallery
+
+**ตอนนี้:** gallery ใช้เฉพาะ `gallery` + variant ที่เลือก · detail images render ในแท็บรายละเอียด
+ตาม `sort_order` — **วัดบน production: gallery 4 ใบ, detail 5 ใบแยกออกมาอยู่นอก gallery**
+
+## 4. Seller editor
+
+`packages/shared/src/components/seller/ProductFormDialog.tsx`
+
+- **ลากสลับลำดับ** (HTML5 DnD) + ปุ่ม "ตั้งเป็นหลัก" = ย้ายไป index 0
+  ซึ่งเป็น `sort_order 0` ที่ backend บันทึกอยู่แล้ว → ไม่มีแนวคิด "รูปหลัก" ที่สอง
+- **preview สด** ใช้ `ProductGallery` ตัวเดียวกับหน้าร้าน (เห็นเส้นแบ่งเหมือนของจริง)
+- ลบ / จำนวน 10 / สถานะ upload / อัปโหลดหลายรูป — ของเดิมที่มีอยู่แล้วคงไว้
+- เปิดแก้ไขสินค้าเดิม → ได้ลำดับ + รูปหลัก + บล็อกเดิมครบ (`setBlocks` จาก `descriptionBlocks`)
+
+## 5. Rich description
+
+`backend/lib/description-blocks.ts` (validator กลาง) + `products.description_blocks` JSONB
+
+| ชนิดบล็อก | ต้องมี |
+|---|---|
+| `heading` | text |
+| `text` | text |
+| `image` | imageUrl |
+| `image_caption` | imageUrl + caption |
+| `image_text` | imageUrl + text (side-by-side บนเดสก์ท็อป) |
+
+- 40 บล็อก / 4,000 ตัวอักษรต่อบล็อก / เฉพาะ URL `http(s)` หรือ `//` / `id` ซ้ำ = 400
+- ค่าว่าง = `[]` (ไม่ error) → สินค้าเดิมยังใช้ plain description ได้
+- เขียนผ่าน 2 ทางเดิม (`PATCH /api/seller/products/:id`, `POST .../create-full`) โดยมี ownership check
+- อ่านกลับทั้ง seller list และ public API (เรียงตามลำดับที่ผู้ขายจัด)
+- รูปในบล็อกอัปโหลดเป็น **detail** image (`draftUpload(..., "details")`) → ไม่มีทางหลุดเข้า gallery
+
+## 6. Database
+
+| ไฟล์ | สิ่งที่เพิ่ม |
+|---|---|
+| `db/schema.sql` | `products.description_blocks JSONB NOT NULL DEFAULT '[]'::jsonb` |
+| `db/run-sqleditor.sql` | CREATE TABLE + `ADD COLUMN IF NOT EXISTS` (reconciler) |
+| `db/verify-reconciler.sh` | `CANON="67|256|285|717"` (วัดจาก CI จริง: +1 column) |
+
+**ไม่มีการลบ/แก้ข้อมูลเดิม** — additive column ที่มี default
+
+## 7. ผลทดสอบ (รันจริง)
+
+| คำสั่ง | ผล |
+|---|---|
+| `bun run typecheck` (4 apps) | ✅ exit 0 |
+| `bun --filter @velnox/backend typecheck` | ✅ exit 0 |
+| `bun test ./backend/tests` | ✅ **1442 pass / 0 fail** / 425 skip (1889 tests, 104 ไฟล์) |
+| ใหม่: `product-gallery-description.test.ts` | ✅ 22 pass — layout/เส้นแบ่ง/ลำดับ=รูปหลัก/แยก detail/validation/schema/ownership/i18n |
+| `bun run i18n:check` | ✅ th=2256 en=2256 my=2256 parity |
+| `bun run build:apps` | ✅ 4/4 |
+| `git diff --check` | ✅ clean |
+| CI `Tests` | ✅ success `301a483` |
+| CI `Production DB Verify` | ✅ success `301a483` |
+| production DOM (velshop) | ✅ divider + 4 thumbs + counter + click เปลี่ยนรูป |
+
+**ยังไม่ได้ทดสอบ:** DB-gated end-to-end suites (425 skip ในเครื่องนี้ — ไม่มี PostgreSQL;
+รันบน CI เท่านั้น) และ UI ของ VelSeller ด้วยผู้ใช้จริง (ต้อง login เป็น seller)
+
+## 8. Git
+
+- `dea50dc` feat(product): gallery + rich description
+- `301a483` fix(db): CANON 717
+- push → `origin/main` = `301a483` · working tree clean
+
+## 9. ปัญหาที่ยังเหลือ
+
+1. **production ยังไม่มีคอลัมน์ `description_blocks`** — ต้องรัน *Production DB Reconcile*
+   (manual, เขียน DB จริง — รอ owner สั่ง) ระหว่างนี้อ่านปลอดภัย เขียน blocks จะ error
+2. 425 DB-gated tests skip ในเครื่อง — ต้องดูผลบน CI
+3. VelSeller ยังไม่ได้กดทดสอบด้วยบัญชี seller จริง (ต้อง login)
