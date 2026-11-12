@@ -231,11 +231,11 @@ export function ProductGallery({
         <span aria-hidden className="mx-2.5 w-px shrink-0 self-stretch bg-slate-200" />
       )}
 
-      {/* ── THUMBNAILS (vertical, uniform) ──────────────────────────────── */}
+      {/* ── THUMBNAILS (vertical, fixed-size, scrollable) ──────────────────────────────── */}
       {hasMoreThanOne && (
         <div
-          className="flex shrink-0 flex-col gap-2 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          style={{ width: thumbSize + 8 }}
+          className="flex shrink-0 flex-col gap-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          style={{ width: thumbSize + 8, maxHeight: "100%", display: images.length > 0 ? "flex" : "none" }}
           role="tablist"
           aria-label={labels.mainImageAlt}
         >

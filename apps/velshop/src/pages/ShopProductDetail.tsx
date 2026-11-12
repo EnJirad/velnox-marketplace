@@ -47,6 +47,7 @@ import {
   Store,
   Trash2,
   Zap,
+  Grid,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
@@ -808,6 +809,8 @@ export default function ShopProductDetail() {
 
   const baseAvailable = product?.inventory?.available ?? product?.inventory?.quantity ?? 0;
   const displayPrice = selectedVariant?.price ?? product?.price ?? 0;
+  const wholePart = Math.floor(displayPrice).toLocaleString();
+  const decimalPart = (displayPrice % 1).toFixed(2).slice(1);
   const displayCompareAt = selectedVariant?.compareAtPrice ?? null;
   const displayDiscountPct = selectedVariant?.discountPercent ?? null;
   const displayStock = selectedVariant?.stock ?? baseAvailable;
@@ -1144,7 +1147,10 @@ export default function ShopProductDetail() {
               <div className="flex items-end justify-between gap-3">
                 <div className="min-w-0 flex-1">
                   <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
-                    <p className="text-3xl font-bold tabular-nums tracking-tight text-slate-900" style={{ overflowWrap: "anywhere" }}>{formatBaht(displayPrice)}</p>
+                    <div className="flex items-baseline gap-x-1">
+                      <span className="text-3xl font-bold tabular-nums tracking-tight text-slate-900" style={{ overflowWrap: "anywhere" }}>{wholePart}</span>
+                      <span className="text-xs font-medium text-slate-600">{decimalPart}</span>
+                    </div>
                     <span className="text-sm font-normal text-slate-400">/{product.unit}</span>
                   </div>
                   {(displayCompareAt && displayCompareAt > displayPrice) || (displayDiscountPct && displayDiscountPct > 0) ? (
@@ -1152,7 +1158,7 @@ export default function ShopProductDetail() {
                       {displayCompareAt && displayCompareAt > displayPrice && (
                         <span className="text-sm text-slate-400 line-through" style={{ overflowWrap: "anywhere" }}>{formatBaht(displayCompareAt)}</span>
                       )}
-                      <span className="rounded bg-red-50 px-1.5 py-0.5 text-xs font-semibold text-red-600">
+                      <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-xs font-semibold text-emerald-700">
                         -{Math.round(displayDiscountPct ?? ((displayCompareAt! - displayPrice) / displayCompareAt!) * 100)}%
                       </span>
                     </div>
@@ -1220,7 +1226,10 @@ export default function ShopProductDetail() {
             {/* ═══════════ STICKY BOTTOM ACTION BAR ═══════════ */}
             <div className="sticky bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-40 -mx-4 mt-4 border-t border-slate-200 bg-white/95 px-4 py-3 pb-4 backdrop-blur md:static md:mx-0 md:mt-4 md:border-0 md:bg-transparent md:p-0 md:pb-0 md:backdrop-blur-none">
               {needsVariant && (
-                <p className="mb-2 text-center text-sm text-slate-400">{t("productDetail.selectOptions")}</p>
+                <p className="mb-2 text-center text-sm text-slate-400 flex items-center justify-center gap-1">
+                  <Grid className="size-4" />
+                  <span>{t("productDetail.selectOptions")}</span>
+                </p>
               )}
               <div className="flex gap-2">
                 <Button
@@ -1543,13 +1552,16 @@ export default function ShopProductDetail() {
                   <p className="mb-1 text-xs font-medium text-accent-foreground" style={{ overflowWrap: "anywhere" }}>{selectedSummary}</p>
                 )}
                 <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
-                  <p className="text-lg font-bold tabular-nums text-slate-900 sm:text-2xl" style={{ overflowWrap: "anywhere" }}>{formatBaht(displayPrice)}</p>
-                  <span className="text-xs font-normal text-slate-400">/{product.unit}</span>
-                </div>
+                    <div className="flex items-baseline gap-x-1">
+                      <span className="text-lg font-bold tabular-nums tracking-tight text-slate-900" style={{ overflowWrap: "anywhere" }}>{wholePart}</span>
+                      <span className="text-xs font-medium text-slate-600">{decimalPart}</span>
+                    </div>
+                    <span className="text-xs font-normal text-slate-400">/{product.unit}</span>
+                  </div>
                 {displayCompareAt && displayCompareAt > displayPrice && (
                   <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2">
                     <span className="text-sm text-slate-400 line-through" style={{ overflowWrap: "anywhere" }}>{formatBaht(displayCompareAt)}</span>
-                    <span className="rounded bg-red-50 px-1.5 py-0.5 text-xs font-semibold text-red-600">-{Math.round(((displayCompareAt - displayPrice) / displayCompareAt) * 100)}%</span>
+                    <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-xs font-semibold text-emerald-700">-{Math.round(((displayCompareAt - displayPrice) / displayCompareAt) * 100)}%</span>
                   </div>
                 )}
                 {!displayCompareAt && displayDiscountPct && displayDiscountPct > 0 && (

@@ -125,6 +125,8 @@ export default function ShopChat() {
    * duplicate notification on the other side).
    */
   const retryRef = useRef<{ clientId: string; body: string } | null>(null);
+  /** Track received message IDs to prevent duplicate render on reconnect. */
+  const receivedMessageIds = useRef<Set<string>>(new Set());
 
   const loadConversations = useCallback(async () => {
     setError(false);
@@ -149,6 +151,9 @@ export default function ShopChat() {
     const offMessage = onChatEvent("chat:message", (data: any) => {
       const message = data?.message as ChatMessage | undefined;
       if (!message?.id) return;
+      // Dedup: ignore already-received messages (prevents duplicate render on reconnect)
+      if (receivedMessageIds.current.has(message.id)) return;
+      receivedMessageIds.current.add(message.id);
       const conversationId = (data?.conversationId as string) ?? message.conversationId;
       const isActive = activeIdRef.current === conversationId;
       if (isActive) {
@@ -690,7 +695,7 @@ export default function ShopChat() {
                     }
                   />
 
-                  {active.product && (
+                  {active.product ? (
                     <button
                       type="button"
                       onClick={() => navigate(`/products/${active.product!.id}`)}
@@ -715,7 +720,28 @@ export default function ShopChat() {
                       </span>
                       <ChevronRight className="size-4 shrink-0 text-slate-300" />
                     </button>
-                  )}
+                  ) : active.participantAvatar ? (
+                    <div className="flex shrink-0 items-center gap-3 border-b border-slate-100 px-4 py-2.5 text-left transition-colors hover:bg-slate-50">
+                      <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-400">
+                        {active.participantAvatar ? (
+                          <img src={active.participantAvatar} alt="" className="size-10 shrink-0 rounded-lg object-cover" />
+                        ) : (
+                          <MessageCircle className="size-4" />
+                        )}
+                      </div>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-xs font-semibold text-slate-900">
+                          {active.participantName ?? ""}
+                        </span>
+                        {active.participantOnline ? (
+                          <span className="mt-0.5 block text-xs font-bold text-slate-900">
+                            Online
+                          </span>
+                        ) : null}
+                      </span>
+                      <ChevronRight className="size-4 shrink-0 text-slate-300" />
+                    </div>
+                  ) : null}
 
                   <div
                     ref={scrollRef}
