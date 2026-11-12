@@ -163,7 +163,7 @@ async function draftUpload(
 }
 
 // ─── Variant Manager for existing products (edit mode) ────────────────
-function VariantManager({ productId, price }: { productId: string; price: number }) {
+function VariantManager({ productId, price, unit }: { productId: string; price: number; unit: string }) {
   const [variants, setVariants] = useState<VariantRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -378,7 +378,7 @@ function VariantManager({ productId, price }: { productId: string; price: number
                   <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
                     <span className="tabular-nums font-semibold text-slate-900">฿{(() => { const full = v.compareAtPrice || v.price || 0; const disc = v.discountPercent || 0; return Math.max(0, Math.round(full * (1 - disc / 100) * 100) / 100).toLocaleString(); })()}</span>
                     {v.compareAtPrice && v.compareAtPrice > v.price && <span className="text-2xs text-slate-400 line-through">฿{v.compareAtPrice.toLocaleString()}</span>}
-                    <span className={`tabular-nums ${v.stock <= 0 ? "text-red-500" : v.stock <= 5 ? "text-amber-600" : "text-slate-600"}`}>{v.stock} {form.unit}</span>
+                    <span className={`tabular-nums ${v.stock <= 0 ? "text-red-500" : v.stock <= 5 ? "text-amber-600" : "text-slate-600"}`}>{v.stock} {unit}</span>
                     {v.sku && <span className="font-mono text-2xs text-slate-400">{v.sku}</span>}
                   </div>
                   <div className="mt-1 flex items-center gap-1">
@@ -441,7 +441,6 @@ function ProductFormInner({ shop, product, onClose, onSaved }: InnerProps) {
   const createFullProduct = useAction(api.commerce.createFullProductAction);
   const updateProduct = useAction(api.commerce.updateProductAction);
   // Product-level stock management removed — variant stock is source of truth
-
   const [form, setForm] = useState<typeof defaultForm>(() =>
     product
       ? {
@@ -952,6 +951,7 @@ function CategoryIcon({ name, className }: { name?: string | null; className?: s
           toast.success(t("productForm.savedToast"));
           setCurrent(fresh);
           onSaved?.(fresh);
+          onClose();
         }
       } else {
         // NEW product: use create-full for atomic creation
@@ -1499,19 +1499,9 @@ function CategoryIcon({ name, className }: { name?: string | null; className?: s
           <div className="rounded-xl border border-slate-200 bg-white p-4">
             <h3 className="mb-1 text-sm font-semibold text-slate-900">{t("productForm.manageVariants")}</h3>
             <p className="mb-2 text-xs text-slate-500">{t("productForm.manageVariantsHint")}</p>
-            <VariantManager productId={current.id} price={current.price} />
+            <VariantManager productId={current.id} price={current.price} unit={form.unit} />
           </div>
         )}
-
-        {/* ═══ Section 10: Submit ════════════════════════════════════ */}
-        <div className="flex items-center gap-2 rounded-md border border-slate-200 px-3 py-2.5">
-          <Store className="size-4 shrink-0 text-brand" />
-          <div className="flex-1">
-            <p className="text-sm font-medium text-slate-900">
-              {isEdit ? t("productForm.submitEdit") : t("productForm.submitCreate")}
-            </p>
-          </div>
-        </div>
 
         <DialogFooter className="mt-2 gap-2">
           <Button type="button" variant="outline" className="border-slate-200 text-slate-700" onClick={onClose} disabled={saving}>
