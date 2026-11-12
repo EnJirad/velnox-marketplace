@@ -378,7 +378,7 @@ function VariantManager({ productId, price }: { productId: string; price: number
                   <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
                     <span className="tabular-nums font-semibold text-slate-900">฿{(() => { const full = v.compareAtPrice || v.price || 0; const disc = v.discountPercent || 0; return Math.max(0, Math.round(full * (1 - disc / 100) * 100) / 100).toLocaleString(); })()}</span>
                     {v.compareAtPrice && v.compareAtPrice > v.price && <span className="text-2xs text-slate-400 line-through">฿{v.compareAtPrice.toLocaleString()}</span>}
-                    <span className={`tabular-nums ${v.stock <= 0 ? "text-red-500" : v.stock <= 5 ? "text-amber-600" : "text-slate-600"}`}>{t("productForm.variants.stockUnit", { count: v.stock })}</span>
+                    <span className={`tabular-nums ${v.stock <= 0 ? "text-red-500" : v.stock <= 5 ? "text-amber-600" : "text-slate-600"}`}>{v.stock} {form.unit}</span>
                     {v.sku && <span className="font-mono text-2xs text-slate-400">{v.sku}</span>}
                   </div>
                   <div className="mt-1 flex items-center gap-1">
@@ -899,7 +899,11 @@ function CategoryIcon({ name, className }: { name?: string | null; className?: s
           price: 0,
           description: form.description || undefined,
           supplier: form.supplier || undefined,
-          status: form.published ? "published" : "draft",
+          // NO `status` here: the PATCH must never transition the product.
+          // Omitting it keeps the current status (published stays published,
+          // pending_review stays pending_review) — editing no longer reverts
+          // a live product to a draft. Status changes go through the dedicated
+          // PATCH /status endpoint with explicit seller transitions.
           // Saves in the seller's chosen order; the shopfront renders the same.
           descriptionBlocks: blocks,
         } as any);

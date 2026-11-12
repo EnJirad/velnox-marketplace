@@ -569,7 +569,7 @@ export function ProductSelectionSheet({
                                   </span>
                                   {valueInStock && valueStock > 0 && (
                                     <span className={`text-2xs ${valueStock <= 5 ? "text-amber-600" : "text-slate-400"}`}>
-                                      {valueStock <= 5 ? t("productDetail.stockLeft", { count: valueStock }) : t("productDetail.stockPieces", { count: valueStock })}
+                                      {valueStock <= 5 ? t("productDetail.stockLeft", { count: valueStock }) : `${valueStock} ${product.unit ?? ""}`}
                                     </span>
                                   )}
                                   {!valueInStock && (
@@ -585,7 +585,7 @@ export function ProductSelectionSheet({
                               <span className="truncate text-2xs font-medium">{val.label}</span>
                               {valueInStock && valueStock > 0 && (
                                 <span className={`text-2xs ${valueStock <= 5 ? "text-amber-600" : "text-slate-400"}`}>
-                                  {valueStock <= 5 ? t("productDetail.stockLeft", { count: valueStock }) : t("productDetail.stockPieces", { count: valueStock })}
+                                  {valueStock <= 5 ? t("productDetail.stockLeft", { count: valueStock }) : `${valueStock} ${product.unit ?? ""}`}
                                 </span>
                               )}
                               {!valueInStock && (

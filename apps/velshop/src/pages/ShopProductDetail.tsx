@@ -1608,7 +1608,7 @@ export default function ShopProductDetail() {
                           <span className={`${compactSheet ? "text-2xs" : "text-2xs"} text-red-400`}>{t("productDetail.stockOut")}</span>
                         ) : valueStock > 0 ? (
                           <span className={`${compactSheet ? "text-2xs" : "text-2xs"} ${valueStock <= 5 ? "text-amber-600" : "text-slate-400"}`}>
-                            {valueStock <= 5 ? t("productDetail.stockLeft", { count: valueStock }) : t("productDetail.stockPieces", { count: valueStock })}
+                            {valueStock <= 5 ? t("productDetail.stockLeft", { count: valueStock }) : `${valueStock} ${product.unit ?? ""}`}
                           </span>
                         ) : null;
 
