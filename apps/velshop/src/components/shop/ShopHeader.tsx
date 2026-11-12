@@ -20,12 +20,13 @@ export function ShopHeader() {
   const location = useLocation();
   const navigate = useNavigate();
   const [cartOpen, setCartOpen] = useState(false);
-const openCart = () => setCartOpen(true);
+  const openCart = () => setCartOpen(true);
   const { count: chatUnread } = useChatUnread("customer");
   const unread = chatUnread != null && chatUnread > 0 ? chatUnread : null;
 
+  const onHome = location.pathname === "/";
   const onProducts = location.pathname === "/products";
-const showSearch = location.pathname === "/";
+  const showSearch = location.pathname === "/";
   const urlQ = onProducts ? (new URLSearchParams(location.search).get("q") ?? "") : "";
   const [query, setQuery] = useState(urlQ);
 
@@ -53,7 +54,7 @@ const showSearch = location.pathname === "/";
 
   return (
     <header className="sticky top-0 z-40">
-      {/* Mobile brand bar */}
+      {/* Mobile brand bar — reference app shell */}
       <div className="bg-brand md:hidden">
         <div className="mx-auto flex h-14 w-full items-center gap-2 px-3">
           {showSearch ? (
@@ -63,7 +64,7 @@ const showSearch = location.pathname === "/";
                 aria-label={t("header.ariaHome", { name: "VelShop" })}
                 className="flex size-9 shrink-0 items-center justify-center"
               >
-                <LogoMark tone="light" className="h-7 w-auto" />
+                <LogoMark tone="light" className="h-9 w-auto" />
               </Link>
               <form role="search" onSubmit={handleSearch} className="flex min-w-0 flex-1">
                 <div className="relative flex min-w-0 flex-1 items-center">
@@ -92,37 +93,40 @@ const showSearch = location.pathname === "/";
               aria-label={t("header.ariaHome", { name: "VelShop" })}
               className="flex shrink-0 items-center justify-center"
             >
-              <Logo tone="light" wordmarkClassName="max-w-[90px] overflow-hidden truncate" />
+              <Logo tone="light" wordmarkClassName="max-w-[140px] overflow-hidden truncate" />
             </Link>
           )}
-          <LanguageSwitcher variant="mobile" tone="brand" />
-          <button
-            type="button"
-            data-cart-icon="true"
-            onClick={openCart}
-            aria-label={t("header.ariaCart")}
-            className="relative size-10 cursor-pointer rounded-md text-white hover:bg-white/15"
-          >
-            <ShoppingCart className="size-5" />
-            {count > 0 && (
-              <span className="absolute right-0 top-0 flex size-5 items-center justify-center rounded-full bg-white text-2xs font-bold text-brand">
-                {count > 99 ? "99+" : count}
-              </span>
-            )}
-          </button>
-          {isLoading ? null : isAuthenticated ? (
-            <Link
-              to="/profile"
-              className="flex size-10 items-center justify-center rounded-md text-white transition-colors hover:bg-white/15"
-              aria-label={t("header.ariaProfile")}
+          <div className="ml-auto flex items-center gap-1">
+            <LanguageSwitcher variant="mobile" tone="brand" />
+            <NotificationBell tone="brand" />
+            <button
+              type="button"
+              data-cart-icon="true"
+              onClick={openCart}
+              aria-label={t("header.ariaCart")}
+              className="relative size-10 cursor-pointer rounded-md text-white hover:bg-white/15"
             >
-              <User className="size-5" />
-            </Link>
-          ) : (
-            <Button variant="outline" className="h-9 border-0 bg-white text-brand hover:bg-white/90 hover:text-brand" asChild>
-              <Link to="/auth?returnTo=/">{t("header.login")}</Link>
-            </Button>
-          )}
+              <ShoppingCart className="size-5" />
+              {count > 0 && (
+                <span className="absolute right-0 top-0 flex size-5 items-center justify-center rounded-full bg-white text-2xs font-bold text-brand">
+                  {count > 99 ? "99+" : count}
+                </span>
+              )}
+            </button>
+            {isLoading ? null : isAuthenticated ? (
+              <Link
+                to="/profile"
+                className="flex size-10 items-center justify-center rounded-md text-white transition-colors hover:bg-white/15"
+                aria-label={t("header.ariaProfile")}
+              >
+                <User className="size-5" />
+              </Link>
+            ) : (
+              <Button variant="outline" className="h-9 border-0 bg-white text-brand hover:bg-white/90 hover:text-brand" asChild>
+                <Link to="/auth?returnTo=/">{t("header.login")}</Link>
+              </Button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -131,9 +135,9 @@ const showSearch = location.pathname === "/";
         <div className="mx-auto flex h-16 w-full max-w-6xl items-center gap-1.5 px-4 sm:gap-2 sm:px-6">
           <Link to="/" aria-label={t("header.ariaHome", { name: "VelShop" })} className="shrink-0">
             {showSearch || onProducts ? (
-              <Logo tone="light" markOnly />
+              <LogoMark tone="light" className="h-10 w-auto" />
             ) : (
-              <Logo tone="light" />
+              <Logo tone="light" wordmarkClassName="max-w-[140px] overflow-hidden truncate" />
             )}
           </Link>
           <nav className="ml-3 hidden items-center gap-1 md:flex" aria-label={t("nav.home")}>

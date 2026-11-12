@@ -35,7 +35,7 @@ export function AppHeader() {
       <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-4 sm:px-6">
         <div className="flex items-center gap-2 sm:gap-5">
           <button type="button" onClick={() => navigate("/")} aria-label="Velnox">
-            <Logo tone="light" wordmarkClassName="max-w-[90px] overflow-hidden truncate" />
+            <Logo tone="light" wordmarkClassName="max-w-[140px] overflow-hidden truncate" />
           </button>
           <nav className="hidden items-center gap-1 md:flex md:flex-nowrap">
             {NAV_ITEMS.map((item) => {
