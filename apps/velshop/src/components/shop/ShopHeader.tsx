@@ -40,6 +40,8 @@ export function ShopHeader() {
   // prominent search area inside the page, so the header never stacks a second
   // search box on top of it, and utility screens carry no search at all.
   const showSearch = location.pathname === "/";
+  // Show the brand name next to the mark only when there is no search box in the header.
+  const showLogoName = location.pathname !== "/" && location.pathname !== "/products";
   const urlQ = onProducts ? (new URLSearchParams(location.search).get("q") ?? "") : "";
   const [query, setQuery] = useState(urlQ);
 
@@ -119,7 +121,13 @@ export function ShopHeader() {
               </div>
             </form>
           ) : (
-            <span className="min-w-0 flex-1" aria-hidden="true" />
+            <Link
+              to="/"
+              aria-label={t("header.ariaHome", { name: "VelShop" })}
+              className="flex shrink-0 items-center justify-center"
+            >
+              <Logo tone="light" wordmarkClassName="max-w-[90px] overflow-hidden truncate" />
+            </Link>
           )}
           <LanguageSwitcher variant="mobile" tone="brand" />
 
@@ -156,9 +164,13 @@ export function ShopHeader() {
       {/* Desktop bar — same solid brand surface as mobile */}
       <div className="hidden border-b border-white/15 bg-brand md:block">
         <div className="mx-auto flex h-14 w-full max-w-6xl items-center gap-1.5 px-4 sm:gap-2 sm:px-6">
-          {/* Brand — mark-only on the smallest screens so the utility row never overflows */}
+          {/* Brand — mark-only when there is a search box in the header; mark + name otherwise */}
           <Link to="/" aria-label={t("header.ariaHome", { name: "VelShop" })} className="shrink-0">
-            <Logo tone="light" wordmarkClassName="hidden sm:inline" />
+            {showSearch || onProducts ? (
+              <Logo tone="light" markOnly />
+            ) : (
+              <Logo tone="light" />
+            )}
           </Link>
 
 
