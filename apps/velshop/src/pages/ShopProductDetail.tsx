@@ -1150,8 +1150,8 @@ export default function ShopProductDetail() {
                     <div className="flex items-baseline gap-x-1">
                   <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
                     <div className="flex items-baseline gap-x-1">
-                      <span className="text-3xl font-bold tabular-nums tracking-tight text-slate-900" style={{ overflowWrap: "anywhere" }}>{wholePart}</span>
-                      <span className="text-xs font-medium text-slate-600" style={{ transform: "scale(0.65)", transformOrigin: "left baseline" }}>{decimalPart}</span>
+                      <span className="text-2xl font-bold tabular-nums tracking-tight text-red-600" style={{ overflowWrap: "anywhere" }}>{wholePart}</span>
+                      <span className="text-xs font-medium text-red-600">{decimalPart}</span>
                     </div>
                     <span className="text-sm font-normal text-slate-400">/{product.unit}</span>
                   </div>
@@ -1160,7 +1160,7 @@ export default function ShopProductDetail() {
                       {displayCompareAt && displayCompareAt > displayPrice && (
                         <span className="text-sm text-slate-400 line-through" style={{ overflowWrap: "anywhere" }}>{formatBaht(displayCompareAt)}</span>
                       )}
-                      <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-xs font-semibold text-emerald-700">
+                      <span className="rounded bg-red-50 px-1.5 py-0.5 text-xs font-semibold text-red-600">
                         -{Math.round(displayDiscountPct ?? ((displayCompareAt! - displayPrice) / displayCompareAt!) * 100)}%
                       </span>
                     </div>
@@ -1190,7 +1190,7 @@ export default function ShopProductDetail() {
                 className="mt-3 flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-left transition-colors hover:border-slate-300"
                 aria-label={t("productDetail.selectOptions")}
               >
-                <span className="text-xs font-semibold text-slate-700">{t("productDetail.options")}</span>
+                <Grid className="size-4 shrink-0" />
                 <div className="flex flex-1 items-center gap-1.5 overflow-hidden">
                   {compactThumbnails.map((thumb: { id: string; label: string; imageUrl: string | null; groupId: string; selected: boolean }) => (
                     <span
