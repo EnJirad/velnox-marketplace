@@ -968,7 +968,12 @@ export default function ShopProductDetail() {
         imageUrl: cartImageUrl,
       }, sheetQty);
       fly(addBtnRef.current);
-      toast.success(t("productDetail.addedToast", { name: product.name, qty: sheetQty }));
+      toast.success(t("productDetail.addedToast", { name: product.name, qty: sheetQty }), {
+        duration: 2000,
+        position: "bottom-center",
+        className: "bg-slate-900 text-white text-sm",
+        description: `${t("productDetail.addedToastDesc", { qty: sheetQty })}`,
+      });
       setVariantSheetOpen(false);
       setPendingAction(null);
     } else if (action === "buy") {
@@ -1003,7 +1008,12 @@ export default function ShopProductDetail() {
         imageUrl: cartImageUrl,
       }, sheetQty);
       fly(addBtnRef.current);
-      toast.success(t("productDetail.addedToast", { name: product.name, qty: sheetQty }));
+      toast.success(t("productDetail.addedToast", { name: product.name, qty: sheetQty }), {
+        duration: 2000,
+        position: "bottom-center",
+        className: "bg-slate-900 text-white text-sm",
+        description: `${t("productDetail.addedToastDesc", { qty: sheetQty })}`,
+      });
     } else if (pendingAction === "buy") {
       // Direct purchase: NO cart mutation (see handleSheetAction).
       const state = buyNowState();

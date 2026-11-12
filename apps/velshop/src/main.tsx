@@ -16,7 +16,7 @@ import { MobileTabBar, type MobileTabItem } from "@velnox/shared/components/Mobi
 import { RealtimeProvider } from "@velnox/shared/components/RealtimeProvider";
 import { CUSTOMER_MEMORY_ENABLED } from "@velnox/shared/lib/features";
 import { IdentityMerge } from "@velnox/shared/lib/track";
-import { Bell, Home, ReceiptText, Store, User } from "lucide-react";
+import { Home, ReceiptText, ShoppingCart, Store, User } from "lucide-react";
 import { lazy, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Route, Routes, useLocation } from "react-router";
@@ -25,11 +25,10 @@ import "../../../packages/shared/src/index.css";
 /**
  * VelShop mobile bottom navigation — app-like fixed tab bar.
  *
- * Five tabs: home · market · orders · notifications · profile, matching the
+ * Five tabs: home · market · orders · cart · profile, matching the
  * storefront split (Home = discovery, Market = the complete catalogue). Cart
- * stays in the brand header, so the bar keeps one low-noise job: switching
- * top-level sections. Active tab uses the Velnox accent; the bar is hidden
- * from `md` up, where the header navigation takes over.
+ * stays in the bottom tab bar for quick access. Active tab uses the Velnox
+ * accent; the bar is hidden from `md` up, where the header navigation takes over.
  */
 function ShopTabBar() {
   const { t } = useLanguage();
@@ -37,7 +36,7 @@ function ShopTabBar() {
     { to: "/", label: t("nav.home"), icon: Home, activeMatch: (p) => p === "/" },
     { to: "/products", label: t("nav.market"), icon: Store },
     { to: "/orders", label: t("nav.orders"), icon: ReceiptText },
-    { to: "/notifications", label: t("nav.notifications"), icon: Bell },
+    { to: "/cart", label: t("nav.cart"), icon: ShoppingCart },
     { to: "/profile", label: t("nav.profile"), icon: User },
   ];
   return <MobileTabBar items={items} />;

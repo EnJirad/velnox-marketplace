@@ -8,12 +8,12 @@ import { useChatUnread } from "@velnox/shared/hooks/use-chat-unread";
 import { useTracking } from "@velnox/shared/lib/track";
 import { useCart } from "@/lib/cart";
 import { useLanguage } from "@/lib/i18n";
-import { MessageCircle, Search, ShoppingCart, User } from "lucide-react";
+import { MessageCircle, Search, User } from "lucide-react";
 import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 
 export function ShopHeader() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
   const { count } = useCart();
   const { t } = useLanguage();
   const { track } = useTracking();
@@ -64,7 +64,7 @@ export function ShopHeader() {
                 aria-label={t("header.ariaHome", { name: "VelShop" })}
                 className="flex size-9 shrink-0 items-center justify-center"
               >
-                <LogoMark tone="light" className="h-9 w-auto" />
+                <LogoMark tone="light" className="h-7 w-auto" />
               </Link>
               <form role="search" onSubmit={handleSearch} className="flex min-w-0 flex-1">
                 <div className="relative flex min-w-0 flex-1 items-center">
@@ -93,33 +93,26 @@ export function ShopHeader() {
               aria-label={t("header.ariaHome", { name: "VelShop" })}
               className="flex shrink-0 items-center justify-center"
             >
-              <Logo tone="light" wordmarkClassName="max-w-[140px] overflow-hidden truncate" />
+              <Logo tone="light" wordmarkClassName="max-w-[120px] overflow-hidden truncate" />
             </Link>
           )}
-          <div className="ml-auto flex items-center gap-1">
+          <div className="ml-auto flex items-center gap-2">
             <LanguageSwitcher variant="mobile" tone="brand" />
             <NotificationBell tone="brand" />
-            <button
-              type="button"
-              data-cart-icon="true"
-              onClick={openCart}
-              aria-label={t("header.ariaCart")}
-              className="relative size-10 cursor-pointer rounded-md text-white hover:bg-white/15"
-            >
-              <ShoppingCart className="size-5" />
-              {count > 0 && (
-                <span className="absolute right-0 top-0 flex size-5 items-center justify-center rounded-full bg-white text-2xs font-bold text-brand">
-                  {count > 99 ? "99+" : count}
-                </span>
-              )}
-            </button>
-            {isLoading ? null : isAuthenticated ? (
+            {isLoading ? null : isAuthenticated && user ? (
               <Link
                 to="/profile"
-                className="flex size-10 items-center justify-center rounded-md text-white transition-colors hover:bg-white/15"
+                className="flex size-10 items-center justify-center rounded-full text-white hover:bg-white/15"
                 aria-label={t("header.ariaProfile")}
               >
-                <User className="size-5" />
+                <img
+                  src={user.avatarUrl ?? "/logo.svg"}
+                  alt={t("header.ariaProfile")}
+                  className="size-10 rounded-full object-cover border border-white/20"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).src = "/logo.svg";
+                  }}
+                />
               </Link>
             ) : (
               <Button variant="outline" className="h-9 border-0 bg-white text-brand hover:bg-white/90 hover:text-brand" asChild>
@@ -135,7 +128,7 @@ export function ShopHeader() {
         <div className="mx-auto flex h-16 w-full max-w-6xl items-center gap-1.5 px-4 sm:gap-2 sm:px-6">
           <Link to="/" aria-label={t("header.ariaHome", { name: "VelShop" })} className="shrink-0">
             {showSearch || onProducts ? (
-              <LogoMark tone="light" className="h-10 w-auto" />
+              <Logo tone="light" markOnly />
             ) : (
               <Logo tone="light" wordmarkClassName="max-w-[140px] overflow-hidden truncate" />
             )}
@@ -145,31 +138,23 @@ export function ShopHeader() {
             {navItem("/products", t("nav.market"))}
             {navItem("/categories", t("nav.categories"))}
           </nav>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-2">
             <LanguageSwitcher variant="desktop" tone="brand" />
             <NotificationBell tone="brand" />
-            <Button
-              variant="ghost"
-              size="icon"
-              data-cart-icon="true"
-              className="relative size-10 cursor-pointer rounded-md text-white hover:bg-white/15"
-              onClick={openCart}
-              aria-label={t("header.ariaCart")}
-            >
-              <ShoppingCart className="size-5" />
-              {count > 0 && (
-                <span className="absolute right-0 top-0 flex size-5 items-center justify-center rounded-full bg-white text-2xs font-bold text-brand">
-                  {count > 99 ? "99+" : count}
-                </span>
-              )}
-            </Button>
-            {isLoading ? null : isAuthenticated ? (
+            {isLoading ? null : isAuthenticated && user ? (
               <Link
                 to="/profile"
-                className="flex size-10 items-center justify-center rounded-md text-white transition-colors hover:bg-white/15"
+                className="flex size-10 items-center justify-center rounded-full text-white transition-colors hover:bg-white/15"
                 aria-label={t("header.ariaProfile")}
               >
-                <User className="size-5" />
+                <img
+                  src={user.avatarUrl ?? "/logo.svg"}
+                  alt={t("header.ariaProfile")}
+                  className="size-10 rounded-full object-cover border border-white/20"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).src = "/logo.svg";
+                  }}
+                />
               </Link>
             ) : (
               <Button variant="outline" className="h-9 border-0 bg-white text-brand hover:bg-white/90 hover:text-brand" asChild>

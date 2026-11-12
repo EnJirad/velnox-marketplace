@@ -641,6 +641,7 @@ export const my = {
     verifiedPurchase: "အမှန်တကယ်ဝယ်ယူထားသည် ✓",
     imageAlt: "ပုံ {n}",
     addedToast: "ခြင်းတောင်းထဲ ထည့်ပြီးပါပြီ (×{qty})",
+    addedToastDesc: (p: { qty: number }) => `${p.qty} ပစ္စည်း`,
     wishlistAdded: "နှစ်သက်ရာစာရင်းတွင် ထည့်ပြီးပါပြီ",
     wishlistRemoved: "နှစ်သက်ရာစာရင်းမှ ဖယ်ရှားပြီးပါပြီ",
     wishlistFailed: "နှစ်သက်ရာစာရင်း သိမ်းမရပါ",
