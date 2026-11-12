@@ -972,8 +972,8 @@ export default function ShopProductDetail() {
       }, sheetQty);
       fly(addBtnRef.current);
       toast.success(t("productDetail.addedToast", { name: product.name, qty: sheetQty }), {
-        duration: 2000,
-        position: "bottom-center",
+        duration: 1000,
+        position: "top-center",
         className: "bg-slate-900 text-white text-sm",
         description: `${t("productDetail.addedToastDesc", { qty: sheetQty })}`,
       });
@@ -1012,8 +1012,8 @@ export default function ShopProductDetail() {
       }, sheetQty);
       fly(addBtnRef.current);
       toast.success(t("productDetail.addedToast", { name: product.name, qty: sheetQty }), {
-        duration: 2000,
-        position: "bottom-center",
+        duration: 1000,
+        position: "top-center",
         className: "bg-slate-900 text-white text-sm",
         description: `${t("productDetail.addedToastDesc", { qty: sheetQty })}`,
       });
@@ -1148,8 +1148,10 @@ export default function ShopProductDetail() {
                 <div className="min-w-0 flex-1">
                   <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
                     <div className="flex items-baseline gap-x-1">
+                  <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+                    <div className="flex items-baseline gap-x-1">
                       <span className="text-3xl font-bold tabular-nums tracking-tight text-slate-900" style={{ overflowWrap: "anywhere" }}>{wholePart}</span>
-                      <span className="text-xs font-medium text-slate-600">{decimalPart}</span>
+                      <span className="text-xs font-medium text-slate-600" style={{ transform: "scale(0.65)", transformOrigin: "left baseline" }}>{decimalPart}</span>
                     </div>
                     <span className="text-sm font-normal text-slate-400">/{product.unit}</span>
                   </div>

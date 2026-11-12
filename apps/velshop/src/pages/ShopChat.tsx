@@ -227,17 +227,22 @@ export default function ShopChat() {
   useEffect(() => {
     if (!isAuthenticated || !user?.id) return;
     return onChatReconnect(() => {
-      void loadConversations();
+      // Don't reload if we already have messages for this conversation
       const activeId = activeIdRef.current;
       if (!activeId) return;
+      const alreadyHaveMessages = messages.length > 0;
+      if (alreadyHaveMessages) return;
       conversationMessages({ conversationId: activeId })
         .then((res) => {
-          setMessages((res.items ?? []) as ChatMessage[]);
+          // Dedup against receivedMessageIds to prevent duplicate render on reconnect
+          const newMessages = (res.items ?? []).filter(m => !receivedMessageIds.current.has(m.id));
+          newMessages.forEach(m => receivedMessageIds.current.add(m.id));
+          setMessages(newMessages);
           setHasMore(!!res.hasMore);
         })
         .catch((err) => console.error("Reload messages after reconnect failed:", err));
     });
-  }, [isAuthenticated, user?.id, loadConversations, conversationMessages]);
+  }, [isAuthenticated, user?.id, loadConversations, conversationMessages, messages.length]);
 
   // ── Scroll handling ─────────────────────────────────────────────────
   // A new page of OLDER messages must not move the reader: restore the exact

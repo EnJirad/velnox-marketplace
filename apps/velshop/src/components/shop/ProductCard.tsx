@@ -61,17 +61,18 @@ export function ProductCard({ product, onOpen: _onOpen, onAdd: _onAdd, badgeLabe
         aria-label={t("product.ariaViewDetail", { name: product.name })}
       >
         {(() => {
-          // Use featured variant image if available, otherwise product primary
-          const fvImg = fv?.images?.length > 0 ? fv.images[0] : null;
-          const img = fvImg ?? product.primaryImage;
-          return img ? (
-            <img
-              src={img.displayUrl ?? img.url}
-              alt={img.alt || product.name}
-              className="size-full object-cover"
-              loading="lazy"
-            />
-          ) : (
+	          // Use featured variant image if available, otherwise product primary
+	          const fvImg = fv?.images?.length > 0 ? fv.images[0] : null;
+	          const img = fvImg ?? product.primaryImage;
+	          return img ? (
+	            <img
+	              src={img.displayUrl ?? img.url}
+	              alt={img.alt || product.name}
+	              className="size-full object-cover"
+	              loading="lazy"
+	              style={{ contentVisibility: "auto", containIntrinsicSize: "300px 300px" }}
+	            />
+	          ) : (
             <span className="flex size-full items-center justify-center">
               <ImageOff className="size-8 text-slate-300" />
             </span>

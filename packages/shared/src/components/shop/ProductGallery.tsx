@@ -235,7 +235,7 @@ export function ProductGallery({
       {hasMoreThanOne && (
         <div
           className="flex shrink-0 flex-col gap-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          style={{ width: thumbSize + 8, maxHeight: "220px" }}
+          style={{ width: thumbSize + 8, maxHeight: "100%" }}
           role="tablist"
           aria-label={labels.mainImageAlt}
         >
