@@ -48,6 +48,10 @@ export function ProductCard({ product, onOpen: _onOpen, onAdd: _onAdd, badgeLabe
   const displayDiscountPercent = fv?.discountPercent ?? null;
   const detailUrl = `/products/${product.id}`;
 
+  // Split price into whole + decimal for typographic hierarchy
+  const priceWhole = Math.floor(displayPrice).toLocaleString();
+  const priceDecimal = (displayPrice % 1).toFixed(2).slice(1);
+
   return (
     <div className={`flex flex-col overflow-hidden border border-slate-200 bg-white transition-colors hover:border-slate-300 ${compact ? "rounded-lg" : "rounded-xl"}`}>
       {/* ── Image (navigates to Product Detail) ── */}
@@ -79,12 +83,12 @@ export function ProductCard({ product, onOpen: _onOpen, onAdd: _onAdd, badgeLabe
             noisiest part of the card. Here it reads at a glance and the price row
             keeps just two items. */}
         {displayDiscountPercent != null && displayDiscountPercent > 0 && (
-          <span
-            className={`absolute left-1.5 top-1.5 rounded-md bg-red-600/95 px-1.5 py-0.5 font-semibold tabular-nums text-white backdrop-blur-sm ${compact ? "text-2xs" : "text-2xs"}`}
-          >
-            -{Math.round(displayDiscountPercent)}%
-          </span>
-        )}
+            <span
+              className={`absolute left-1.5 top-1.5 rounded-md bg-emerald-600/95 px-1.5 py-0.5 font-semibold tabular-nums text-white backdrop-blur-sm ${compact ? "text-2xs" : "text-2xs"}`}
+            >
+              -{Math.round(displayDiscountPercent)}%
+            </span>
+          )}
         {onWishlist && (
           <button
             type="button"
@@ -113,14 +117,13 @@ export function ProductCard({ product, onOpen: _onOpen, onAdd: _onAdd, badgeLabe
         </Link>
 
         {/* Price — two numbers, never three (the badge moved to the image). */}
-        <div className={`flex items-baseline gap-1.5 ${compact ? "mt-0.5" : "mt-1"}`}>
-          <p className={`font-bold tabular-nums tracking-tight text-slate-900 ${compact ? "text-[13px]" : "text-[15px] sm:text-base"}`}>
-            {formatBaht(displayPrice)}
-          </p>
-          {displayCompareAtPrice && displayCompareAtPrice > displayPrice && (
-            <span className={`tabular-nums text-slate-400 line-through ${compact ? "text-2xs" : "text-2xs sm:text-xs"}`}>{formatBaht(displayCompareAtPrice)}</span>
-          )}
-        </div>
+        <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+                    <div className="flex items-baseline gap-x-1">
+                      <span className="text-3xl font-bold tabular-nums tracking-tight text-slate-900" style={{ overflowWrap: "anywhere" }}>{priceWhole}</span>
+                      <span className="text-xs font-medium text-slate-600">{priceDecimal}</span>
+                    </div>
+                    <span className="text-sm font-normal text-slate-400">/{product.unit}</span>
+                  </div>
 
         {/* Rating + Sold */}
         {(hasReviews || sold > 0) && (
