@@ -40,8 +40,6 @@ export function ShopHeader() {
   // prominent search area inside the page, so the header never stacks a second
   // search box on top of it, and utility screens carry no search at all.
   const showSearch = location.pathname === "/";
-  // Show the brand name next to the mark only when there is no search box in the header.
-  const showLogoName = location.pathname !== "/" && location.pathname !== "/products";
   const urlQ = onProducts ? (new URLSearchParams(location.search).get("q") ?? "") : "";
   const [query, setQuery] = useState(urlQ);
 
@@ -91,35 +89,36 @@ export function ShopHeader() {
       {/* Mobile brand bar — the reference app shell */}
       <div className="bg-brand md:hidden">
         <div className="mx-auto flex h-14 w-full items-center gap-2 px-3">
-          <Link
-            to="/"
-            aria-label={t("header.ariaHome", { name: "VelShop" })}
-            className="flex size-9 shrink-0 items-center justify-center"
-          >
-            <LogoMark tone="light" className="h-7 w-auto" />
-          </Link>
-
           {showSearch ? (
-            <form role="search" onSubmit={submitSearch} className="flex min-w-0 flex-1">
-              <div className="relative flex min-w-0 flex-1 items-center">
-                <input
-                  type="search"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder={t("header.searchPlaceholder")}
-                  aria-label={t("header.ariaSearch")}
-                  enterKeyHint="search"
-                  className="h-10 w-full min-w-0 appearance-none rounded-full bg-white pl-4 pr-10 text-[13px] text-slate-900 outline-none placeholder:text-slate-400 focus-visible:ring-2 focus-visible:ring-white/70 [&::-webkit-search-cancel-button]:hidden"
-                />
-                <button
-                  type="submit"
-                  aria-label={t("header.ariaSearch")}
-                  className="absolute right-1 flex size-8 cursor-pointer items-center justify-center rounded-full text-slate-500 transition-colors hover:text-brand"
-                >
-                  <Search className="size-[18px]" />
-                </button>
-              </div>
-            </form>
+            <>
+              <Link
+                to="/"
+                aria-label={t("header.ariaHome", { name: "VelShop" })}
+                className="flex size-9 shrink-0 items-center justify-center"
+              >
+                <LogoMark tone="light" className="h-7 w-auto" />
+              </Link>
+              <form role="search" onSubmit={submitSearch} className="flex min-w-0 flex-1">
+                <div className="relative flex min-w-0 flex-1 items-center">
+                  <input
+                    type="search"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder={t("header.searchPlaceholder")}
+                    aria-label={t("header.ariaSearch")}
+                    enterKeyHint="search"
+                    className="h-10 w-full min-w-0 appearance-none rounded-full bg-white pl-4 pr-10 text-[13px] text-slate-900 outline-none placeholder:text-slate-400 focus-visible:ring-2 focus-visible:ring-white/70 [&::-webkit-search-cancel-button]:hidden"
+                  />
+                  <button
+                    type="submit"
+                    aria-label={t("header.ariaSearch")}
+                    className="absolute right-1 flex size-8 cursor-pointer items-center justify-center rounded-full text-slate-500 transition-colors hover:text-brand"
+                  >
+                    <Search className="size-[18px]" />
+                  </button>
+                </div>
+              </form>
+            </>
           ) : (
             <Link
               to="/"
