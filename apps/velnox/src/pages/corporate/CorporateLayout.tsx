@@ -72,7 +72,7 @@ export function CorporateLayout() {
       <header className="sticky top-0 z-40 border-b border-white/15 bg-brand">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
           <Link to="/" onClick={() => setOpen(false)} aria-label="Velnox Group — หน้าแรก">
-            <Logo tone="light" />
+            <Logo tone="light" wordmarkClassName="max-w-[90px] overflow-hidden truncate" />
           </Link>
 
           <nav className="hidden items-center gap-0.5 lg:flex" aria-label="เมนูหลัก">
