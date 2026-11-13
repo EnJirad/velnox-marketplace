@@ -1,6 +1,6 @@
 # Velnox AI Handoff — Current State
 
-**Last verified:** 2026-11-11 · **Branch:** `main` · **HEAD:** `30148cc` — product gallery + rich description
+**Last verified:** 2026-11-11 · **Branch:** `main` · **HEAD:** `8f91c68` — design system v2.2 (squircle)
 
 ## 1. Current Project State
 
