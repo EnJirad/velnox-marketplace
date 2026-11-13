@@ -15,6 +15,14 @@ import {
   validateOAuthState,
 } from "../lib/oauth-state.js";
 import crypto from "crypto";
+import { turnstileStatusFor, verifyTurnstile } from "../lib/turnstile.js";
+import {
+  PREAUTH_COOKIE,
+  clearPreAuthCookieOptions,
+  createPreAuthProof,
+  preAuthCookieOptions,
+  validatePreAuthProof,
+} from "../lib/preauth-proof.js";
 
 /**
  * Google OAuth authentication routes.
@@ -275,7 +283,55 @@ function setSessionCookie(res: Response, token: string): void {
  * Register Google OAuth routes on the Express app.
  */
 
+/**
+ * The single Cloudflare action name every credential flow uses.
+ *
+ * One widget serves the whole auth page, so there is exactly one action to
+ * verify. It still proves the challenge was solved for THIS application rather
+ * than another Turnstile site, and tokens remain single-use server-side, so a
+ * token cannot be replayed from one endpoint to another.
+ */
+export const TURNSTILE_ACTION = "auth";
+
 export function setupGoogleAuth(app: Express): void {
+  /**
+   * The ONE Turnstile gate every credential entry point goes through.
+   *
+   * Before this existed the siteverify call was copy-pasted into two routes,
+   * `member-login` had no verification at all, and the old code skipped
+   * verification whenever `TURNSTILE_SECRET_KEY` was unset — a production
+   * deploy missing one env var silently accepted every login.
+   *
+   * Returns true when the caller may continue. On failure it has ALREADY
+   * answered the request; the caller must simply `return`.
+   *
+   * `action` names the form the challenge was solved for, so a token minted on
+   * the login form cannot be replayed against registration.
+   */
+  async function enforceTurnstile(
+    req: Request,
+    res: Response,
+    flow: string,
+  ): Promise<boolean> {
+    const token = typeof req.body?.turnstileToken === "string" ? req.body.turnstileToken : "";
+    const verdict = await verifyTurnstile({ token, action: TURNSTILE_ACTION, remoteIp: req.ip });
+
+    if (verdict.ok) return true;
+
+    const code = verdict.code ?? "TURNSTILE_INVALID";
+    console.warn(`[auth] turnstile rejected (${flow}): ${code} — ${verdict.reason ?? "no reason"}`);
+    res.status(turnstileStatusFor(code)).json({
+      success: false,
+      error: {
+        code,
+        // The browser maps this code to localized copy; the message is the
+        // fallback for non-browser callers.
+        message: "Bot verification failed. Please complete the challenge and try again.",
+      },
+    });
+    return false;
+  }
+
   /**
    * POST /api/auth/member-login — Password-based login for VelCenter staff.
    *
@@ -292,6 +348,11 @@ export function setupGoogleAuth(app: Express): void {
         res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Member ID/Email and password are required" } });
         return;
       }
+
+      // This route had NO bot verification at all. Staff credentials are the
+      // highest-value target on the platform, so it now goes through the same
+      // fail-closed gate as the customer routes.
+      if (!(await enforceTurnstile(req, res, "member_login"))) return;
 
       // Find user by email, or by employee_id via employees table
       let userRow: any = null;
@@ -373,37 +434,13 @@ export function setupGoogleAuth(app: Express): void {
     try {
       const email = typeof req.body?.email === "string" ? normalizeEmail(req.body.email) : "";
       const password = typeof req.body?.password === "string" ? req.body.password : "";
-      const turnstileToken = typeof req.body?.turnstileToken === "string" ? req.body.turnstileToken : "";
-
       if (!email || !password) {
         res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Email and password are required" } });
         return;
       }
 
-      // Verify Turnstile token (skip in bypass mode when no secret configured)
-      const turnstileSecret = process.env.TURNSTILE_SECRET_KEY;
-      if (turnstileSecret && turnstileToken) {
-        const verifyRes = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: new URLSearchParams({
-            secret: turnstileSecret,
-            response: turnstileToken,
-            remoteip: req.ip || "",
-          }),
-        });
-        const verifyData = (await verifyRes.json()) as { success?: boolean; "error-codes"?: string[] };
-        if (!verifyData.success) {
-          console.warn("[auth] Turnstile verification failed:", verifyData["error-codes"]);
-          res.status(400).json({ success: false, error: { code: "TURNSTILE_FAILED", message: "Bot verification failed. Please try again." } });
-          return;
-        }
-      } else if (turnstileSecret && !turnstileToken) {
-        // Secret configured but no token provided
-        res.status(400).json({ success: false, error: { code: "TURNSTILE_REQUIRED", message: "Bot verification required" } });
-        return;
-      }
-      // If no secret, skip verification (dev mode)
+      // Bot gate — fail-closed, shared with every other credential route.
+      if (!(await enforceTurnstile(req, res, "password_login"))) return;
 
       // Find user by email
       const userResult = await query(
@@ -465,8 +502,6 @@ export function setupGoogleAuth(app: Express): void {
       const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
       const email = typeof req.body?.email === "string" ? normalizeEmail(req.body.email) : "";
       const password = typeof req.body?.password === "string" ? req.body.password : "";
-      const turnstileToken = typeof req.body?.turnstileToken === "string" ? req.body.turnstileToken : "";
-
       if (!name || !email || !password) {
         res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Name, email and password are required" } });
         return;
@@ -476,28 +511,8 @@ export function setupGoogleAuth(app: Express): void {
         return;
       }
 
-      // Verify Turnstile token
-      const turnstileSecret = process.env.TURNSTILE_SECRET_KEY;
-      if (turnstileSecret && turnstileToken) {
-        const verifyRes = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: new URLSearchParams({
-            secret: turnstileSecret,
-            response: turnstileToken,
-            remoteip: req.ip || "",
-          }),
-        });
-        const verifyData = (await verifyRes.json()) as { success?: boolean; "error-codes"?: string[] };
-        if (!verifyData.success) {
-          console.warn("[auth] Turnstile verification failed:", verifyData["error-codes"]);
-          res.status(400).json({ success: false, error: { code: "TURNSTILE_FAILED", message: "Bot verification failed. Please try again." } });
-          return;
-        }
-      } else if (turnstileSecret && !turnstileToken) {
-        res.status(400).json({ success: false, error: { code: "TURNSTILE_REQUIRED", message: "Bot verification required" } });
-        return;
-      }
+      // Bot gate — fail-closed, shared with every other credential route.
+      if (!(await enforceTurnstile(req, res, "password_register"))) return;
 
       // Check if email already exists
       const existing = await query("SELECT id FROM users WHERE email = $1", [email]);
@@ -614,7 +629,87 @@ export function setupGoogleAuth(app: Express): void {
 
 
   // Step 1: Frontend calls this to start Google OAuth flow
+  /**
+   * POST /api/auth/preauth — the gate in front of the Google redirect.
+   *
+   * `GET /auth/google` is a top-level navigation with no request body, so it
+   * cannot carry a Turnstile token. Without this endpoint the route could be
+   * driven directly by anyone, skipping bot verification entirely.
+   *
+   * The browser solves the widget here, this route verifies the token with the
+   * same fail-closed utility as the password routes, and only on success mints
+   * a short-lived ONE-TIME proof in an httpOnly cookie. `GET /auth/google`
+   * refuses to start the OAuth flow without that proof and consumes it on use.
+   */
+  app.post("/api/auth/preauth", async (req: Request, res: Response) => {
+    try {
+      const token = typeof req.body?.turnstileToken === "string" ? req.body.turnstileToken : "";
+      const verdict = await verifyTurnstile({ token, action: TURNSTILE_ACTION, remoteIp: req.ip });
+      if (!verdict.ok) {
+        const code = verdict.code ?? "TURNSTILE_INVALID";
+        console.warn(`[auth] preauth rejected: ${code} — ${verdict.reason ?? "no reason"}`);
+        res.status(turnstileStatusFor(code)).json({
+          success: false,
+          error: {
+            code,
+            message: "Bot verification failed. Please complete the challenge and try again.",
+          },
+        });
+        return;
+      }
+
+      let proof: ReturnType<typeof createPreAuthProof>;
+      try {
+        proof = createPreAuthProof();
+      } catch {
+        // No signing key — fail closed rather than issue an unverifiable proof.
+        console.error("[auth] pre-auth proof signing is not configured");
+        res.status(503).json({
+          success: false,
+          error: { code: "PREAUTH_NOT_CONFIGURED", message: "Sign-in is temporarily unavailable" },
+        });
+        return;
+      }
+
+      res.cookie(
+        PREAUTH_COOKIE,
+        proof.cookieValue,
+        preAuthCookieOptions(proof.maxAgeMs, process.env.NODE_ENV === "production"),
+      );
+      res.json({ success: true, data: { ok: true } });
+    } catch (error) {
+      console.error("[auth] preauth error:", error);
+      res.status(500).json({
+        success: false,
+        error: { code: "PREAUTH_FAILED", message: "Could not start sign-in" },
+      });
+    }
+  });
+
   app.get("/auth/google", (req: Request, res: Response) => {
+    /**
+     * ── PRE-AUTH PROOF GATE ────────────────────────────────────────────────
+     * Read, validate and CONSUME the one-time proof before anything else.
+     * The cookie is cleared unconditionally, so a captured value is worthless
+     * after a single attempt — the same one-flow-one-use rule the OAuth state
+     * cookie already follows.
+     *
+     * This runs BEFORE createOAuthState(): the existing state machinery
+     * (256-bit nonce, signed cookie, timing-safe compare, single use,
+     * returnTo sanitisation) is untouched and still does its job afterwards.
+     */
+    const isProduction = process.env.NODE_ENV === "production";
+    const proofCookie = req.cookies?.[PREAUTH_COOKIE];
+    res.clearCookie(PREAUTH_COOKIE, clearPreAuthCookieOptions(isProduction));
+
+    const proof = validatePreAuthProof(proofCookie);
+    if (!proof.ok) {
+      console.warn(`[auth] /auth/google refused without pre-auth proof: ${proof.reason}`);
+      const frontendUrl = getFrontendUrl(req, sanitizeReturnTo(req.query.returnTo));
+      res.redirect(`${frontendUrl}/auth?error=preauth_required`);
+      return;
+    }
+
     // Validate required env vars
     if (!googleClientId() || !googleRedirectUri()) {
       console.error("[auth] GOOGLE_CLIENT_ID or GOOGLE_REDIRECT_URI not configured");

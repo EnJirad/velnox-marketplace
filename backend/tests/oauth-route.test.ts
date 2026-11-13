@@ -21,6 +21,7 @@ import cookieParser from "cookie-parser";
 import type { Server } from "http";
 import type { AddressInfo } from "net";
 import { OAUTH_STATE_COOKIE, OAUTH_STATE_TTL_MS, createOAuthState } from "../lib/oauth-state.js";
+import { PREAUTH_COOKIE, createPreAuthProof } from "../lib/preauth-proof.js";
 
 // The route module reads these at import time — set them before the dynamic
 // import below. No real credential: the token endpoint is always stubbed.
@@ -58,6 +59,16 @@ afterAll(async () => {
   server.closeAllConnections?.();
   await new Promise<void>((resolve) => server.close(() => resolve()));
 });
+
+/**
+ * `/auth/google` is now gated by a one-time pre-authentication proof (the
+ * Turnstile challenge is exchanged for it at POST /api/auth/preauth). These
+ * tests are about the OAuth state machinery that runs AFTER that gate, so they
+ * present a valid proof and stay focused on what they were written to prove.
+ */
+function proofCookie(): string {
+  return `${PREAUTH_COOKIE}=${createPreAuthProof().cookieValue}`;
+}
 
 async function get(path: string, cookie?: string): Promise<Response> {
   return httpFetch(`${base}${path}`, {
@@ -104,7 +115,7 @@ interface FlowStart {
 }
 
 async function startFlow(returnTo: string): Promise<FlowStart> {
-  const res = await get(`/auth/google?returnTo=${encodeURIComponent(returnTo)}`);
+  const res = await get(`/auth/google?returnTo=${encodeURIComponent(returnTo)}`, proofCookie());
   expect(res.status).toBe(302);
   const location = new URL(res.headers.get("location") ?? "");
   expect(location.origin).toBe("https://accounts.google.com");
@@ -142,9 +153,27 @@ function stubGoogleTokenExchange(): { restore: () => void; calls: () => number }
   };
 }
 
+describe("oauth start — pre-auth proof gate", () => {
+  test("a start without the proof is refused and never reaches Google", async () => {
+    const res = await get("/auth/google?returnTo=%2Fcart");
+    expect(res.status).toBe(302);
+    const location = res.headers.get("location") ?? "";
+    expect(location).not.toContain("accounts.google.com");
+    expect(location).toContain("preauth_required");
+    // No state cookie is minted for a refused start.
+    expect(stateCookie(res)).toBeUndefined();
+  });
+
+  test("a forged proof is refused", async () => {
+    const forged = `${PREAUTH_COOKIE}=${Buffer.from(JSON.stringify({ n: "x", e: Date.now() + 60000 })).toString("base64url")}.deadbeef`;
+    const res = await get("/auth/google?returnTo=%2Fcart", forged);
+    expect(res.headers.get("location") ?? "").toContain("preauth_required");
+  });
+});
+
 describe("oauth start", () => {
   test("mints an opaque state and a browser-bound httpOnly cookie", async () => {
-    const res = await get("/auth/google?returnTo=%2Fcart");
+    const res = await get("/auth/google?returnTo=%2Fcart", proofCookie());
     expect(res.status).toBe(302);
 
     const location = new URL(res.headers.get("location") ?? "");

@@ -12,7 +12,12 @@ import { Separator } from "@velnox/shared/components/ui/separator";
 
 import { Logo } from "@velnox/shared/components/Logo";
 import { SITE_URLS, apiBaseUrl, apiUrl } from "@velnox/shared/lib/sites";
-import { useLanguage } from "@velnox/shared/lib/i18n";
+import {
+  SUPPORTED_LANGUAGES,
+  languageLabel,
+  useLanguage,
+  type Language,
+} from "@velnox/shared/lib/i18n";
 import { useAuth } from "@velnox/shared/hooks/use-auth";
 import {
   GOOGLE_AUTH_START_KEY,
@@ -20,7 +25,19 @@ import {
   recentGoogleAuthStart,
   type GoogleAuthErrorKind,
 } from "@velnox/shared/lib/auth-flow";
-import { ArrowLeft, Loader2, Mail, Lock, Eye, EyeOff, User, AlertCircle } from "lucide-react";
+import {
+  AlertCircle,
+  AlertTriangle,
+  ArrowLeft,
+  Check,
+  Eye,
+  EyeOff,
+  Globe,
+  Loader2,
+  Lock,
+  Mail,
+  User,
+} from "lucide-react";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { useTurnstile } from "@velnox/shared/hooks/use-turnstile";
@@ -98,7 +115,7 @@ const ERROR_MESSAGE_KEYS: Record<GoogleAuthErrorKind, string> = {
 };
 
 function Auth() {
-  const { t } = useLanguage();
+  const { t, lang, setLang } = useLanguage();
   const { isLoading: authLoading, isAuthenticated, user, signIn } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -128,8 +145,23 @@ function Auth() {
   const [memberLoading, setMemberLoading] = useState(false);
   const [memberError, setMemberError] = useState<string | null>(null);
 
-  // Turnstile
-  const { token: turnstileToken, containerRef: turnstileRef, reset: resetTurnstile } = useTurnstile();
+  /**
+   * Cloudflare Turnstile — the bot gate in front of every credential submit.
+   *
+   * One widget serves every form on this page, with the single action name
+   * `auth`. Cloudflare echoes it back and the backend verifies it, so a token
+   * minted anywhere else is rejected. Cross-form reuse is already impossible
+   * because the backend treats each token as single-use.
+   *
+   * `turnstile.ready` is the ONLY thing that may enable a submit button.
+   * There is no bypass value: when the site key is missing the state is
+   * `unavailable` and every button stays genuinely disabled.
+   */
+  const turnstile = useTurnstile({ action: "auth" });
+  const turnstileRef = turnstile.containerRef;
+  const turnstileReady = turnstile.ready;
+  const [langOpen, setLangOpen] = useState(false);
+  const langMenuRef = useRef<HTMLDivElement>(null);
 
   // ---- Redirect after auth session is created -------------
   useEffect(() => {
@@ -147,6 +179,34 @@ function Auth() {
       navigate(target);
     }
   }, [authLoading, isAuthenticated, navigate, returnTo, user?.role]);
+
+  // A blocked Google start comes back as `?error=preauth_required` — the
+  // challenge was not solved (or the proof expired), so say so plainly instead
+  // of leaving the customer on a silent page.
+  useEffect(() => {
+    if (searchParams.get("error") === "preauth_required") {
+      setError(t("auth.turnstile.required"));
+    }
+  }, [searchParams, t]);
+
+  // Close the language menu on an outside click or Escape.
+  useEffect(() => {
+    if (!langOpen) return;
+    const onPointerDown = (event: MouseEvent | TouchEvent) => {
+      if (!langMenuRef.current?.contains(event.target as Node)) setLangOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setLangOpen(false);
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("touchstart", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("touchstart", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [langOpen]);
 
   // ---- Cancellation detection -------------------------------------------
   // A Google flow started from this tab navigates AWAY to accounts.google.com
@@ -186,10 +246,36 @@ function Auth() {
    */
   const handleGoogleSignIn = async () => {
     if (signingInRef.current) return;
+    if (!turnstileReady || !turnstile.token) {
+      setError(t("auth.turnstile.required"));
+      return;
+    }
     signingInRef.current = true;
     setSigningIn(true);
     setError(null);
     try {
+      // ── PRE-AUTH PROOF ────────────────────────────────────────────────
+      // GET /auth/google is a full-page navigation and cannot carry a body,
+      // so the challenge is exchanged for a short-lived one-time proof cookie
+      // first. The backend refuses to start OAuth without it, which is what
+      // stops anyone from driving the redirect directly.
+      const proofRes = await fetch(`${apiBaseUrl}/auth/preauth`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ turnstileToken: turnstile.token }),
+      });
+      if (!proofRes.ok) {
+        const payload = await proofRes.json().catch(() => null);
+        const code = payload?.error?.code as string | undefined;
+        turnstile.consume();
+        throw new Error(
+          code === "TURNSTILE_UNAVAILABLE" || code === "TURNSTILE_TIMEOUT"
+            ? t("auth.turnstile.networkError")
+            : t("auth.turnstile.required"),
+        );
+      }
+
       sessionStorage.setItem(GOOGLE_AUTH_START_KEY, String(Date.now()));
       const apiBase = apiUrl;
       const backendReturnTo = returnTo || "/";
@@ -198,7 +284,13 @@ function Auth() {
       const kind = classifyGoogleError(error);
       console.error(`[auth] Google sign-in failed (${kind})`);
       sessionStorage.removeItem(GOOGLE_AUTH_START_KEY);
-      setError(t(ERROR_MESSAGE_KEYS[kind]));
+      // A custom message (turnstile failure) is more useful than the generic
+      // Google copy, so prefer it when present.
+      setError(
+        error instanceof Error && error.message && !/^Network|Failed to fetch/i.test(error.message)
+          ? error.message
+          : t(ERROR_MESSAGE_KEYS[kind]),
+      );
     } finally {
       signingInRef.current = false;
       setSigningIn(false);
@@ -207,17 +299,21 @@ function Auth() {
 
   const handleEmailPasswordLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (submitting || !turnstileToken) {
-      if (!turnstileToken) setError(t("auth.turnstile.error"));
+    // Double-submit guard (a second Enter press while in flight).
+    if (submitting || signingIn || memberLoading) return;
+    // Real gate: no token, no request. There is no placeholder token any more.
+    if (!turnstileReady || !turnstile.token) {
+      setError(t("auth.turnstile.required"));
       return;
     }
     setSubmitting(true);
     setError(null);
     try {
-      const body: Record<string, string> = { email: email.trim().toLowerCase(), password };
-      if (turnstileToken !== "bypass") {
-        body.turnstileToken = turnstileToken;
-      }
+      const body: Record<string, string> = {
+        email: email.trim().toLowerCase(),
+        password,
+        turnstileToken: turnstile.token,
+      };
       const res = await fetch(`${apiBaseUrl}/auth/password-login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -232,7 +328,9 @@ function Auth() {
       window.location.reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : t("auth.loginError"));
-      resetTurnstile();
+      // The token is single-use and already spent — a fresh challenge must be
+      // solved before the next attempt.
+      turnstile.consume();
     } finally {
       setSubmitting(false);
     }
@@ -240,8 +338,9 @@ function Auth() {
 
   const handleEmailPasswordRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (submitting || !turnstileToken) {
-      if (!turnstileToken) setError(t("auth.turnstile.error"));
+    if (submitting || signingIn || memberLoading) return;
+    if (!turnstileReady || !turnstile.token) {
+      setError(t("auth.turnstile.required"));
       return;
     }
     if (password.length < 8) {
@@ -251,10 +350,12 @@ function Auth() {
     setSubmitting(true);
     setError(null);
     try {
-      const body: Record<string, string> = { name: name.trim(), email: email.trim().toLowerCase(), password };
-      if (turnstileToken !== "bypass") {
-        body.turnstileToken = turnstileToken;
-      }
+      const body: Record<string, string> = {
+        name: name.trim(),
+        email: email.trim().toLowerCase(),
+        password,
+        turnstileToken: turnstile.token,
+      };
       const res = await fetch(`${apiBaseUrl}/auth/password-register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -269,7 +370,7 @@ function Auth() {
       window.location.reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : t("auth.registerError"));
-      resetTurnstile();
+      turnstile.consume();
     } finally {
       setSubmitting(false);
     }
@@ -277,7 +378,12 @@ function Auth() {
 
   const handleMemberLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (memberLoading) return;
+    if (memberLoading || submitting || signingIn) return;
+    // Staff sign-in had NO bot gate at all before this change.
+    if (!turnstileReady || !turnstile.token) {
+      setMemberError(t("auth.turnstile.required"));
+      return;
+    }
     setMemberLoading(true);
     setMemberError(null);
     try {
@@ -285,7 +391,11 @@ function Auth() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ identifier: memberIdentifier.trim(), password: memberPassword }),
+        body: JSON.stringify({
+          identifier: memberIdentifier.trim(),
+          password: memberPassword,
+          turnstileToken: turnstile.token,
+        }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) {
@@ -295,6 +405,7 @@ function Auth() {
       window.location.reload();
     } catch (err) {
       setMemberError(err instanceof Error ? err.message : t("auth.memberLoginError"));
+      turnstile.consume();
     } finally {
       setMemberLoading(false);
     }
@@ -332,6 +443,56 @@ function Auth() {
               <ArrowLeft className="size-4" />
               {t("auth.back")}
             </button>
+            {/* Language selector — top-right, mirroring the Back button.
+                Switching re-renders copy instantly (context update, no reload),
+                is persisted by the shared i18n provider, and never touches
+                authentication state, the form fields, the URL or returnTo. */}
+            <div ref={langMenuRef} className="absolute right-3 top-3">
+              <button
+                type="button"
+                onClick={() => setLangOpen((open) => !open)}
+                aria-haspopup="listbox"
+                aria-expanded={langOpen}
+                aria-label={t("auth.languageSelector")}
+                className="flex items-center gap-1.5 rounded-squircle-sm border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50"
+              >
+                <Globe className="size-3.5" aria-hidden />
+                <span>{languageLabel(lang)}</span>
+              </button>
+              {langOpen && (
+                <ul
+                  role="listbox"
+                  aria-label={t("auth.languageSelector")}
+                  className="absolute right-0 z-20 mt-1 w-44 overflow-hidden rounded-squircle border border-slate-200 bg-white py-1 shadow-float"
+                >
+                  {SUPPORTED_LANGUAGES.map((option) => {
+                    const selected = option.code === lang;
+                    return (
+                      <li key={option.code}>
+                        <button
+                          type="button"
+                          role="option"
+                          aria-selected={selected}
+                          onClick={() => {
+                            setLang(option.code as Language);
+                            setLangOpen(false);
+                          }}
+                          className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm transition-colors ${
+                            selected
+                              ? "bg-brand/10 font-semibold text-brand-strong"
+                              : "text-slate-600 hover:bg-slate-50"
+                          }`}
+                        >
+                          <span>{option.label}</span>
+                          {selected && <Check className="size-3.5 shrink-0" aria-hidden />}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+
             <button
               type="button"
               onClick={() => navigate("/")}
@@ -428,7 +589,7 @@ function Auth() {
                       className="h-12 w-full rounded-md border border-slate-200 bg-white pl-10 pr-3 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand/40"
                       autoComplete="name"
                       required
-                      disabled={busy}
+                      disabled={busy || !turnstileReady}
                     />
                   </div>
                 </div>
@@ -492,15 +653,60 @@ function Auth() {
                 </div>
               </div>
 
-              {/* Turnstile Widget — Cloudflare bot protection (visible checkbox) */}
-              <div
-                ref={turnstileRef}
-                className="w-full flex flex-col items-center gap-2 py-3"
-                data-testid="turnstile-widget"
-              >
-                <p className="text-xs text-slate-500 leading-none">
-                  ยืนยันว่าไม่ใช่บอท — แตะช่องด้านล่างเพื่อดำเนินการต่อ
+              {/* ── Cloudflare Turnstile — the gate every submit depends on ──
+                  The container reserves its height, so the widget appearing
+                  never shifts the form. The status row below also keeps a
+                  fixed line height for the same reason. */}
+              <div className="w-full py-2">
+                <p className="mb-2 text-center text-xs text-slate-500">
+                  {t("auth.turnstile.instructions")}
                 </p>
+                <div
+                  ref={turnstileRef}
+                  className="flex min-h-[70px] w-full items-center justify-center"
+                  data-testid="turnstile-widget"
+                  data-state={turnstile.state}
+                />
+                <div
+                  className="mt-1 flex min-h-[18px] items-center justify-center gap-1.5 text-2xs"
+                  role="status"
+                  aria-live="polite"
+                >
+                  {turnstile.state === "verified" && (
+                    <>
+                      <Check className="size-3.5 shrink-0 text-brand" aria-hidden />
+                      <span className="font-medium text-brand-strong">{t("auth.turnstile.verified")}</span>
+                    </>
+                  )}
+                  {(turnstile.state === "verifying" || turnstile.state === "loading") && (
+                    <>
+                      <Loader2 className="size-3.5 shrink-0 animate-spin text-slate-400" aria-hidden />
+                      <span className="text-slate-500">
+                        {turnstile.state === "loading"
+                          ? t("auth.turnstile.loading")
+                          : t("auth.turnstile.verifying")}
+                      </span>
+                    </>
+                  )}
+                  {turnstile.state === "expired" && (
+                    <>
+                      <AlertCircle className="size-3.5 shrink-0 text-amber-500" aria-hidden />
+                      <span className="font-medium text-amber-600">{t("auth.turnstile.expired")}</span>
+                    </>
+                  )}
+                  {turnstile.state === "error" && (
+                    <>
+                      <AlertCircle className="size-3.5 shrink-0 text-red-500" aria-hidden />
+                      <span className="font-medium text-red-600">{t("auth.turnstile.error")}</span>
+                    </>
+                  )}
+                  {turnstile.state === "unavailable" && (
+                    <>
+                      <AlertTriangle className="size-3.5 shrink-0 text-red-500" aria-hidden />
+                      <span className="font-medium text-red-600">{t("auth.turnstile.unavailable")}</span>
+                    </>
+                  )}
+                </div>
               </div>
 
               {error && (
@@ -514,7 +720,7 @@ function Auth() {
               <Button
                 type="submit"
                 className="h-12 w-full rounded-md bg-brand text-white text-[15px] font-medium hover:bg-brand-strong disabled:opacity-50"
-                disabled={busy || !turnstileToken}
+                disabled={busy || !turnstileReady}
               >
                 {submitting ? (
                   <>
@@ -561,7 +767,7 @@ function Auth() {
                     <Button
                       type="submit"
                       className="h-10 w-full rounded-md bg-brand text-white hover:bg-brand-strong"
-                      disabled={memberLoading || !memberIdentifier.trim() || !memberPassword}
+                      disabled={memberLoading || !memberIdentifier.trim() || !memberPassword || !turnstileReady}
                     >
                       {memberLoading ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
                       {t("auth.memberSubmit")}
@@ -625,7 +831,8 @@ function Auth() {
 
           <div className="rounded-b-lg border-t bg-muted px-6 py-3 text-center text-xs text-slate-500">
             <p className="flex items-center justify-center gap-1">
-              ป้องกันด้วย Cloudflare กันบอท
+              <Globe className="size-3 shrink-0" aria-hidden />
+              {t("auth.turnstile.footer")}
             </p>
           </div>
         </Card>

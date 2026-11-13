@@ -166,13 +166,11 @@ const myAuthPatch = {
   terms: "ဝင်ရောက်ခြင်းဖြင့် ဝန်ဆောင်မှုစည်းမျဉ်းနှင့် ကိုယ်ရေးအချက်အလက်မူဝါဒကို သဘောတူပါသည်",
   termsLink: "ဝန်ဆောင်မှုစည်းမျဉ်း",
   privacyLink: "ကိုယ်ရေးအချက်အလက်မူဝါဒ",
-  login: {
-    submit: "Sign in",
-  } as Partial<Dict["auth"]["login"]>,
-  register: {
-    submit: "Create account",
-    desc: "Create a new account to start buying and selling on Velnox",
-  } as Partial<Dict["auth"]["register"]>,
+  // `login` / `register` are intentionally EMPTY here: their Burmese copy lives
+  // in my.ts and is merged in by the auth composer. Do not re-add English
+  // placeholders — a shallow override is what hid the real strings.
+  login: {} as Partial<Dict["auth"]["login"]>,
+  register: {} as Partial<Dict["auth"]["register"]>,
 };
 
 /**
@@ -1850,7 +1848,15 @@ export const translations: Record<Language, Dict> = {
     orderDetail: { ...myBase.orderDetail, ...myOrderPatch.orderDetail },
     cartPage: { ...myBase.cartPage, ...myShopPatch.cartPage },
     cookies: myShopPatch.cookies,
-    auth: { ...myBase.auth, ...myAuthPatch },
+    auth: {
+      ...myBase.auth,
+      ...myAuthPatch,
+      // Nested groups MUST be merged, not replaced: a partial patch object
+      // would otherwise wipe every key it does not mention.
+      login: { ...myBase.auth.login, ...(myAuthPatch.login ?? {}) },
+      register: { ...myBase.auth.register, ...(myAuthPatch.register ?? {}) },
+      turnstile: { ...myBase.auth.turnstile, ...((myAuthPatch as any).turnstile ?? {}) },
+    },
     verification: { ...myBase.verification, ...myVerificationCopy },
     categories: { ...myBase.categories, ...myCategoriesCopy },
     categoryPicker: myCategoryPicker,

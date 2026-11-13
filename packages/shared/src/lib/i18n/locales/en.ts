@@ -1627,8 +1627,18 @@ export const en: Dict = {
     cancel: "Cancel",
     securedBy: "Secured by",
     turnstile: {
-      error: "Please complete the Turnstile challenge",
+      instructions: "Confirm you are not a bot to continue",
+      loading: "Loading verification…",
+      verifying: "Waiting for verification…",
+      verified: "Verified — you can continue",
+      expired: "Verification expired — please verify again",
+      error: "Verification failed. Please try again.",
+      required: "Please complete the bot verification first",
+      unavailable: "Verification is unavailable right now. Please reload the page.",
+      networkError: "Could not reach the verification service. Check your connection and try again.",
+      footer: "Protected by Cloudflare bot verification",
     },
+    languageSelector: "Change language",
   },
 
   mapPicker: {
