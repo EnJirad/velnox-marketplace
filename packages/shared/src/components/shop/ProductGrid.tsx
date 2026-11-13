@@ -27,8 +27,10 @@ interface ProductGridProps {
   maxPrice?: string;
   /** In stock only */
   inStock?: boolean;
-  /** Verified sellers only */
-  verifiedOnly?: boolean;
+  /** Minimum star rating (e.g. 4 for "4★ & up") */
+  minRating?: string;
+  /** Only products with a real discount (compare_at_price > price) */
+  onSale?: boolean;
   /** Section title (for SectionHeader) */
   title: string;
   /** Section description */
@@ -71,7 +73,8 @@ export function ProductGrid({
   minPrice = "",
   maxPrice = "",
   inStock = false,
-  verifiedOnly = false,
+  minRating = "",
+  onSale = false,
   title,
   description,
   viewAllHref,
@@ -110,9 +113,10 @@ export function ProductGrid({
     if (minPrice) params.min = minPrice;
     if (maxPrice) params.max = maxPrice;
     if (inStock) params.inStock = "1";
-    if (verifiedOnly) params.verified = "true";
+    if (minRating) params.minRating = minRating;
+    if (onSale) params.onSale = "true";
     return params;
-  }, [category, query, sortBy, shopId, minPrice, maxPrice, inStock, verifiedOnly, pageSize]);
+  }, [category, query, sortBy, shopId, minPrice, maxPrice, inStock, minRating, onSale, pageSize]);
 
   const load = useCallback(async (reset = false) => {
     if (reset) {

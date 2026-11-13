@@ -2171,80 +2171,176 @@ export function setupProductRoutes(app: Express): void {
   // ── GET /api/products/catalog ───────────────────────────────────────────
   app.get("/api/products/catalog", async (req: Request, res: Response) => {
     try {
-      const { q, category, shopId, minPrice, maxPrice, inStock, sortBy, limit: limitStr, offset: offsetStr } = req.query;
+      const { q, category, shopId, minPrice, maxPrice, inStock, minRating, onSale, sortBy, limit: limitStr, offset: offsetStr } = req.query;
       const limit = Math.min(Number(limitStr) || 50, 200);
       const offset = Number(offsetStr) || 0;
 
       // A product is only half the rule: a suspended shop must not keep selling,
       // otherwise suspending a merchant leaves their listings live and buyable.
       // (See .ai/tasks/active/launch-readiness-plan.md, step 4.)
-      let where = "WHERE p.status = 'published' AND sh.status = 'active'";
-      const params: any[] = [];
-      let idx = 1;
+      const BASE_WHERE = "WHERE p.status = 'published' AND sh.status = 'active'";
 
-      if (q && typeof q === "string") {
-        where += ` AND (p.name ILIKE $${idx} OR p.description ILIKE $${idx})`;
-        params.push(`%${q}%`);
-        idx++;
-      }
-      if (category && typeof category === "string") {
+      /**
+       * Search tokens the way a customer types them.
+       *
+       * "iphone case black" is THREE requirements, not one long substring: no
+       * product name contains that whole phrase, yet plenty of listings match
+       * all three words across name / description / brand / shop / category.
+       * The old single %q% predicate therefore returned nothing for the most
+       * natural queries. Tokens are capped so a wall of text cannot become a
+       * hundred AND-ed predicates.
+       */
+      const tokens =
+        typeof q === "string"
+          ? q.trim().toLowerCase().split(/\s+/).filter(Boolean).slice(0, 6)
+          : [];
+
+      // Resolve the category slug once (the category tree sends a UUID); both
+      // search passes reuse the value.
+      let categorySlug: string | null = null;
+      if (category && typeof category === "string" && category.trim()) {
         const raw = category.trim();
-        if (raw) {
-          // `products.category_id` stores the canonical slug. A UUID input
-          // (category tree) is normalised to its slug; legacy values that are no
-          // longer categories still match directly.
-          const catSlug = CATEGORY_UUID_RE.test(raw)
-            ? (await query("SELECT slug FROM categories WHERE id = $1", [raw])).rows[0]?.slug ?? raw
-            : raw;
+        // products.category_id stores the canonical slug. A UUID input (the
+        // category tree) is normalised to its slug; legacy values that are no
+        // longer categories still match directly.
+        categorySlug = CATEGORY_UUID_RE.test(raw)
+          ? (await query("SELECT slug FROM categories WHERE id = $1", [raw])).rows[0]?.slug ?? raw
+          : raw;
+      }
+
+      /**
+       * Build the WHERE clause for one search pass.
+       *
+       * AND is the precise pass: every token must appear somewhere. OR is the
+       * recall pass, used only when the precise pass found nothing — an empty
+       * page is worse than a looser result the customer can narrow.
+       */
+      const buildFilters = (searchJoin: "AND" | "OR") => {
+        const params: any[] = [];
+        let idx = 1;
+        let where = BASE_WHERE;
+        let relevance = "0";
+
+        if (tokens.length > 0) {
+          const parts = tokens.map((token) => {
+            const ph = `$${idx++}`;
+            params.push(`%${token}%`);
+            // Name and category are what the customer typed about; brand and
+            // description catch the rest. Every field is NULL-safe: a product
+            // with no supplier or description must still match on its name.
+            return `(p.name ILIKE ${ph}
+                     OR COALESCE(p.short_description, '') ILIKE ${ph}
+                     OR COALESCE(p.description, '') ILIKE ${ph}
+                     OR COALESCE(p.supplier, '') ILIKE ${ph}
+                     OR sh.name ILIKE ${ph}
+                     OR COALESCE(c.name, '') ILIKE ${ph})`;
+          });
+          where += ` AND (${parts.join(` ${searchJoin} `)})`;
+
+          // Relevance — the customer's own phrase, ranked:
+          // exact name > name prefix > name contains > shop name > brand > rest.
+          const full = String(q).trim().toLowerCase();
+          const exactPh = `$${idx++}`;
+          params.push(full);
+          const prefixPh = `$${idx++}`;
+          params.push(`${full}%`);
+          const containsPh = `$${idx++}`;
+          params.push(`%${full}%`);
+          relevance = `CASE
+              WHEN lower(p.name) = ${exactPh} THEN 100
+              WHEN lower(p.name) LIKE ${prefixPh} THEN 60
+              WHEN lower(p.name) LIKE ${containsPh} THEN 40
+              WHEN lower(sh.name) LIKE ${containsPh} THEN 25
+              WHEN COALESCE(p.supplier, '') <> '' AND lower(p.supplier) LIKE ${containsPh} THEN 15
+              ELSE 1 END`;
+        }
+
+        if (categorySlug) {
           where += ` AND p.category_id = $${idx}`;
-          params.push(catSlug);
+          params.push(categorySlug);
           idx++;
         }
-      }
-      if (shopId && typeof shopId === "string") {
-        where += ` AND p.shop_id = $${idx}`;
-        params.push(shopId);
-        idx++;
-      }
-      if (minPrice) {
-        where += ` AND p.price >= $${idx}`;
-        params.push(Number(minPrice));
-        idx++;
-      }
-      if (maxPrice) {
-        where += ` AND p.price <= $${idx}`;
-        params.push(Number(maxPrice));
-        idx++;
-      }
-      if (inStock === "true") {
-        // Check inventory OR active variants with stock > 0
-        where += ` AND (
-          EXISTS (SELECT 1 FROM inventory inv WHERE inv.product_id = p.id AND inv.quantity > inv.reserved)
-          OR EXISTS (SELECT 1 FROM product_variants pv WHERE pv.product_id = p.id AND pv.status = 'active' AND pv.stock > 0)
-        )`;
-      }
-      // VelShop Verified filter: BOTH seller AND product must be verified
-      if (req.query.verified === "true") {
-        where += ` AND EXISTS (SELECT 1 FROM sellers s WHERE s.id = sh.seller_id AND s.verification_status = 'verified')`;
-      }
+        if (shopId && typeof shopId === "string") {
+          where += ` AND p.shop_id = $${idx}`;
+          params.push(shopId);
+          idx++;
+        }
+        if (minPrice) {
+          where += ` AND p.price >= $${idx}`;
+          params.push(Number(minPrice));
+          idx++;
+        }
+        if (maxPrice) {
+          where += ` AND p.price <= $${idx}`;
+          params.push(Number(maxPrice));
+          idx++;
+        }
+        if (inStock === "true") {
+          // Check inventory OR active variants with stock > 0
+          where += ` AND (
+            EXISTS (SELECT 1 FROM inventory inv WHERE inv.product_id = p.id AND inv.quantity > inv.reserved)
+            OR EXISTS (SELECT 1 FROM product_variants pv WHERE pv.product_id = p.id AND pv.status = 'active' AND pv.stock > 0)
+          )`;
+        }
+        if (minRating && Number(minRating) > 0) {
+          // Ratings live on the product row: a plain comparison, no join and no
+          // aggregate, so the filter cannot turn the catalog into an N+1.
+          where += ` AND COALESCE(p.rating, 0) >= $${idx}`;
+          params.push(Number(minRating));
+          idx++;
+        }
+        if (onSale === "true") {
+          where += ` AND p.compare_at_price IS NOT NULL AND p.compare_at_price > p.price`;
+        }
 
-      let orderBy = "ORDER BY p.created_at DESC";
-      if (sortBy === "price_asc") orderBy = "ORDER BY p.price ASC";
-      if (sortBy === "price_desc") orderBy = "ORDER BY p.price DESC";
-      if (sortBy === "popular") orderBy = "ORDER BY p.sold_count DESC";
+        return { where, params, relevance };
+      };
 
-      const result = await query(
-        `SELECT p.*, sh.name as shop_name, sh.slug as shop_slug, sh.seller_id,
-                COALESCE(s.verification_status, 'unverified') AS seller_verification_status
-         FROM products p
-         JOIN shops sh ON p.shop_id = sh.id
-         LEFT JOIN sellers s ON s.id = sh.seller_id
-         LEFT JOIN categories c ON c.slug = p.category_id
-         ${where}
-         ${orderBy}
-         LIMIT $${idx++} OFFSET $${idx}`,
-        [...params, limit, offset]
-      );
+      /** A search page is ranked by answer quality; an explicit sort is obeyed. */
+      const orderFor = (relevance: string) => {
+        if (tokens.length > 0 && (!sortBy || sortBy === "newest" || sortBy === "relevance")) {
+          return `ORDER BY ${relevance} DESC, p.sold_count DESC, p.created_at DESC`;
+        }
+        switch (sortBy) {
+          case "price_asc":
+            return "ORDER BY p.price ASC";
+          case "price_desc":
+            return "ORDER BY p.price DESC";
+          case "popular":
+          case "best_selling":
+            return "ORDER BY p.sold_count DESC, p.created_at DESC";
+          case "rating":
+            return "ORDER BY COALESCE(p.rating, 0) DESC, p.review_count DESC, p.created_at DESC";
+          case "discount":
+            return "ORDER BY (COALESCE(p.compare_at_price, 0) - p.price) DESC, p.created_at DESC";
+          default:
+            return "ORDER BY p.created_at DESC";
+        }
+      };
+
+      const runCatalog = async (searchJoin: "AND" | "OR") => {
+        const built = buildFilters(searchJoin);
+        const limitPh = `$${built.params.length + 1}`;
+        const offsetPh = `$${built.params.length + 2}`;
+        return query(
+          `SELECT p.*, sh.name as shop_name, sh.slug as shop_slug, sh.seller_id,
+                  COALESCE(s.verification_status, 'unverified') AS seller_verification_status
+           FROM products p
+           JOIN shops sh ON p.shop_id = sh.id
+           LEFT JOIN sellers s ON s.id = sh.seller_id
+           LEFT JOIN categories c ON c.slug = p.category_id
+           ${built.where}
+           ${orderFor(built.relevance)}
+           LIMIT ${limitPh} OFFSET ${offsetPh}`,
+          [...built.params, limit, offset]
+        );
+      };
+
+      // Precise pass first; the loose pass only runs when it found nothing.
+      let result = await runCatalog("AND");
+      if (result.rows.length === 0 && tokens.length > 1) {
+        result = await runCatalog("OR");
+      }
 
       const productIds = result.rows.map((r: any) => r.id);
       const { imagesByProduct, inventoryByProduct, variantsByProduct, detailImagesByProduct } = await loadProductExtras(productIds);
@@ -3027,11 +3123,6 @@ export function setupProductRoutes(app: Express): void {
       res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to fetch categories" } });
     }
   });
-
-  // ── GET /api/categories/verified ─────────────────────────────────────────
-  // Special endpoint for VelShop Verified: products where BOTH seller AND product are verified.
-  // (used by frontend to distinguish "verified" from normal categories)
-  // This is a metadata endpoint — the actual filtering happens in the catalog route.
 
   // ── GET /api/categories/tree ─────────────────────────────────────────────
   // Returns full category tree with children and product counts.

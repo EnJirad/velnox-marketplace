@@ -147,28 +147,10 @@ export default function ShopCategories() {
                 </div>
               );
             })}
-          {/* VelShop Verified card */}
-          <div className="flex flex-col overflow-hidden rounded-2xl border border-emerald-200 bg-white transition-[transform,border-color,box-shadow,background-color] duration-200 hover:-translate-y-0.5 hover:shadow-float">
-            <Link to="/products?verified=true" className="block">
-              <div className="flex h-24 items-center gap-4 bg-gradient-to-r from-[#065f46] via-brand-strong to-brand px-5">
-                <span className="flex size-12 items-center justify-center rounded-lg bg-white/20 backdrop-blur">
-                  <span className="text-lg font-extrabold text-white">V</span>
-                </span>
-                <div className="min-w-0">
-                  <h2 className="truncate text-lg font-bold tracking-tight text-white">{t("verification.velshopVerified")}</h2>
-                  <p className="text-xs text-emerald-50/90">{t("verification.velshopVerifiedDesc")}</p>
-                </div>
-              </div>
-            </Link>
-            <div className="mt-auto p-5 pt-4">
-              <Button variant="ghost" className="h-9 w-full gap-1 text-xs text-slate-500 hover:bg-emerald-50 hover:text-emerald-700" asChild>
-                <Link to="/products?verified=true">
-                  {t("categories.velshopVerified")}
-                  <ArrowRight className="size-3.5" />
-                </Link>
-              </Button>
-            </div>
-          </div>
+          {/* VelShop Verified card — REMOVED (design decision 2026-11-11):
+              the storefront no longer shows the V anywhere. Seller identity
+              verification still lives in VelCenter's review queue; it is simply
+              not a shopping filter or badge on VelShop. */}
           </div>
         )}
       </main>

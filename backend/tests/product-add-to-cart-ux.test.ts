@@ -117,8 +117,10 @@ describe("i18n — the confirmation exists in all three languages", () => {
     test(`${name} carries addedFlash + addedFlashDesc with the same placeholder`, () => {
       const src = read(path);
       expect(src).toContain("addedFlash:");
-      expect(src).toContain("addedFlashDesc: (p: { qty: number })");
-      expect(src).toContain("${p.qty}");
+      // Plain "{qty}" strings — t() only resolves string values, so a function
+      // here would print the raw key on screen (this happened).
+      expect(src).toContain("addedFlashDesc: \"");
+      expect(src).toContain("{qty}");
     });
   }
 

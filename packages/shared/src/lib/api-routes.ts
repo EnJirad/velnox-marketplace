@@ -295,12 +295,13 @@ const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
     if (a?.minPrice) params.set("minPrice", String(a.minPrice));
     if (a?.maxPrice) params.set("maxPrice", String(a.maxPrice));
     if (a?.inStock) params.set("inStock", "true");
-    // Verification filter: the catalog only returns products whose seller/shop
-    // is verified (Velnox has ONE verification system — the seller/shop
-    // identity check). Forwarding this is required — dropping it here made
-    // `/products?verified=true` render the whole catalog instead.
-    if (a?.verified) params.set("verified", "true");
-    if (a?.sortBy) params.set("sortBy", a.sortBy);
+    if (a?.minRating) params.set("minRating", String(a.minRating));
+    if (a?.onSale) params.set("onSale", "true");
+    // `sort` and `sortBy` are both in use: the product page sends `sortBy`,
+    // ProductGrid built its own params with `sort`. Accepting only one of them
+    // silently dropped the sort and every list came back "newest".
+    const sort = a?.sortBy ?? a?.sort;
+    if (sort) params.set("sortBy", sort);
     if (a?.limit) params.set("limit", String(a.limit));
     if (a?.offset) params.set("offset", String(a.offset));
     return apiGet(`/api/products/catalog?${params}`);

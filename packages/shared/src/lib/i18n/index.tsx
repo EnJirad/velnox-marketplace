@@ -41,17 +41,26 @@ function readStoredLanguage(): Language {
   return DEFAULT_LANGUAGE;
 }
 
-/** Dot-path lookup with safe traversal. */
-function resolvePath(
+/** Dot-path lookup with safe traversal. Returns the raw node (any type). */
+function resolveNode(
   dict: Record<string, unknown> | undefined,
   path: string,
-): string | undefined {
+): unknown {
   if (!dict) return undefined;
   let node: unknown = dict;
   for (const part of path.split(".")) {
     if (node == null || typeof node !== "object") return undefined;
     node = (node as Record<string, unknown>)[part];
   }
+  return node;
+}
+
+/** Dot-path lookup that only accepts strings (the t() contract). */
+function resolvePath(
+  dict: Record<string, unknown> | undefined,
+  path: string,
+): string | undefined {
+  const node = resolveNode(dict, path);
   return typeof node === "string" ? node : undefined;
 }
 
@@ -77,7 +86,14 @@ function makeT(lang: Language): TranslateFn {
     if (raw === key && !warned.has(key)) {
       warned.add(key);
       if (import.meta.env.DEV) {
-        console.warn(`[i18n] missing translation key: ${key}`);
+        // A value that exists but is not a string (e.g. a function) would also
+        // land here — say which one it was instead of only "missing".
+        const node = resolveNode(translations[lang], key);
+        console.warn(
+          node === undefined
+            ? `[i18n] missing translation key: ${key}`
+            : `[i18n] translation key "${key}" is a ${typeof node}, not a string`,
+        );
       }
     }
     return interpolate(raw, vars);

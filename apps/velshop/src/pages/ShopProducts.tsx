@@ -25,6 +25,7 @@ import { useLanguage } from "@/lib/i18n";
 import { useTracking } from "@velnox/shared/lib/track";
 import {
   PRODUCT_CATEGORY_META,
+  formatBaht,
   type StoreProduct,
   type StoreProductCategory,
 } from "@velnox/shared/lib/commerce";
@@ -37,7 +38,9 @@ import {
   RotateCcw,
   Search,
   SlidersHorizontal,
+  Star,
   Store,
+  Tag,
   X,
 } from "lucide-react";
 import { useAuth } from "@velnox/shared/hooks/use-auth";
@@ -50,10 +53,27 @@ const PAGE_SIZE = 24;
 
 const SORT_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "newest", label: "products.sortNewest" },
+  { value: "popular", label: "products.sortPopular" },
+  { value: "rating", label: "products.sortRating" },
   { value: "price_asc", label: "products.sortPriceAsc" },
   { value: "price_desc", label: "products.sortPriceDesc" },
-  { value: "popular", label: "products.sortPopular" },
+  { value: "discount", label: "products.sortDiscount" },
 ];
+
+/**
+ * Standard marketplace price bands. Typing two numbers into two boxes is the
+ * slowest way to filter by price; every marketplace ships the bands instead.
+ */
+const PRICE_BANDS: Array<{ id: string; min: string; max: string }> = [
+  { id: "u200", min: "", max: "200" },
+  { id: "200-500", min: "200", max: "500" },
+  { id: "500-1000", min: "500", max: "1000" },
+  { id: "1000-3000", min: "1000", max: "3000" },
+  { id: "o3000", min: "3000", max: "" },
+];
+
+/** Rating bands, in the order customers actually use them. */
+const RATING_BANDS = ["4", "3"];
 
 interface ShopRow {
   id: string;
@@ -89,7 +109,8 @@ export default function ShopProducts() {
   const minPrice = params.get("min") ?? "";
   const maxPrice = params.get("max") ?? "";
   const inStock = params.get("inStock") === "1";
-  const verifiedOnly = params.get("verified") === "true";
+  const minRating = params.get("rating") ?? "";
+  const onSale = params.get("sale") === "1";
   const sortBy = params.get("sort") ?? "newest";
   const page = Math.max(1, Number(params.get("page") ?? "1") || 1);
 
@@ -165,7 +186,8 @@ export default function ShopProducts() {
         minPrice: minPrice ? Number(minPrice) : undefined,
         maxPrice: maxPrice ? Number(maxPrice) : undefined,
         inStock: inStock || undefined,
-        verified: verifiedOnly || undefined,
+        minRating: minRating ? Number(minRating) : undefined,
+        onSale: onSale || undefined,
         sortBy,
         limit: PAGE_SIZE,
         offset: (page - 1) * PAGE_SIZE,
@@ -179,7 +201,7 @@ export default function ShopProducts() {
     } finally {
       setLoading(false);
     }
-  }, [catalog, q, category, shopId, minPrice, maxPrice, inStock, sortBy, page, t]);
+  }, [catalog, q, category, shopId, minPrice, maxPrice, inStock, minRating, onSale, sortBy, page, t]);
 
   useEffect(() => {
     const categoryLabel =
@@ -207,6 +229,8 @@ export default function ShopProducts() {
           minPrice: minPrice ? Number(minPrice) : undefined,
           maxPrice: maxPrice ? Number(maxPrice) : undefined,
           inStock: inStock || undefined,
+          minRating: minRating ? Number(minRating) : undefined,
+          onSale: onSale || undefined,
           sortBy,
           limit: PAGE_SIZE,
           offset: (page - 1) * PAGE_SIZE,
@@ -278,7 +302,7 @@ export default function ShopProducts() {
   };
 
   const hasFilters =
-    q !== "" || category !== "all" || shopId !== "" || minPrice !== "" || maxPrice !== "" || inStock || verifiedOnly;
+    q !== "" || category !== "all" || shopId !== "" || minPrice !== "" || maxPrice !== "" || inStock || minRating !== "" || onSale;
 
   const activeFilterCount =
     (category !== "all" ? 1 : 0) +
@@ -286,7 +310,8 @@ export default function ShopProducts() {
     (minPrice !== "" ? 1 : 0) +
     (maxPrice !== "" ? 1 : 0) +
     (inStock ? 1 : 0) +
-    (verifiedOnly ? 1 : 0);
+    (minRating !== "" ? 1 : 0) +
+    (onSale ? 1 : 0);
 
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / PAGE_SIZE));
   const pageNumbers = useMemo(() => {
@@ -331,6 +356,78 @@ export default function ShopProducts() {
     [t],
   );
 
+  /**
+   * Everything the customer has narrowed by, as removable chips. Without this
+   * a filtered list looks like a broken list: the reason it is short is buried
+   * in a sidebar that is a closed sheet on mobile.
+   */
+  const activeChips = useMemo(() => {
+    const chips: Array<{ key: string; label: string; clear: () => void }> = [];
+    if (q) {
+      chips.push({
+        key: "q",
+        label: `“${q}”`,
+        clear: () => {
+          setQueryInput("");
+          updateParam("q", null);
+        },
+      });
+    }
+    if (category !== "all") {
+      chips.push({
+        key: "category",
+        label: categoryOptions.find((c) => c.id === category)?.label ?? category,
+        clear: () => updateParam("category", null),
+      });
+    }
+    if (shopId) {
+      chips.push({
+        key: "shop",
+        label: shops.find((shop) => shop.id === shopId)?.name ?? t("products.shop"),
+        clear: () => updateParam("shop", null),
+      });
+    }
+    if (minPrice || maxPrice) {
+      const lo = minPrice ? formatBaht(Number(minPrice)) : "";
+      const hi = maxPrice ? formatBaht(Number(maxPrice)) : "";
+      chips.push({
+        key: "price",
+        label: lo && hi ? `${lo} – ${hi}` : lo ? t("products.priceOver", { amount: lo }) : t("products.priceUnder", { amount: hi }),
+        clear: () => {
+          updateParam("min", null);
+          updateParam("max", null);
+        },
+      });
+    }
+    if (minRating) {
+      chips.push({
+        key: "rating",
+        label: `★ ${minRating}+`,
+        clear: () => updateParam("rating", null),
+      });
+    }
+    if (onSale) {
+      chips.push({ key: "sale", label: t("products.onSaleOnly"), clear: () => updateParam("sale", null) });
+    }
+    if (inStock) {
+      chips.push({ key: "stock", label: t("products.inStockOnly"), clear: () => updateParam("inStock", null) });
+    }
+    return chips;
+  }, [
+    q,
+    category,
+    shopId,
+    minPrice,
+    maxPrice,
+    minRating,
+    onSale,
+    inStock,
+    categoryOptions,
+    shops,
+    updateParam,
+    t,
+  ]);
+
   const FiltersPanel = (
     <div className="space-y-6">
       {/* Category */}
@@ -352,22 +449,6 @@ export default function ShopProducts() {
             </button>
           ))}
         </div>
-      </div>
-
-      {/* VelShop Verified */}
-      <div>
-        <button
-          type="button"
-          onClick={() => updateParam("verified", verifiedOnly ? null : "true")}
-          className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-xs font-medium transition-colors ${
-            verifiedOnly
-              ? "bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/15"
-              : "border border-slate-200 bg-white text-slate-500 hover:border-emerald-300 hover:text-emerald-700"
-          }`}
-        >
-          <span className="font-extrabold">V</span>
-          <span>{t("verification.velshopVerifiedFilter")}</span>
-        </button>
       </div>
 
       {/* Shop */}
@@ -394,7 +475,41 @@ export default function ShopProducts() {
       {/* Price */}
       <div>
         <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{t("products.priceRange")}</p>
-        <div className="mt-3 flex items-center gap-2">
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {PRICE_BANDS.map((band) => {
+            const active = minPrice === band.min && maxPrice === band.max;
+            const label =
+              band.min === ""
+                ? t("products.priceUnder", { amount: formatBaht(Number(band.max)) })
+                : band.max === ""
+                  ? t("products.priceOver", { amount: formatBaht(Number(band.min)) })
+                  : `${formatBaht(Number(band.min))} – ${formatBaht(Number(band.max))}`;
+            return (
+              <button
+                key={band.id}
+                type="button"
+                aria-pressed={active}
+                onClick={() => {
+                  if (active) {
+                    updateParam("min", null);
+                    updateParam("max", null);
+                  } else {
+                    updateParam("min", band.min || null);
+                    updateParam("max", band.max || null);
+                  }
+                }}
+                className={`rounded-squircle-sm px-2.5 py-1.5 text-2xs font-medium transition-colors ${
+                  active
+                    ? "bg-brand text-white"
+                    : "bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                }`}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+        <div className="mt-2 flex items-center gap-2">
           <Input
             type="number"
             min={0}
@@ -415,15 +530,57 @@ export default function ShopProducts() {
         </div>
       </div>
 
-      {/* Availability */}
-      <label className="flex cursor-pointer items-center gap-2.5 text-sm text-slate-600">
-        <Checkbox
-          checked={inStock}
-          onCheckedChange={(v) => updateParam("inStock", v ? "1" : null)}
-          className="border-slate-300 data-[state=checked]:bg-brand data-[state=checked]:border-brand"
-        />
-        {t("products.inStockOnly")}
-      </label>
+      {/* Rating */}
+      <div>
+        <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">
+          <Star className="size-3.5" />
+          {t("products.ratingFilter")}
+        </p>
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {RATING_BANDS.map((band) => {
+            const active = minRating === band;
+            return (
+              <button
+                key={band}
+                type="button"
+                aria-pressed={active}
+                onClick={() => updateParam("rating", active ? null : band)}
+                className={`inline-flex items-center gap-1 rounded-squircle-sm px-2.5 py-1.5 text-2xs font-medium transition-colors ${
+                  active
+                    ? "bg-brand text-white"
+                    : "bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                }`}
+              >
+                <Star className={`size-3 ${active ? "fill-current" : ""}`} />
+                {t("products.ratingUp", { n: band })}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Availability + discount */}
+      <div className="space-y-3">
+        <label className="flex cursor-pointer items-center gap-2.5 text-sm text-slate-600">
+          <Checkbox
+            checked={inStock}
+            onCheckedChange={(v) => updateParam("inStock", v ? "1" : null)}
+            className="border-slate-300 data-[state=checked]:bg-brand data-[state=checked]:border-brand"
+          />
+          {t("products.inStockOnly")}
+        </label>
+        <label className="flex cursor-pointer items-center gap-2.5 text-sm text-slate-600">
+          <Checkbox
+            checked={onSale}
+            onCheckedChange={(v) => updateParam("sale", v ? "1" : null)}
+            className="border-slate-300 data-[state=checked]:bg-brand data-[state=checked]:border-brand"
+          />
+          <span className="inline-flex items-center gap-1.5">
+            <Tag className="size-3.5 text-rose-500" />
+            {t("products.onSaleOnly")}
+          </span>
+        </label>
+      </div>
 
       {hasFilters && (
         <Button
@@ -561,6 +718,31 @@ export default function ShopProducts() {
               </div>
             </div>
 
+            {/* Active filters — removable, so a short list always explains itself */}
+            {activeChips.length > 0 && (
+              <div className="mt-4 flex flex-wrap items-center gap-1.5" aria-label={t("products.activeFilters")}>
+                {activeChips.map((chip) => (
+                  <button
+                    key={chip.key}
+                    type="button"
+                    onClick={chip.clear}
+                    className="inline-flex items-center gap-1 rounded-squircle-sm border border-slate-200 bg-white px-2.5 py-1.5 text-2xs font-medium text-slate-600 transition-colors hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
+                  >
+                    {chip.label}
+                    <X className="size-3" aria-hidden />
+                    <span className="sr-only">{t("products.clearFilters")}</span>
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={resetFilters}
+                  className="ml-1 text-2xs font-semibold text-brand-strong underline-offset-2 hover:underline"
+                >
+                  {t("products.clearAll")}
+                </button>
+              </div>
+            )}
+
             {/* Grid */}
             <div className="mt-5">
               <ProductGrid
@@ -571,7 +753,8 @@ export default function ShopProducts() {
                 minPrice={minPrice}
                 maxPrice={maxPrice}
                 inStock={inStock}
-                verifiedOnly={verifiedOnly}
+                minRating={minRating}
+                onSale={onSale}
                 title={t("products.title")}
                 description={t("products.eyebrow")}
                 onProductClick={(product) => {

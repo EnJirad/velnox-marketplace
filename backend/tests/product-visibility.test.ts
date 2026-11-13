@@ -11,13 +11,14 @@
  *     `categories.id` (uuid) can never match, which silently produced
  *     `categorySlug: null` and zero category product counts.
  *  2. The public catalog and product detail must only expose `published` rows.
- *  3. The frontend must forward `verified` to the catalog, otherwise the
- *     "VelShop Verified" surface renders the whole catalog.
+ *  3. The storefront must NOT render or forward a `verified` / V filter any
+ *     more (owner decision 2026-11-11). Seller identity verification still
+ *     runs in VelCenter; it is not a shopping filter.
  *  4. `useQuery()` must actually fetch — a stub that always returned
  *     `undefined` left every VelCenter product/overview surface empty.
  */
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const repoRoot = join(import.meta.dir, "..", "..");
@@ -48,7 +49,7 @@ describe("product visibility — catalog contract", () => {
   test("the public catalog stays published-only and hides suspended shops", () => {
     const src = read("backend/routes/products.ts");
     // Publishing is only half the rule: a suspended shop must not keep selling.
-    expect(src).toContain(`let where = "WHERE p.status = 'published' AND sh.status = 'active'"`);
+    expect(src).toContain(`const BASE_WHERE = "WHERE p.status = 'published' AND sh.status = 'active'"`);
   });
 
   test("the product detail endpoint stays published-only", () => {
@@ -56,20 +57,23 @@ describe("product visibility — catalog contract", () => {
     expect(src).toContain("WHERE p.id = $1 AND p.status = 'published'");
   });
 
-  test("the catalog accepts a verified-only filter", () => {
+  test("the storefront no longer filters by verification (V removed 2026-11-11)", () => {
+    // The V is not a shopping filter any more. Seller identity verification
+    // still exists in VelCenter's review queue; it simply must not narrow the
+    // customer's catalog. Re-adding `req.query.verified` here would silently
+    // resurrect the removed filter.
     const src = read("backend/routes/products.ts");
-    expect(src).toContain('req.query.verified === "true"');
-    // Velnox has ONE verification system: the seller/shop identity check.
-    expect(src).toContain("s.verification_status = 'verified'");
+    expect(src).not.toContain('req.query.verified === "true"');
+    expect(src).not.toContain("s.verification_status = 'verified'");
   });
 });
 
 describe("product visibility — frontend contract", () => {
-  test("catalogProductsAction forwards the verified filter", () => {
+  test("catalogProductsAction no longer forwards a verified filter", () => {
     const src = read("packages/shared/src/lib/api-routes.ts");
     const action = src.slice(src.indexOf('"api.commerce.catalogProductsAction"'));
     const body = action.slice(0, action.indexOf("apiGet("));
-    expect(body).toContain('params.set("verified", "true")');
+    expect(body).not.toContain('params.set("verified", "true")');
   });
 
   test("useQuery performs a request instead of returning undefined", () => {
@@ -82,12 +86,20 @@ describe("product visibility — frontend contract", () => {
     expect(body).not.toMatch(/if \(!handler\) return undefined;\s*\n\s*return undefined;/);
   });
 
-  test("the customer-facing V badge is a single V (no V✓)", () => {
+  test("the customer-facing storefront carries no V at all (owner decision 2026-11-11)", () => {
+    // The V badge component is gone and no VelShop page renders a V filter or
+    // card. Seller identity verification still runs in VelCenter — it is just
+    // not part of what a customer browses or filters by.
+    expect(existsSync(join(repoRoot, "packages/shared/src/components/VBadge.tsx"))).toBe(false);
     for (const file of [
-      "packages/shared/src/components/VBadge.tsx",
+      "apps/velshop/src/pages/ShopProducts.tsx",
       "apps/velshop/src/pages/ShopCategories.tsx",
+      "apps/velshop/src/pages/ShopHome.tsx",
     ]) {
-      expect(read(file)).not.toContain("✓");
+      const src = read(file);
+      expect(src).not.toContain("verified=true");
+      expect(src).not.toContain("velshopVerifiedFilter");
+      expect(src).not.toContain("verifiedOnly");
     }
   });
 });

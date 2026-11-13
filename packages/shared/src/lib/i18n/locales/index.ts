@@ -26,9 +26,6 @@ const thVerificationCopy = {
   vInfoDisclaimer:
     "V หมายถึงร้านค้าผ่านการยืนยันตัวตนตามเกณฑ์ของ Velnox ไม่ได้เป็นการรับประกันคุณภาพ ความแท้จริง หรือการรับประกันจากผู้ผลิตของสินค้าแต่ละชิ้น",
   vInfoAriaLabel: "ข้อมูลการยืนยันร้านค้า",
-  velshopVerified: "ร้านค้าที่ได้รับการยืนยัน",
-  velshopVerifiedDesc: "ร้านค้าที่ผ่านการยืนยันตัวตนตามเกณฑ์ของ Velnox",
-  velshopVerifiedFilter: "ร้านค้าที่ได้รับการยืนยันเท่านั้น",
 } satisfies Partial<Dict["verification"]>;
 
 const enVerificationCopy = {
@@ -43,9 +40,6 @@ const enVerificationCopy = {
   vInfoDisclaimer:
     "V means the shop has passed Velnox's identity verification. It is not a guarantee of product quality, authenticity, or a manufacturer warranty for individual products.",
   vInfoAriaLabel: "Shop verification information",
-  velshopVerified: "Verified shops",
-  velshopVerifiedDesc: "Shops that have passed Velnox identity verification",
-  velshopVerifiedFilter: "Verified shops only",
 } satisfies Partial<Dict["verification"]>;
 
 const myVerificationCopy = {
@@ -60,24 +54,15 @@ const myVerificationCopy = {
   vInfoDisclaimer:
     "V သည် ဆိုင်သည် Velnox ၏ မူလအာခံအတည်ပြုမှုကို ဖြတ်ကျော်ပြီးဖြစ်ကြောင်း ညွှန်ပြသည်။ ထုတ်ကုန်တစ်ခုချင်းစီ၏ အရည်အသွေး၊ မှန်ကန်မှု သို့မဟုတ် ထုတ်လုပ်သူအာမခံကို အာမခံချက် မဟုတ်ပါ။",
   vInfoAriaLabel: "ဆိုင်အတည်ပြုမှု အချက်အလက်",
-  velshopVerified: "အတည်ပြုပြီးဆိုင်များ",
-  velshopVerifiedDesc: "Velnox မှ မူလအာခံအတည်ပြုပြီးသော ဆိုင်များ",
-  velshopVerifiedFilter: "အတည်ပြုပြီးဆိုင်များသာ",
 } satisfies Partial<Dict["verification"]>;
 
 const thCategoriesCopy = {
-  velshopVerified: "ร้านค้าที่ได้รับการยืนยัน",
-  velshopVerifiedDesc: "ร้านค้าที่ผ่านการยืนยันตัวตนตามเกณฑ์ของ Velnox",
 } satisfies Partial<Dict["categories"]>;
 
 const enCategoriesCopy = {
-  velshopVerified: "Verified shops",
-  velshopVerifiedDesc: "Shops that have passed Velnox identity verification",
 } satisfies Partial<Dict["categories"]>;
 
 const myCategoriesCopy = {
-  velshopVerified: "အတည်ပြုပြီးဆိုင်များ",
-  velshopVerifiedDesc: "Velnox မှ မူလအာခံအတည်ပြုပြီးသော ဆိုင်များ",
 } satisfies Partial<Dict["categories"]>;
 
 /** Category picker UI copy (TH / EN / MY). */

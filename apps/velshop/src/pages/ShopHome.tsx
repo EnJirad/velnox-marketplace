@@ -254,16 +254,6 @@ export default function ShopHome() {
         href: "/products",
       });
     }
-    const verified = products.filter((p) => p.isVerifiedProduct).length;
-    if (verified > 0) {
-      fallback.push({
-        id: "verified",
-        eyebrow: t("announce.eyebrow"),
-        title: t("announce.verifiedTitle"),
-        subtitle: t("announce.verifiedDesc", { count: verified }),
-        href: "/products?verified=true",
-      });
-    }
     return fallback;
   }, [announcementsData.data, products, t]);
 

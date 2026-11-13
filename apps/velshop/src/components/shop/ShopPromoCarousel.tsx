@@ -37,7 +37,7 @@ const DEFAULT_PROMOS: PromoItem[] = [
     id: "top-shops",
     title: "Top Shops",
     subtitle: "Verified sellers",
-    href: "/shops?verified=true",
+    href: "/shops",
     icon: "shoppingbag",
     bgColor: "bg-blue-500",
     textColor: "text-white",
