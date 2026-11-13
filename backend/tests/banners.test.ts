@@ -201,4 +201,71 @@ describe("normaliseBanners — cap and lengths", () => {
     const { items } = normaliseBanners([{ ...base, title: "t".repeat(500) }]);
     expect(items[0].title).toHaveLength(120);
   });
+
+  describe("normaliseBanners — new product/store fields (BAN-13)", () => {
+    test("product placement derives zone=product and slot defaults to 0", () => {
+      const { items, rejections } = normaliseBanners([
+        { ...base, placement: "product_below_price", title: "ผ่อน 0%", subtitle: "กับบัตรเครดิต" },
+      ]);
+      expect(rejections).toHaveLength(0);
+      expect(items[0].zone).toBe("product");
+      expect(items[0].slot).toBe(0);
+    });
+
+    test("store placement derives zone=store", () => {
+      const { items, rejections } = normaliseBanners([
+        { ...base, placement: "store_header", title: "โปรโมชั่นร้าน" },
+      ]);
+      expect(rejections).toHaveLength(0);
+      expect(items[0].zone).toBe("store");
+    });
+
+    test("zone must match placement prefix", () => {
+      const { rejections } = normaliseBanners([
+        { ...base, placement: "product_below_price", zone: "store" },
+      ]);
+      expect(rejections).toHaveLength(1);
+      expect(rejections[0].reason).toContain("unknown zone");
+    });
+
+    test("animation accepted and defaults to none", () => {
+      const { items, rejections } = normaliseBanners([
+        { ...base, placement: "product_above_gallery", title: "ส่งฟรี", animation: "fade" },
+        { ...base, id: "x2", placement: "product_above_gallery", title: "ลดราคา" },
+      ]);
+      expect(rejections).toHaveLength(0);
+      expect(items[0].animation).toBe("fade");
+      expect(items[1].animation).toBe("none");
+    });
+
+    test("invalid animation is rejected", () => {
+      const { rejections } = normaliseBanners([
+        { ...base, placement: "product_above_gallery", title: "ส่งฟรี", animation: "spin" },
+      ]);
+      expect(rejections).toHaveLength(1);
+      expect(rejections[0].reason).toContain("unknown animation");
+    });
+
+    test("bgColor and textColor are stored", () => {
+      const { items, rejections } = normaliseBanners([
+        { ...base, placement: "product_above_gallery", title: "ส่งฟรี", bgColor: "#ecfdf5", textColor: "#047857" },
+      ]);
+      expect(rejections).toHaveLength(0);
+      expect(items[0].bgColor).toBe("#ecfdf5");
+      expect(items[0].textColor).toBe("#047857");
+    });
+
+    test("all nine placements are accepted", () => {
+      const placements: BannerPlacement[] = [
+        "home_hero", "home_strip",
+        "product_above_gallery", "product_below_image", "product_below_price", "product_above_tabs",
+        "store_header", "store_above_products", "store_between_products",
+      ];
+      const { items, rejections } = normaliseBanners(
+        placements.map((p, i) => ({ ...base, id: `p${i}`, placement: p, title: `t${i}`, sortOrder: i }))
+      );
+      expect(rejections).toHaveLength(0);
+      expect(items).toHaveLength(9);
+    });
+  });
 });

@@ -24,7 +24,18 @@ import { toast } from "sonner";
 interface Row {
   id: string;
   type: "announcement" | "promotion" | "ad";
-  placement: "home_hero" | "home_strip";
+  zone: "home" | "product" | "store";
+  placement:
+    | "home_hero"
+    | "home_strip"
+    | "product_above_gallery"
+    | "product_below_image"
+    | "product_below_price"
+    | "product_above_tabs"
+    | "store_header"
+    | "store_above_products"
+    | "store_between_products";
+  slot: number;
   title: string;
   subtitle: string;
   imageUrl: string | null;
@@ -34,13 +45,18 @@ interface Row {
   sortOrder: number;
   startsAt: string | null;
   endsAt: string | null;
+  animation: "none" | "fade" | "slide-up" | "bounce";
+  bgColor: string | null;
+  textColor: string | null;
 }
 
 function newRow(index: number): Row {
   return {
     id: `a${Date.now()}${index}`,
     type: "promotion",
+    zone: "home",
     placement: "home_hero",
+    slot: index,
     title: "",
     subtitle: "",
     imageUrl: null,
@@ -50,6 +66,9 @@ function newRow(index: number): Row {
     sortOrder: index,
     startsAt: null,
     endsAt: null,
+    animation: "none",
+    bgColor: null,
+    textColor: null,
   };
 }
 
@@ -123,7 +142,7 @@ export function MarketingBanners() {
       const target = index + delta;
       if (target < 0 || target >= next.length) return prev;
       [next[index], next[target]] = [next[target], next[index]];
-      return next.map((row, i) => ({ ...row, sortOrder: i }));
+      return next.map((row, i) => ({ ...row, sortOrder: i, slot: i }));
     });
   };
 
@@ -197,7 +216,9 @@ export function MarketingBanners() {
       const payload = rows.map((row, index) => ({
         id: row.id,
         type: row.type,
+        zone: row.zone,
         placement: row.placement,
+        slot: row.slot ?? index,
         title: row.title.trim(),
         subtitle: row.subtitle.trim(),
         imageUrl: row.imageUrl,
@@ -207,6 +228,9 @@ export function MarketingBanners() {
         sortOrder: index,
         startsAt: row.startsAt,
         endsAt: row.endsAt,
+        animation: row.animation,
+        bgColor: row.bgColor,
+        textColor: row.textColor,
       }));
       const saved = await save({ items: payload });
       const savedRows = Array.isArray(saved) ? saved : payload;
@@ -359,8 +383,64 @@ export function MarketingBanners() {
                           <SelectContent>
                             <SelectItem value="home_hero">{t("marketing.placementHero")}</SelectItem>
                             <SelectItem value="home_strip">{t("marketing.placementStrip")}</SelectItem>
+                            <SelectItem value="product_above_gallery">{t("marketing.placementProductAboveGallery")}</SelectItem>
+                            <SelectItem value="product_below_image">{t("marketing.placementProductBelowImage")}</SelectItem>
+                            <SelectItem value="product_below_price">{t("marketing.placementProductBelowPrice")}</SelectItem>
+                            <SelectItem value="product_above_tabs">{t("marketing.placementProductAboveTabs")}</SelectItem>
+                            <SelectItem value="store_header">{t("marketing.placementStoreHeader")}</SelectItem>
+                            <SelectItem value="store_above_products">{t("marketing.placementStoreAboveProducts")}</SelectItem>
+                            <SelectItem value="store_between_products">{t("marketing.placementStoreBetweenProducts")}</SelectItem>
                           </SelectContent>
                         </Select>
+                      </div>
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-3">
+                      <div className="grid gap-1">
+                        <Label>{t("marketing.fieldZone")}</Label>
+                        <div className="flex items-center gap-1.5 rounded-squircle-sm border border-slate-200 bg-slate-50 px-2 py-1.5 text-2xs font-medium text-slate-600">
+                          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: row.zone === "product" ? "#10b981" : row.zone === "store" ? "#3b82f6" : "#64748b" }}></span>
+                          <span>{t(`marketing.zone${row.zone.charAt(0).toUpperCase() + row.zone.slice(1)}`)}</span>
+                        </div>
+                      </div>
+                      <div className="grid gap-1">
+                        <Label htmlFor={`bn-anim-${index}`}>{t("marketing.fieldAnimation")}</Label>
+                        <Select
+                          value={row.animation}
+                          onValueChange={(value) => update(index, { animation: value as Row["animation"] })}
+                        >
+                          <SelectTrigger id={`bn-anim-trigger-${index}`} className="h-9 w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">{t("marketing.animNone")}</SelectItem>
+                            <SelectItem value="fade">{t("marketing.animFade")}</SelectItem>
+                            <SelectItem value="slide-up">{t("marketing.animSlideUp")}</SelectItem>
+                            <SelectItem value="bounce">{t("marketing.animBounce")}</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="grid gap-1">
+                        <div className="flex flex-col gap-1">
+                          <div className="flex items-center gap-1 text-2xs font-medium text-slate-600">{t("marketing.fieldBgColor")}</div>
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-6 rounded-squircle-sm border border-slate-200" style={{ backgroundColor: row.bgColor ?? "#f1f5f9" }} />
+                            <input
+                              type="color"
+                              value={row.bgColor ?? "#ffffff"}
+                              onChange={(event) => update(index, { bgColor: event.target.value })}
+                              className="w-8 h-6 rounded-squircle-sm border-0 p-0 cursor-pointer"
+                            />
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-6 rounded-squircle-sm border border-slate-200" style={{ backgroundColor: row.textColor ?? "#0f172a" }} />
+                            <input
+                              type="color"
+                              value={row.textColor ?? "#000000"}
+                              onChange={(event) => update(index, { textColor: event.target.value })}
+                              className="w-8 h-6 rounded-squircle-sm border-0 p-0 cursor-pointer"
+                            />
+                          </div>
+                        </div>
                       </div>
                     </div>
                     <div className="grid gap-1">

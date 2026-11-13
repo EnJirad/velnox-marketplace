@@ -10,22 +10,47 @@
  * dropped invalid items, which made "empty banner rejected" indistinguishable
  * from "empty banner disappeared".
  *
- * Placement keys: `home_hero` renders in the existing home carousel,
- * `home_strip` renders in the compact promo strip after the category rail.
+ * Placement keys (grouped by `zone`):
+ *   home   : home_hero (hero carousel), home_strip (compact promo strip)
+ *   product: product_above_gallery, product_below_image, product_below_price,
+ *            product_above_tabs
+ *   store  : store_header, store_above_products, store_between_products
+ *
+ * `zone` groups placements by storefront page so the frontend can fetch one
+ * zone and render all its banners without scanning every placement. `slot`
+ * orders banners within one placement. `animation` / `bgColor` / `textColor`
+ * are optional presentational hints for announcement-style banners.
  */
 
 export const BANNER_MAX_ITEMS = 10;
 
 export const BANNER_TYPES = ["announcement", "promotion", "ad"] as const;
-export const BANNER_PLACEMENTS = ["home_hero", "home_strip"] as const;
+export const BANNER_PLACEMENTS = [
+  "home_hero",
+  "home_strip",
+  "product_above_gallery",
+  "product_below_image",
+  "product_below_price",
+  "product_above_tabs",
+  "store_header",
+  "store_above_products",
+  "store_between_products",
+] as const;
+
+export const BANNER_ZONES = ["home", "product", "store"] as const;
+export const BANNER_ANIMATIONS = ["none", "fade", "slide-up", "bounce"] as const;
 
 export type BannerType = (typeof BANNER_TYPES)[number];
 export type BannerPlacement = (typeof BANNER_PLACEMENTS)[number];
+export type BannerZone = (typeof BANNER_ZONES)[number];
+export type BannerAnimation = (typeof BANNER_ANIMATIONS)[number];
 
 export interface Banner {
   id: string;
   type: BannerType;
+  zone: BannerZone;
   placement: BannerPlacement;
+  slot: number;
   title: string;
   subtitle: string;
   imageUrl: string | null;
@@ -35,6 +60,9 @@ export interface Banner {
   sortOrder: number;
   startsAt: string | null;
   endsAt: string | null;
+  animation: BannerAnimation;
+  bgColor: string | null;
+  textColor: string | null;
 }
 
 export interface BannerRejection {
@@ -93,6 +121,12 @@ function asIsoDate(value: unknown): string | null | undefined {
   return parsed.toISOString();
 }
 
+function zoneForPlacement(placement: BannerPlacement): BannerZone {
+  if (placement.startsWith("product_")) return "product";
+  if (placement.startsWith("store_")) return "store";
+  return "home";
+}
+
 /**
  * Map a stored (possibly v1) row onto the v2 shape. Returns `undefined` when the
  * row is not an object at all — the caller reports that as a rejection.
@@ -107,6 +141,12 @@ function fromLegacy(row: Record<string, unknown>): Record<string, unknown> {
   }
   if (out.type === undefined) out.type = "announcement";
   if (out.placement === undefined) out.placement = "home_hero";
+  // New v2 fields are optional on write; sensible defaults apply below.
+  if (out.zone === undefined) out.zone = zoneForPlacement(out.placement as BannerPlacement);
+  if (out.slot === undefined) out.slot = 0;
+  if (out.animation === undefined) out.animation = "none";
+  if (out.bgColor === undefined) out.bgColor = null;
+  if (out.textColor === undefined) out.textColor = null;
   return out;
 }
 
@@ -124,40 +164,37 @@ export function normaliseBanners(input: unknown): NormaliseResult {
 
     const title = asText(row.title, MAX_TITLE);
     const subtitle = asText(row.subtitle, MAX_SUBTITLE);
-    const image = asUrl(row.imageUrl);
-    if (image.invalid) {
-      rejections.push({ index, reason: "imageUrl is not a valid URL (http/https or in-app path)" });
-      return;
-    }
-    const imageUrl = image.url;
+    const imageUrlResult = asUrl(row.imageUrl);
     const ctaLabel = asText(row.ctaLabel, MAX_CTA_LABEL);
-    const cta = asUrl(row.ctaUrl);
-    if (cta.invalid) {
-      rejections.push({ index, reason: "ctaUrl is not a valid URL (http/https or in-app path)" });
-      return;
-    }
-    const ctaUrl = cta.url;
+    const ctaUrlResult = asUrl(row.ctaUrl);
 
-    // The one hard content rule: image OR text, never nothing.
-    if (!hasContent(title) && !hasContent(subtitle) && !hasContent(imageUrl)) {
-      rejections.push({ index, reason: "banner is empty — provide a title, subtitle or image" });
-      return;
-    }
-
-    const type = BANNER_TYPES.includes(row.type as BannerType)
-      ? (row.type as BannerType)
-      : undefined;
+    const type = asType(row.type);
     if (type === undefined) {
       rejections.push({ index, reason: `unknown type ${JSON.stringify(row.type)}` });
       return;
     }
-    const placement = BANNER_PLACEMENTS.includes(row.placement as BannerPlacement)
-      ? (row.placement as BannerPlacement)
-      : undefined;
+
+    const placement = asPlacement(row.placement);
     if (placement === undefined) {
       rejections.push({ index, reason: `unknown placement ${JSON.stringify(row.placement)}` });
       return;
     }
+
+    const zone = asZone(row.zone, placement);
+    if (zone === undefined) {
+      rejections.push({ index, reason: `unknown zone ${JSON.stringify(row.zone)}` });
+      return;
+    }
+
+    const slot = Number.isFinite(Number(row.slot)) ? Number(row.slot) : 0;
+    const animation = asAnimation(row.animation);
+    if (animation === undefined) {
+      rejections.push({ index, reason: `unknown animation ${JSON.stringify(row.animation)}` });
+      return;
+    }
+
+    const bgColor = asColor(row.bgColor);
+    const textColor = asColor(row.textColor);
 
     const startsAt = asIsoDate(row.startsAt);
     if (startsAt === undefined) {
@@ -176,24 +213,76 @@ export function normaliseBanners(input: unknown): NormaliseResult {
 
     const sortOrder = Number.isFinite(Number(row.sortOrder)) ? Number(row.sortOrder) : index;
 
+    // Empty banner: no title, no subtitle, no image → rejected with its index.
+    if (!title && !subtitle && !imageUrlResult.url) {
+      rejections.push({ index, reason: "empty banner needs a title, subtitle, or image" });
+      return;
+    }
+
+    if (imageUrlResult.invalid) {
+      rejections.push({ index, reason: "imageUrl is not a valid URL" });
+      return;
+    }
+    if (ctaUrlResult.invalid) {
+      rejections.push({ index, reason: "ctaUrl is not a valid URL" });
+      return;
+    }
+
     items.push({
-      id: asText(row.id, MAX_ID) || fallbackId(`${title}|${subtitle}|${imageUrl}|${index}`),
+      id: asText(row.id, MAX_ID) || fallbackId(`${title}|${subtitle}|${imageUrlResult.url}|${index}`),
       type,
+      zone,
       placement,
+      slot,
       title,
       subtitle,
-      imageUrl,
+      imageUrl: imageUrlResult.url,
       ctaLabel,
-      ctaUrl,
+      ctaUrl: ctaUrlResult.url,
       active: row.active !== false,
       sortOrder,
       startsAt,
       endsAt,
+      animation,
+      bgColor,
+      textColor,
     });
   });
 
   items.sort((a, b) => (a.sortOrder === b.sortOrder ? a.id.localeCompare(b.id) : a.sortOrder - b.sortOrder));
   return { items: items.slice(0, BANNER_MAX_ITEMS), rejections };
+}
+
+function asType(value: unknown): BannerType | undefined {
+  return BANNER_TYPES.includes(value as BannerType) ? (value as BannerType) : undefined;
+}
+
+function asPlacement(value: unknown): BannerPlacement | undefined {
+  return BANNER_PLACEMENTS.includes(value as BannerPlacement) ? (value as BannerPlacement) : undefined;
+}
+
+function asZone(value: unknown, placement: BannerPlacement): BannerZone | undefined {
+  if (value === undefined || value === null || value === "") {
+    return zoneForPlacement(placement);
+  }
+  const v = value as BannerZone;
+  if (!BANNER_ZONES.includes(v)) return undefined;
+  if (v !== zoneForPlacement(placement)) return undefined;
+  return v;
+}
+
+function asAnimation(value: unknown): BannerAnimation | undefined {
+  if (value === undefined || value === null || value === "") return "none";
+  return BANNER_ANIMATIONS.includes(value as BannerAnimation) ? (value as BannerAnimation) : undefined;
+}
+
+function asColor(value: unknown): string | null {
+  if (value === undefined || value === null || value === "") return null;
+  if (typeof value !== "string") return null;
+  const raw = value.trim();
+  if (!raw) return null;
+  // Accept any CSS color the frontend sends — hex, rgb(), hsl(), named colors.
+  return raw.slice(0, 64);
 }
 
 /** Public visibility: active AND inside the schedule window (if any). */

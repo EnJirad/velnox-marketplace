@@ -1,6 +1,7 @@
 import { ShopHeader } from "@/components/shop/ShopHeader";
 import { ShopFooter } from "@/components/shop/ShopFooter";
 import { ProductCard } from "@/components/shop/ProductCard";
+import { ProductBannerSlot } from "@/components/shop/ProductBannerSlot";
 import { ProductGallery } from "@velnox/shared/components/shop/ProductGallery";
 import { ProductDescriptionContent, type DescriptionBlock } from "@velnox/shared/components/shop/ProductDescriptionEditor";
 import { Badge } from "@velnox/shared/components/ui/badge";
@@ -1110,6 +1111,7 @@ export default function ShopProductDetail() {
           {/* Gallery — main image LEFT, the other images as a VERTICAL column on
               the right, separated by a real divider. One shared component (used by
               the VelSeller preview too), so the seller sees what the buyer sees. */}
+          <ProductBannerSlot placement="product_above_gallery" label="เหนือแกลเลอรี" />
           <ProductGallery
             images={validGallery.map((entry) => ({
               id: entry.img.id ?? entry.img.url,
@@ -1131,6 +1133,7 @@ export default function ShopProductDetail() {
             }}
             thumbSize={72}
           />
+          <ProductBannerSlot placement="product_below_image" label="ใต้รูปสินค้า" />
 
           {/* Product Info */}
           <div className="flex min-w-0 flex-col">
@@ -1223,6 +1226,8 @@ export default function ShopProductDetail() {
               <div className="flex items-center gap-2"><span className="text-slate-400">{t("productDetail.shippingFrom")}</span><span className="font-medium text-slate-900">{t("productDetail.thailand")}</span></div>
             </div>
 
+            <ProductBannerSlot placement="product_below_price" label="ใต้ราคา" />
+
             {/* ═══════════ STICKY BOTTOM ACTION BAR ═══════════ */}
             <div className="sticky bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-40 -mx-4 mt-4 border-t border-slate-200 bg-white/95 px-4 py-3 pb-4 backdrop-blur md:static md:mx-0 md:mt-4 md:border-0 md:bg-transparent md:p-0 md:pb-0 md:backdrop-blur-none">
               <div className="flex gap-2">
@@ -1248,6 +1253,8 @@ export default function ShopProductDetail() {
             </div>
           </div>
         </div>
+
+        <ProductBannerSlot placement="product_above_tabs" label="เหนือแท็บรายละเอียด" />
 
         {/* ═══════════ TABS ═══════════ */}
         <section className="mt-8">
