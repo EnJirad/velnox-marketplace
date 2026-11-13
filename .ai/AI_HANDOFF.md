@@ -1,6 +1,6 @@
 # Velnox AI Handoff — Current State
 
-**Last verified:** 2026-11-11 · **Branch:** `main` · **HEAD:** `251e5af` — marketing banners on product & shop pages
+**Last verified:** 2026-11-11 · **Branch:** `main` · **HEAD:** `42c449c` — add-to-cart UX + dead header bar removed
 
 ## 1. Current Project State
 
@@ -12,6 +12,13 @@
 
 
 ### Active Tasks
+- **Add-to-cart UX + dead header bar (2026-11-11)** — ✅ DONE — owner แจ้ง 2 ปัญหาบนหน้าสินค้า:
+  - **เส้นสีเทาเหนือเนื้อหา**: ต้นเหตุคือ "แถบเมนูที่สอง" (`Category sticky bar`, `sticky top-[3.5rem] border-b border-slate-200 bg-white`) ใน `ShopHeader` ซึ่งลิงก์ข้างในเป็น `text-white/80` บนพื้น `bg-white` → มองไม่เห็น เหลือแค่เส้นขอบเทา. **ลบทั้งบล็อก** (desktop nav + mobile brand bar ยังพาลิงก์ครบ)
+  - **กด "เพิ่มลงตะกร้า" แล้วดูเหมือนไม่เกิดอะไร**: `handleSheetConfirm` (โหมด direct) เพิ่มลงตะกร้าแล้ว **ไม่ปิด sheet** และ toast ไปโผล่มุมจอใต้ sheet. แก้เป็น ปิด sheet ก่อน → `flashCenter()` แสดง "เพิ่มลงตะกร้าสำเร็จ" กลางจอ แล้วเฟดหาย
+  - component ใหม่ `packages/shared/src/components/ui/center-flash.tsx` (`useCenterFlash`) — ทีละข้อความ, `pointer-events-none`, `role="status"` + `aria-live="polite"`, เฟดด้วย `@keyframes velnox-center-flash` ใน `index.css`, เคารพ `prefers-reduced-motion` (แสดงข้อความแต่ไม่ animate). ใช้ทั้ง `ShopProductDetail` และ `ProductSelectionSheet` (mount นอก `<Sheet>` เพื่อให้ปิด sheet แล้วข้อความไม่หาย)
+  - i18n: `productDetail.addedFlash` / `addedFlashDesc` ครบ 3 ภาษา
+  - guard test ใหม่ `backend/tests/product-add-to-cart-ux.test.ts` (12 เคส)
+  - ผล: typecheck 4/4, `build:velshop` ผ่าน, test ใหม่ 12/12, `git diff --check` clean. 5 test ที่ fail + `i18n:check` ที่ fail เป็นของเดิมบน HEAD สะอาด
 - **Marketing banners on product & shop pages (2026-11-11)** — ✅ DONE — ขยดระบบแบนเนอร์จากหน้าแรกมาเป็นหน้าสินค้าและหน้าร้าน:
   - `backend/lib/banners.ts`: placement ใหม่ 7 ตำแหน่ง (product_above_gallery, product_below_image, product_below_price, product_above_tabs, store_header, store_above_products, store_between_products) + ฟิลด์ zone / slot / animation / bgColor / textColor พร้อม validation ว่า zone ต้องตรงกับ placement prefix
   - `velcenter MarketingBanners`: ฟอร์มตั้งค่าแบนเนอร์รองรับทุก zone มีตัวเลือก placement แยกตามหน้า แอนิเมชัน (none/fade/slide-up/bounce) และตัวเลือกสีพื้นหลัง/ตัวอักษร

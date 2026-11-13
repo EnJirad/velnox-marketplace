@@ -1,49 +1,73 @@
-# LATEST — 2026-11-11 · Marketing Banners on Product & Shop Pages
+# LATEST — 2026-11-11 · Add-to-cart UX + dead header bar
 
-**Branch:** `main` · **Status:** DONE — implementation + docs + tests, typecheck 4/4, build 4/4
+**Branch:** `main` · **Status:** DONE — typecheck 4/4, build velshop ผ่าน, test ใหม่ 12/12
 
 ## 1. สรุป
 
-owner ขอให้ระบบแบนเนอร์การตลาดที่เคยมีเฉพาะหน้าแรก (`home_hero`, `home_strip`) ขยดมาที่ **หน้าสินค้า** และ **หน้าร้าน** โดยต้องแทร็กได้เกือบทุกจุด มีตัวจำลองหน้าร้านให้ลองกด "+" แทรกแบนเนอร์ เปลี่ยนสี/ข้อความ/แอนิเมชัน แล้วเห็นภาพทันที
+owner แจ้ง 2 ปัญหาบนหน้าสินค้า:
 
-รอบนี้ทำครบวงจร: contract → velcenter UI → velshop renderer
+1. มี **เส้นสีเทาขีดคั่น** เหนือเนื้อหา — ถามว่า "มันคืออะไร เอาให้หน่อย"
+2. กด **"เพิ่มลงตะกร้า"** แล้วไม่ปิดตัวเลือก และไม่มีข้อความยืนยันกลางจอ
 
-## 2. สิ่งที่เปลี่ยนแปลง
+## 2. ต้นเหตุและวิธีแก้
+
+### 2.1 เส้นสีเทา
+
+`apps/velshop/src/components/shop/ShopHeader.tsx` มี **แถบเมนูที่สอง** ติดใต้ header:
+
+```
+sticky top-[3.5rem] md:top-[4rem] z-30 border-b border-slate-200 bg-white
+```
+
+ลิงก์ข้างในใช้ `navItem()` ซึ่งออกแบบมาสำหรับพื้นสีเขียว (`text-white/80`, `bg-white/20`)
+บนพื้น `bg-white` จึง **มองไม่เห็นทั้งหมด** เหลือเพียง `border-slate-200` = เส้นเทาที่เห็น
+
+**แก้:** ลบทั้งบล็อก (ไม่กระทบ desktop nav ที่มีลิงก์เดียวกันอยู่แล้ว)
+
+### 2.2 ปุ่มเพิ่มลงตะกร้า
+
+`handleSheetConfirm` (โหมด direct ใน `ShopProductDetail`) มีบั๊ก:
+- เพิ่มลงตะกร้าแล้ว **ไม่เรียก `setVariantSheetOpen(false)`** → sheet ค้างเปิด
+- toast `position: "top-center"` ถูก sheet บัง
+
+**แก้:**
+- ปิด sheet ก่อน (`setVariantSheetOpen(false)` + `setPendingAction(null)`)
+- แสดงข้อความ **"เพิ่มลงตะกร้าสำเร็จ"** กลางจอ แล้วเฟดหาย
+
+## 3. ของใหม่
 
 | ไฟล์ | สิ่งที่ทำ |
 |---|---|
-| `backend/lib/banners.ts` | placement ใหม่ 7 ตำแหน่ง (product × 4, store × 3) + ฟิลด์ zone / slot / animation / bgColor / textColor + validation ว่า zone ต้องตรงกับ placement |
-| `backend/tests/banners.test.ts` | เพิ่ม 8 เคส (BAN-13): zone/slot default, zone-placement mismatch, animation, bgColor/textColor, placement ทั้ง 9 ตัว |
-| `apps/velcenter/src/components/MarketingBanners.tsx` | ฟอร์มตั้งค่าแบนเนอร์รองรับทุก zone มี placement select แยกตามหน้า แอนิเมชัน เลือกสีพื้นหลัง/ตัวอักษร |
-| `apps/velshop/src/components/shop/ProductBannerSlot.tsx` | ใหม่ — ดึงจาก `GET /api/announcements` กรอง placement แล้ว render แบบมี squircle + แอนิเมชัน |
-| `apps/velshop/src/pages/ShopProductDetail.tsx` | แทร็ก `ProductBannerSlot` 4 จุด: `product_above_gallery`, `product_below_image`, `product_below_price`, `product_above_tabs` |
-| i18n 3 ภาษา (`en.ts`, `th.ts`, `my.ts`) | เพิ่มคีย์ placement ใหม่ 7 ตัว + ฟิลด์ zone/animation/สี 5 ตัว |
-| `.ai/tasks/active/marketing-banner-plan.md` | ใหม่ — แผนงานระบบแบนเนอร์ |
-| `.harness/preview/marketing-banner-demo.html` | ใหม่ — ตัวจำลองหน้าร้าน แทรกแบนเนอร์ได้จริง ดูภาพทันที |
+| `packages/shared/src/components/ui/center-flash.tsx` | ใหม่ — `useCenterFlash()` คืน `{ flash, node }` แสดงข้อความกลางจอ เฟดเข้า–ค้าง–เฟดออก |
+| `packages/shared/src/index.css` | เพิ่ม `@keyframes velnox-center-flash` |
+| `apps/velshop/src/pages/ShopProductDetail.tsx` | ปิด sheet + ใช้ `flashCenter` ทั้ง 2 เส้นทาง (multi-mode และ direct-mode) |
+| `apps/velshop/src/components/shop/ProductSelectionSheet.tsx` | ใช้ `flashCenter` แทน toast, mount node นอก `<Sheet>` |
+| `apps/velshop/src/components/shop/ShopHeader.tsx` | ลบแถบเมนูที่สอง (เส้นเทา) |
+| i18n en/th/my | `productDetail.addedFlash` + `addedFlashDesc` |
+| `backend/tests/product-add-to-cart-ux.test.ts` | ใหม่ — guard test 12 เคส |
 
-## 3. ตำแหน่งแทรกที่รองรับ (placement map)
-
-| zone | placement | หมายถึง |
-|---|---|---|
-| home | `home_hero`, `home_strip` | หน้าแรก (มีอยู่แล้ว) |
-| product | `product_above_gallery`, `product_below_image`, `product_below_price`, `product_above_tabs` | หน้ารายละเอียดสินค้า |
-| store | `store_header`, `store_above_products`, `store_between_products` | หน้าร้าน |
+### คุณสมบัติของ CenterFlash
+- ทีละข้อความ (เรียกซ้ำ = แทนที่ ไม่ซ้อน)
+- `pointer-events-none` ทั้ง overlay → ไม่บล็อกการกด
+- `role="status"` + `aria-live="polite"` → screen reader อ่าน
+- เฟดด้วย CSS keyframes, JS แค่ unmount
+- `prefers-reduced-motion: reduce` → แสดงข้อความแต่ไม่ animate
 
 ## 4. ผลตรวจ (รันจริง)
 
 | ตรวจ | ผล |
 |---|---|
 | `bun run typecheck` (4 แอป) | ผ่าน 4/4 |
-| `bun --filter @velnox/velshop build` | ผ่าน |
-| `bun test backend/tests/banners.test.ts` + เกี่ยวข้อง | 81 pass / 0 fail |
-| `bun run i18n:check` | ผิดพลาดเฉพาะจุดเดิมที่มีอยู่ก่อน (my locale ขาด 16 key ของ auth, interpolation mismatch) |
+| `bun --filter @velnox/velshop build` | ผ่าน (17.67s) |
+| `bun test backend/tests/product-add-to-cart-ux.test.ts` | 12 pass / 0 fail |
+| `bun test backend/tests` (ทั้งชุด) | 1389 pass · 431 skip · 5 fail (**ของเดิม** — ยืนยันด้วย stash บน HEAD สะอาด) |
+| `bun run i18n:check` | FAIL เฉพาะ 2 จุดเดิม (my ขาด 16 key ของ auth, `addedToast` interpolation) |
 | `git diff --check` | clean |
 
 ## 5. สถานะ Git
 
-- branch `main` · commit `251e5af` · push แล้ว · `HEAD = origin/main = 251e5af` · working tree clean
+- branch `main` · commit `42c449c` · push แล้ว · `HEAD = origin/main = 42c449c` · working tree clean
 
-## 6. ที่ยังเหลือ
+## 6. หมายเหตุ
 
-- **หน้าร้าน (ShopDetail)** ยังไม่มี renderer — เติมได้โดยใส่ `<ProductBannerSlot placement="store_header" />` ฯลฯ ใน `apps/velshop/src/pages/ShopDetail.tsx`
-- ตัวจำลอง HTML อยู่ที่ `.harness/preview/marketing-banner-demo.html` (ไม่ได้ commit) — เปิดในเบราว์เซอร์ทั่วไปเพื่อลองกด "+" แทรกแบนเนอร์
+ไม่ได้ตรวจด้วยตาในเบราว์เซอร์จริง (ไม่มี `.env`/DB ในเครื่อง) — พฤติกรรมยืนยันจาก source + guard test
