@@ -49,7 +49,7 @@ function CategoryChip({
       type="button"
       onClick={() => onClick(id)}
       className={cn(
-        "shrink-0 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-all",
+        "shrink-0 flex items-center gap-1.5 rounded-squircle-sm px-3 py-1.5 text-sm font-medium transition-all",
         isActive
           ? "bg-emerald-600 text-white shadow-sm"
           : "bg-white text-slate-700 border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50"
@@ -145,7 +145,7 @@ export function CategoryStrip({
               type="button"
               onClick={scrollLeft}
               aria-label="เลื่อนซ้าย"
-              className="absolute left-0 top-1/2 -translate-y-1/2 z-10 flex size-8 items-center justify-center rounded-full bg-white/90 border border-slate-200 text-slate-600 shadow-md hover:bg-white transition-colors lg:hidden"
+              className="absolute left-0 top-1/2 -translate-y-1/2 z-10 flex size-8 items-center justify-center rounded-squircle-sm bg-white/90 border border-slate-200 text-slate-600 shadow-md hover:bg-white transition-colors lg:hidden"
             >
               <ChevronLeft className="size-4" />
             </button>
@@ -165,7 +165,7 @@ export function CategoryStrip({
                 onClick={() => onCategoryChange("all")}
                 aria-selected={activeCategory === "all"}
                 className={cn(
-                  "shrink-0 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-all whitespace-nowrap",
+                  "shrink-0 flex items-center gap-1.5 rounded-squircle-sm px-3 py-1.5 text-sm font-medium transition-all whitespace-nowrap",
                   activeCategory === "all"
                     ? "bg-emerald-600 text-white shadow-sm"
                     : "bg-white text-slate-700 border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50"
@@ -183,7 +183,7 @@ export function CategoryStrip({
                 onClick={() => onCategoryChange(cat.id)}
                 aria-selected={activeCategory === cat.id}
                 className={cn(
-                  "shrink-0 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-all whitespace-nowrap",
+                  "shrink-0 flex items-center gap-1.5 rounded-squircle-sm px-3 py-1.5 text-sm font-medium transition-all whitespace-nowrap",
                   activeCategory === cat.id
                     ? "bg-emerald-600 text-white shadow-sm"
                     : "bg-white text-slate-700 border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50"
@@ -205,7 +205,7 @@ export function CategoryStrip({
               type="button"
               onClick={scrollRight}
               aria-label="เลื่อนขวา"
-              className="absolute right-0 top-1/2 -translate-y-1/2 z-10 flex size-8 items-center justify-center rounded-full bg-white/90 border border-slate-200 text-slate-600 shadow-md hover:bg-white transition-colors lg:hidden"
+              className="absolute right-0 top-1/2 -translate-y-1/2 z-10 flex size-8 items-center justify-center rounded-squircle-sm bg-white/90 border border-slate-200 text-slate-600 shadow-md hover:bg-white transition-colors lg:hidden"
             >
               <ChevronRight className="size-4" />
             </button>

@@ -1,6 +1,6 @@
 # FRONTEND — Design, Theme, Responsive, i18n
 
-Source of truth: `VELNOX_DESIGN_THEME.md` (v2.1 — type scale + brand/radius tokens corrected 2026-11-10). This file is the AI navigation layer.
+Source of truth: `VELNOX_DESIGN_THEME.md` (v2.2 — squircle shape language + type scale + brand/radius tokens, 2026-11-11). This file is the AI navigation layer.
 
 ## Where Frontend Code Lives
 
@@ -10,7 +10,7 @@ Source of truth: `VELNOX_DESIGN_THEME.md` (v2.1 — type scale + brand/radius to
 
 ## Principles
 
-White surfaces, `#f8fafc` page, `#0f172a` primary text/actions, `#10B981` emerald brand/Add-to-Cart, restrained borders/shadows, rounded cards (`rounded-2xl`/`rounded-[10px]`), mobile-first.
+White surfaces, `#f8fafc` page, `#0f172a` primary text/actions, `#10B981` emerald brand/Add-to-Cart, restrained borders/shadows, **squircle controls** (`rounded-squircle*`, v2.2 — §7.1), mobile-first. `rounded-full` is reserved for real circles (avatar, dot, spinner, progress, switch thumb).
 
 ## Semantic Colors
 

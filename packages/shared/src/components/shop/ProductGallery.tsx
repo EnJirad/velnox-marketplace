@@ -135,7 +135,7 @@ export function ProductGallery({
     return (
       <div
         className={cn(
-          "flex aspect-square w-full items-center justify-center rounded-2xl border border-slate-200 bg-slate-50",
+          "flex aspect-square w-full items-center justify-center rounded-squircle-lg border border-slate-200 bg-slate-50",
           className,
         )}
         role="img"
@@ -160,7 +160,7 @@ export function ProductGallery({
     >
       {/* ── MAIN ──────────────────────────────────────────────────────── */}
       <div
-        className="relative min-w-0 flex-1 overflow-hidden rounded-2xl border border-slate-200 bg-white"
+        className="relative min-w-0 flex-1 overflow-hidden rounded-squircle-lg border border-slate-200 bg-white"
         style={{ aspectRatio: "1 / 1" }}
       >
         {active && !mainFailed && (
@@ -237,13 +237,13 @@ export function ProductGallery({
           can never make the gallery taller. Its height is exactly the main
           image's height, and extra thumbnails scroll inside it.
 
-          The rail carries the SAME rounded-2xl corner as the main image frame,
+          The rail carries the SAME squircle-lg corner as the main image frame,
           so the clipped top/bottom of the scrolling strip is round instead of a
           hard square cut. The list is inset by the same 4px the rail adds to
           thumbSize, so the rounding shows on both sides. */}
       {hasMoreThanOne && (
         <div
-          className="relative shrink-0 self-stretch overflow-hidden rounded-2xl"
+          className="relative shrink-0 self-stretch overflow-hidden rounded-squircle-lg"
           style={{ width: thumbSize + 8 }}
           role="tablist"
           aria-label={labels.mainImageAlt}

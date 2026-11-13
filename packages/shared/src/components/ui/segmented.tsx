@@ -18,15 +18,18 @@ import { cn } from "@velnox/shared/lib/utils";
  * component changes no pixels:
  *
  *   tray  — small chip inside a slate tray (income period pickers)
- *   dark  — dark-filled pill used as a filter (seller orders, shop tabs)
- *   brand — emerald-filled pill with a leading icon and a count (my shop, catalog)
+ *   dark  — dark-filled chip used as a filter (seller orders, shop tabs)
+ *   brand — emerald-filled chip with a leading icon and a count (my shop, catalog)
+ *
+ * All three are squircles (`rounded-squircle*`), never pills: a filter chip is a
+ * rounded square, and only real circles (avatars, dots) use `rounded-full`.
  *
  * `dark` and `brand` are not migrated yet. They are declared here so the next
  * change has one obvious place to land instead of inventing a fourth recipe:
- *   dark  : shrink-0 rounded-full px-4 py-2 text-xs font-medium transition-all
+ *   dark  : shrink-0 rounded-squircle px-4 py-2 text-xs font-medium transition-all
  *           active:   bg-slate-900 text-white shadow-sm
  *           inactive: border border-slate-200 bg-white text-slate-600 hover:border-slate-300
- *   brand : inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors
+ *   brand : inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-squircle-sm border px-3 py-1.5 text-xs font-medium transition-colors
  *           active:   border-brand bg-brand text-white
  *           inactive: border-slate-200 bg-white text-slate-600 hover:border-slate-300
  */
@@ -34,17 +37,17 @@ export type SegmentedVariant = "tray" | "dark" | "brand";
 
 const RECIPES: Record<SegmentedVariant, { base: string; active: string; inactive: string }> = {
   tray: {
-    base: "px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
+    base: "px-3 py-1.5 text-xs font-medium rounded-squircle-sm transition-colors",
     active: "bg-white text-slate-900 shadow-sm",
     inactive: "text-slate-500 hover:text-slate-700",
   },
   dark: {
-    base: "shrink-0 rounded-full px-4 py-2 text-xs font-medium transition-all",
+    base: "shrink-0 rounded-squircle px-4 py-2 text-xs font-medium transition-all",
     active: "bg-slate-900 text-white shadow-sm",
     inactive: "border border-slate-200 bg-white text-slate-600 hover:border-slate-300",
   },
   brand: {
-    base: "inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+    base: "inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-squircle-sm border px-3 py-1.5 text-xs font-medium transition-colors",
     active: "border-brand bg-brand text-white",
     inactive: "border-slate-200 bg-white text-slate-600 hover:border-slate-300",
   },

@@ -1,4 +1,4 @@
-# VELNOX_DESIGN_THEME.md — Velnox Design System v2.1
+# VELNOX_DESIGN_THEME.md — Velnox Design System v2.2
 
 > SOURCE OF TRUTH for all Velnox UI/UX work.
 >
@@ -201,7 +201,7 @@ Do not scatter arbitrary green values throughout components when a shared token 
 ```
 
 Button rules:
-- Buttons: approximately `rounded-[10px]`
+- Buttons: `rounded-squircle` (14px) — see §7.1. Never a pill, never a hard corner
 - Use existing Button component
 - Do not create duplicate button systems
 - Do not use random gradients for normal buttons
@@ -260,12 +260,13 @@ Do not invent heavy multi-layer shadows for ordinary UI.
 | Component | Pattern | ค่าจริง |
 |---|---|---|
 | Base | `--radius: 0.75rem` | 12px |
-| Buttons | `rounded-md` | 10px (`calc(var(--radius) - 2px)`) |
-| Inputs | `rounded-md` | 10px |
-| Cards | `rounded-2xl` / `rounded-3xl` | 16px / 24px |
-| Badges | `rounded-full` | — |
+| Buttons | `rounded-squircle` (sm: `-sm`, lg: `-lg`) | 14px / 10px / 18px |
+| Inputs | `rounded-squircle` | 14px |
+| Cards | `rounded-squircle-lg` | 18px |
+| Badges | `rounded-squircle-xs` | 7px |
 | Avatars | `rounded-full` | — |
-| Pills | `rounded-full` | — |
+| Media frames (gallery, product image) | `rounded-squircle-lg` | 18px |
+| Circles (dots, spinners, progress, switch thumb) | `rounded-full` | — |
 
 **ค่าจริงที่วัดจาก CSS ที่ build แล้ว** (อย่าเดาจากค่า default ของ Tailwind):
 
@@ -286,6 +287,63 @@ Do not invent heavy multi-layer shadows for ordinary UI.
 ซึ่งขัดกับประโยค "Avoid arbitrary radius values" ถัดมา — แก้ 2026-11-10 หลังรวม 262 จุด)
 
 ถ้าต้องใช้ค่าที่ไม่มีในระบบ (เช่น 2px/4px/6px/14px) ให้เพิ่ม token ใน `index.css` ก่อน ไม่ใช่พิมพ์ค่าดิบ
+
+## 7.1 Squircle — รูปร่างประจำตัวของ Velnox
+
+Velnox ไม่ได้ใช้ "วงกลม" หรือ "สี่เหลี่ยมคม" เป็นภาษารูปร่างหลัก แต่ใช้ **squircle** —
+สี่เหลี่ยมผืนผ้าที่มุมมนจนดูกลม แต่ยังอ่านออกว่าเป็นสี่เหลี่ยม (radius ≈ 30% ของด้านสั้น)
+
+เหตุผล: วงกลมเต็ม (`rounded-full`) บนปุ่มไอคอนทำให้ทุกอย่างดูเหมือน "chip ของ iOS"
+ส่วนมุมคมทำให้ดูแข็งและไม่เข้ากับการ์ดที่มนอยู่แล้ว squircle ทำให้ปุ่ม ไอคอน ป้าย และการ์ด
+อยู่ในตระกูลรูปร่างเดียวกัน
+
+### Scale (ประกาศใน `packages/shared/src/index.css` → `@theme inline`)
+
+| Token | ค่า | ใช้กับ |
+|---|---|---|
+| `rounded-squircle-xs` | **7px** | `Badge`, chip เล็ก, ตัวนับ (`12`), `kbd` |
+| `rounded-squircle-sm` | **10px** | ปุ่มเล็ก `size="sm"`, ช่องค้นหา, chip ตัวกรอง, ปุ่มไอคอน `size-8`/`size-10` เล็ก, ปุ่มหัวใจบนการ์ด |
+| `rounded-squircle` | **14px** | ปุ่มมาตรฐาน (`h-11`), `Input`, ปุ่มไอคอน `size-10`/`size-11`, toolbar ของ lightbox |
+| `rounded-squircle-lg` | **18px** | ปุ่ม `size="lg"`, `Card`, กรอบรูปสินค้า/แกลเลอรี |
+
+### กฎ
+
+1. **ทุก control ที่ไม่ใช่วงกลมจริง = squircle** — อย่าใช้ `rounded-md` / `rounded-lg` / `rounded-xl`
+   กับ control ใหม่ (ยังใช้ได้กับของเดิมที่ยังไม่ migrate)
+2. **`rounded-full` สงวนไว้ให้ของที่เป็นวงกลมจริงเท่านั้น**: avatar, status dot, spinner,
+   progress bar/ring, switch thumb, ปุ่มปิดแบบลอย (ถ้าตั้งใจให้กลม)
+3. **เลือก step ตามขนาด ไม่ใช่ตามความชอบ** — badge 22px ต้องเป็น `-xs` (7px) ไม่ใช่ 14px
+   เพราะ 14px บนกล่อง 22px จะกลายเป็นวงกลม
+4. **ปุ่มไอคอนต้องจัดไอคอนกึ่งกลางด้วย `flex items-center justify-center`** — ถ้าไม่มี flex
+   ไอคอน SVG จะวางบน text baseline แล้วลอยขึ้นบนในกรอบ (บั๊กที่เจอใน lightbox toolbar)
+5. ห้ามเขียนค่า radius ดิบ (`rounded-[14px]`) — ใช้ token
+
+### ตัวอย่าง
+
+```tsx
+// ปุ่มมาตรฐาน
+<Button>ซื้อเลย</Button>                        // rounded-squircle (14px)
+
+// ปุ่มไอคอนใน toolbar
+<button className="flex size-10 items-center justify-center rounded-squircle border border-white/10 bg-white/10">
+  <Share2 className="size-5" />
+</button>
+
+// ป้ายสถานะ
+<Badge className="rounded-squircle-xs bg-emerald-50 text-emerald-700">Active</Badge>
+
+// กรอบรูปสินค้า + แถบรูปย่อย (ต้อง radius เดียวกัน)
+<div className="rounded-squircle-lg overflow-hidden">…</div>
+```
+
+### สถานะการ migrate
+
+ทำแล้ว (2026-11-11): `Button`, `Badge`, `Input`, `Card`, `SegmentedOption`, `ProductGallery`
+(กรอบหลัก + แถบ thumbnail), `GalleryLightbox` toolbar, `ShopHeader`, `CategoryStrip`,
+`ProductCard`, `ProductActionBar`, `ShopProductDetail`.
+
+ยังเหลือ (ทำเมื่อแตะหน้านั้นอยู่แล้ว): `Dialog`/`Sheet`/`Popover` surface, `Select`, `Textarea`,
+`Tabs`, ตารางใน VelCenter, หน้า checkout/orders ของ VelShop, หน้า seller
 
 ---
 
@@ -513,7 +571,7 @@ Do not create multiple independent toast systems.
 Default:
 
 ```tsx
-<Badge className="rounded-full bg-slate-100 text-slate-600">
+<Badge className="rounded-squircle-xs bg-slate-100 text-slate-600">
   Label
 </Badge>
 ```
@@ -521,7 +579,7 @@ Default:
 Success:
 
 ```tsx
-<Badge className="rounded-full bg-[#ECFDF5] text-emerald-700 ring-1 ring-inset ring-emerald-600/15">
+<Badge className="rounded-squircle-xs bg-[#ECFDF5] text-emerald-700 ring-1 ring-inset ring-emerald-600/15">
   Active
 </Badge>
 ```
@@ -529,7 +587,7 @@ Success:
 Warning:
 
 ```tsx
-<Badge className="rounded-full bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-600/15">
+<Badge className="rounded-squircle-xs bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-600/15">
   Pending
 </Badge>
 ```
@@ -543,13 +601,13 @@ Status meanings must remain consistent across all Velnox apps.
 Default:
 
 ```tsx
-<Input className="rounded-[10px] border-slate-200" />
+<Input className="rounded-squircle border-slate-200" />
 ```
 
 Error:
 
 ```tsx
-<Input className="rounded-[10px] border-red-500 focus-visible:ring-red-500" />
+<Input className="rounded-squircle border-red-500 focus-visible:ring-red-500" />
 ```
 
 Rules:
@@ -723,6 +781,9 @@ Before finishing a UI task:
 - [ ] Cards = white/slate surfaces
 - [ ] Borders = slate-200 family
 - [ ] Radius follows system
+- [ ] **Control ใหม่ทุกตัวเป็น squircle** (`rounded-squircle-xs|sm|` / `-lg`) ตาม §7.1
+- [ ] `rounded-full` ใช้เฉพาะของที่เป็นวงกลมจริง (avatar, dot, spinner, progress, switch thumb)
+- [ ] ปุ่มไอคอนมี `flex items-center justify-center` ให้ไอคอนอยู่กลางกรอบ
 - [ ] Shadows follow system
 - [ ] **ไม่มี arbitrary value `[...]` สำหรับสี / radius / font-size** — ใช้ token
       (`*-brand`, `rounded-md|lg|xl|2xl`, `text-2xs|xs|sm|base|lg|xl|2xl|3xl`)
@@ -751,7 +812,27 @@ The goal is not just to make one screen look good. The goal is to keep all Velno
 
 ## Version
 
-**Velnox Design System v2.1** (2026-11-10)
+**Velnox Design System v2.2** (2026-11-11)
+
+### Changelog v2.1 → v2.2 — Squircle shape language
+
+รอบนี้เป็นการ**เปลี่ยนรูปร่างจริง** (ไม่ใช่แค่แก้เอกสาร) — กำหนด squircle เป็นรูปร่างประจำตัว
+ของ Velnox และเปลี่ยน primitive ที่ทุกหน้าใช้ร่วมกัน
+
+| แก้ | เดิม | ใหม่ |
+|---|---|---|
+| Radius tokens (§7.1) | ไม่มี | `--radius-squircle-xs/sm//lg` = 7 / 10 / 14 / 18px |
+| `Button` (§4) | `rounded-md` (10px) | `rounded-squircle` (14px) · sm → 10px · lg → 18px |
+| `Badge` (§16) | `rounded-full` (pill) | `rounded-squircle-xs` (7px) |
+| `Input` (§17) | `rounded-md` (10px) | `rounded-squircle` (14px) |
+| `Card` (§5) | `rounded-xl` (16px) | `rounded-squircle-lg` (18px) |
+| Gallery frames (§12) | `rounded-2xl` (16px) | `rounded-squircle-lg` (18px) — กรอบหลัก + แถบ thumbnail ใช้ตัวเดียวกัน |
+| `SegmentedOption` | `rounded-md` / `rounded-full` | `rounded-squircle-sm` / `rounded-squircle` |
+| Shop header, category chips, product card, action bar | ผสม `rounded-full` / `rounded-md` | squircle ตามขนาด |
+| Checklist (§26) | ไม่มีข้อเรื่องรูปร่าง | เพิ่ม 3 ข้อ (squircle / circle exception / icon centring) |
+
+`rounded-full` ยังใช้ได้ แต่**เฉพาะของที่เป็นวงกลมจริง**: avatar, status dot, spinner,
+progress bar/ring, switch thumb
 
 ### Changelog v2.0 → v2.1
 

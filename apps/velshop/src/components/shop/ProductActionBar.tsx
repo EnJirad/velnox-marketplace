@@ -136,7 +136,7 @@ export function ProductActionBar({
         type="button"
         onClick={handleLike}
         disabled={loading === "like"}
-        className={`flex items-center gap-1 rounded-full transition-colors ${
+        className={`flex items-center gap-1 rounded-squircle-sm transition-colors ${
           liked
             ? "bg-rose-50 text-rose-600"
             : "text-slate-400 hover:bg-slate-100 hover:text-rose-600"
@@ -156,7 +156,7 @@ export function ProductActionBar({
         type="button"
         onClick={handleSave}
         disabled={loading === "save"}
-        className={`flex items-center gap-1 rounded-full transition-colors ${
+        className={`flex items-center gap-1 rounded-squircle-sm transition-colors ${
           saved
             ? "bg-emerald-50 text-emerald-600"
             : "text-slate-400 hover:bg-slate-100 hover:text-emerald-600"
@@ -175,7 +175,7 @@ export function ProductActionBar({
       <button
         type="button"
         onClick={handleShare}
-        className="flex items-center gap-1 rounded-full text-slate-400 hover:bg-slate-100 hover:text-brand transition-colors"
+        className="flex items-center gap-1 rounded-squircle-sm text-slate-400 hover:bg-slate-100 hover:text-brand transition-colors"
         aria-label={t("product.share")}
       >
         <Share2 className="flex-shrink-0" style={{ width: iconSize, height: iconSize }} />
@@ -186,7 +186,7 @@ export function ProductActionBar({
       <button
         type="button"
         onClick={handleComment}
-        className="flex items-center gap-1 rounded-full text-slate-400 hover:bg-slate-100 hover:text-brand transition-colors"
+        className="flex items-center gap-1 rounded-squircle-sm text-slate-400 hover:bg-slate-100 hover:text-brand transition-colors"
         aria-label={t("product.comment")}
       >
         <MessageCircle className="flex-shrink-0" style={{ width: iconSize, height: iconSize }} />

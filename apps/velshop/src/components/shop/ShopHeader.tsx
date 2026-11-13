@@ -75,12 +75,12 @@ export function ShopHeader() {
                     placeholder={t("header.searchPlaceholder")}
                     aria-label={t("header.ariaSearch")}
                     enterKeyHint="search"
-                    className="h-10 w-full min-w-0 appearance-none rounded-full bg-white pl-4 pr-10 text-[13px] text-slate-900 outline-none placeholder:text-slate-400 focus-visible:ring-2 focus-visible:ring-white/70 [&::-webkit-search-cancel-button]:hidden"
+                    className="h-10 w-full min-w-0 appearance-none rounded-squircle bg-white pl-4 pr-10 text-[13px] text-slate-900 outline-none placeholder:text-slate-400 focus-visible:ring-2 focus-visible:ring-white/70 [&::-webkit-search-cancel-button]:hidden"
                   />
                   <button
                     type="submit"
                     aria-label={t("header.ariaSearch")}
-                    className="absolute right-1 flex size-8 cursor-pointer items-center justify-center rounded-full text-slate-500 transition-colors hover:text-brand"
+                    className="absolute right-1 flex size-8 cursor-pointer items-center justify-center rounded-squircle-sm text-slate-500 transition-colors hover:text-brand"
                   >
                     <Search className="size-[18px]" />
                   </button>
@@ -102,7 +102,7 @@ export function ShopHeader() {
             {isLoading ? null : isAuthenticated && user ? (
               <Link
                 to="/profile"
-                className="flex size-10 items-center justify-center rounded-full text-white hover:bg-white/15"
+                className="flex size-10 items-center justify-center rounded-squircle text-white hover:bg-white/15"
                 aria-label={t("header.ariaProfile")}
               >
                 <img
@@ -144,7 +144,7 @@ export function ShopHeader() {
             {isLoading ? null : isAuthenticated && user ? (
               <Link
                 to="/profile"
-                className="flex size-10 items-center justify-center rounded-full text-white transition-colors hover:bg-white/15"
+                className="flex size-10 items-center justify-center rounded-squircle text-white transition-colors hover:bg-white/15"
                 aria-label={t("header.ariaProfile")}
               >
                 <img

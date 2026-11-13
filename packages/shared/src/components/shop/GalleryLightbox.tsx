@@ -36,7 +36,7 @@ interface GalleryLightboxProps {
  * close icons look like they were hanging off their own background.
  */
 const TOOLBAR_BUTTON = cn(
-  "flex size-10 items-center justify-center rounded-xl",
+  "flex size-10 items-center justify-center rounded-squircle",
   "border border-white/10 bg-white/10 text-white",
   "transition-colors hover:bg-white/20 active:bg-white/25",
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500",

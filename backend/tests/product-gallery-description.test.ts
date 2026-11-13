@@ -39,7 +39,7 @@ describe("gallery layout — main image left, thumbnails right, one divider", ()
 
   test("main image is left, thumbnails are a VERTICAL column on the right", () => {
     const src = read(GALLERY);
-    const main = src.indexOf('className="relative min-w-0 flex-1 overflow-hidden rounded-2xl');
+    const main = src.indexOf('className="relative min-w-0 flex-1 overflow-hidden rounded-squircle-lg');
     const divider = src.indexOf("self-stretch bg-slate-200");
     // The rail is a stretched flex item whose scrolling list is absolutely
     // positioned inside it, so a long list can never make the gallery taller.
@@ -52,12 +52,12 @@ describe("gallery layout — main image left, thumbnails right, one divider", ()
     expect(src).toContain("style={{ width: thumbSize, height: thumbSize }}");
   });
 
-  test("the thumbnail rail carries the same rounded corner as the main frame", () => {
+  test("the thumbnail rail carries the same squircle corner as the main frame", () => {
     const src = read(GALLERY);
-    // Same rounding as the main image box, so the clipped top/bottom edge of the
-    // scrolling strip is round rather than a hard square cut.
-    expect(src).toContain("relative shrink-0 self-stretch overflow-hidden rounded-2xl");
-    expect(src).toContain("className=\"relative min-w-0 flex-1 overflow-hidden rounded-2xl");
+    // Same shape token as the main image box, so the clipped top/bottom edge of
+    // the scrolling strip follows the frame's corner instead of a hard square cut.
+    expect(src).toContain("relative shrink-0 self-stretch overflow-hidden rounded-squircle-lg");
+    expect(src).toContain("className=\"relative min-w-0 flex-1 overflow-hidden rounded-squircle-lg");
   });
 
   test("the selected thumbnail carries the accent border", () => {

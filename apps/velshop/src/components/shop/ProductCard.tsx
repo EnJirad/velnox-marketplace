@@ -95,7 +95,7 @@ export function ProductCard({ product, onOpen: _onOpen, onAdd: _onAdd, badgeLabe
             type="button"
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); onWishlist(product); }}
             disabled={wishToggling}
-            className={`absolute right-1 top-1 flex items-center justify-center rounded-full bg-white/80 backdrop-blur-sm transition-colors hover:bg-white ${compact ? "size-7" : "right-2 top-2 size-8"}`}
+            className={`absolute right-1 top-1 flex items-center justify-center rounded-squircle-sm bg-white/80 backdrop-blur-sm transition-colors hover:bg-white ${compact ? "size-7" : "right-2 top-2 size-8"}`}
             aria-label={t("product.ariaWishlist")}
           >
             {wishToggling ? (

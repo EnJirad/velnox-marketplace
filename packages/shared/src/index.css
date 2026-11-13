@@ -16,6 +16,26 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+
+  /* ─── SQUIRCLE — the Velnox signature shape ───────────────────────────
+   * "Neither a circle nor a square": a rounded SQUARE whose corner radius is
+   * roughly 30% of the element's short side. One step per size class, so a
+   * 22px badge and a 44px button look like the same family instead of the
+   * same number applied to different sizes.
+   *
+   *   rounded-squircle-xs   7px   badges, chips, kbd
+   *   rounded-squircle-sm  10px   small controls (h-8 … h-10), search pills
+   *   rounded-squircle     14px   default controls (h-11), icon buttons
+   *   rounded-squircle-lg  18px   large controls (h-12), cards, media frames
+   *
+   * `rounded-full` is NOT part of this scale and stays reserved for things
+   * that are actually circles: avatars, status dots, spinners, progress
+   * bars/rings, switch thumbs. Everything else is a squircle.
+   * ──────────────────────────────────────────────────────────────────── */
+  --radius-squircle-xs: 0.4375rem;
+  --radius-squircle-sm: 0.625rem;
+  --radius-squircle: 0.875rem;
+  --radius-squircle-lg: 1.125rem;
   /* ONE elevation vocabulary. Ad-hoc shadow-[...] values are what made
      cards, pills and sheets look unrelated; these three are the only
      heights the UI should use. */

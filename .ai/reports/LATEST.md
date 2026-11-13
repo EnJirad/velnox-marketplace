@@ -1,113 +1,88 @@
-# LATEST — 2026-11-11 · Product Gallery + Rich Description (VelShop ↔ VelSeller)
+# LATEST — 2026-11-11 · Squircle Shape Language (Design System v2.2)
 
-**Branch:** `main` · **HEAD:** `301a483` · **Status:** DONE — push แล้ว, CI เขียวทั้งสอง workflow, gallery ตรวจบน production จริง
+**Branch:** `main` · **Status:** DONE — implementation + docs + guard test, typecheck 4/4, build 4/4
 
 ## 1. สรุป
 
-ทำระบบ gallery + rich description ให้ VelShop และ VelSeller ใช้ข้อมูลชุดเดียวกันจริง
-ตั้งแต่ Seller → Backend → R2 → Neon → Public API → VelShop ไม่ใช่แค่ปรับ UI
+owner ขอให้ "สี่เหลี่ยมขอบมน จะกลมก็ไม่กลม จะเหลี่ยมก็ไม่เหลี่ยม" เป็น**ธีมรูปร่างประจำตัว**
+ของเว็บ ไม่ใช่แค่ปรับปุ่มเดียว รอบนี้จึงยกระดับจาก "แก้ class ทีละจุด" เป็น**ระบบ shape
+อย่างเป็นทางการ** ใน design system:
 
-## 2. Gallery ตาม reference
+- เพิ่ม radius token 4 ขั้นใน `packages/shared/src/index.css` (`@theme inline`)
+- เปลี่ยน primitive ที่ทุกหน้าใช้ร่วมกัน (Button / Badge / Input / Card / SegmentedOption)
+- เปลี่ยน surface ที่เป็น "หน้าตา" ของร้าน (header, category chips, product card,
+  product detail, gallery, lightbox)
+- เขียนกฎลง `VELNOX_DESIGN_THEME.md` เป็น §7.1 + checklist + changelog v2.2
+- เพิ่ม guard test กันไม่ให้ radius drift กลับ
 
-`packages/shared/src/components/shop/ProductGallery.tsx` (ใหม่ — ใช้ทั้ง 2 แอป)
+## 2. Scale ที่ประกาศ (วัดจาก CSS ที่ build จริง)
+
+| Token | ค่า | ใช้กับ |
+|---|---|---|
+| `rounded-squircle-xs` | 7px | `Badge`, chip เล็ก, ตัวนับ |
+| `rounded-squircle-sm` | 10px | ปุ่ม `size="sm"`, search, filter chip, ปุ่มไอคอน `size-8` |
+| `rounded-squircle` | 14px | ปุ่มมาตรฐาน `h-11`, `Input`, ปุ่มไอคอน `size-10/11`, lightbox toolbar |
+| `rounded-squircle-lg` | 18px | ปุ่ม `size="lg"`, `Card`, กรอบรูปสินค้า + แถบ thumbnail |
+
+หลักคิด: radius ≈ 30% ของด้านสั้น → badge 22px ได้ 7px, ปุ่ม 44px ได้ 14px
+ถ้าใช้เลขเดียวทุกขนาด ป้ายเล็กจะกลายเป็นวงกลม
+
+**ยืนยันว่า token ทำงานจริง** — grep จาก `apps/velshop/dist/assets/*.css`:
 
 ```
-[ MAIN ]  |  [ t1 ]        รูปหลักซ้าย · thumbnail คอลัมน์แนวตั้งขวา
-          |  [ t2 ]        เส้นแบ่งแนวตั้งจริง กึ่งกลางช่องว่าง
-          |  [ t3 ]        เลือกแล้วกรอบ accent
+rounded-squircle{border-radius:.875rem}
+rounded-squircle-lg{border-radius:1.125rem}
+rounded-squircle-sm{border-radius:.625rem}
+rounded-squircle-xs{border-radius:.4375rem}
 ```
 
-**วัดบน production จริง (velshop.vercel.app, viewport 415px):**
+## 3. กฎที่เขียนไว้ (§7.1)
 
-| องค์ประกอบ | ค่าที่วัดได้ |
+1. control ที่ไม่ใช่วงกลมจริง = squircle (ห้าม `rounded-md/lg/xl` กับ control ใหม่)
+2. `rounded-full` สงวนให้ของที่เป็นวงกลมจริง: avatar, status dot, spinner, progress, switch thumb
+3. เลือก step ตามขนาด ไม่ใช่ตามความชอบ
+4. ปุ่มไอคอนต้องมี `flex items-center justify-center` (ต้นเหตุไอคอนลอยใน lightbox)
+5. ห้าม radius ดิบ `rounded-[14px]`
+
+## 4. ไฟล์ที่แก้
+
+| ไฟล์ | สิ่งที่ทำ |
 |---|---|
-| main image | x=16, width=282 |
-| divider | x=308, width=1, height=312 (เต็มความสูง) |
-| ระยะห่าง divider ↔ main | **10 px** |
-| ระยะห่าง divider ↔ thumbnails | **10 px** |
-| thumbnail column | x=319, width=80, เรียงแนวตั้ง |
-| ขนาด thumbnail | 72 px ทุกใบ (uniform) |
-| กรอบรูปที่เลือก | `rgb(16, 185, 129)` = brand |
-| ตัวนับ | `1 / 4` |
+| `packages/shared/src/index.css` | +4 squircle tokens พร้อมคอมเมนต์กฎ |
+| `packages/shared/src/components/ui/button.tsx` | base 14px · sm 10px · lg 18px (icon inherits) |
+| `packages/shared/src/components/ui/badge.tsx` | pill → squircle-xs |
+| `packages/shared/src/components/ui/input.tsx` | rounded-md → squircle |
+| `packages/shared/src/components/ui/card.tsx` | rounded-xl → squircle-lg |
+| `packages/shared/src/components/ui/segmented.tsx` | 3 recipes → squircle |
+| `packages/shared/src/components/shop/ProductGallery.tsx` | กรอบหลัก + แถบ thumbnail ใช้ squircle-lg ตัวเดียวกัน |
+| `packages/shared/src/components/shop/GalleryLightbox.tsx` | toolbar plate squircle + ไอคอนกลางกรอบ |
+| `apps/velshop/src/components/shop/ShopHeader.tsx` | search + ปุ่มไอคอน |
+| `apps/velshop/src/components/shop/CategoryStrip.tsx` | chips + ลูกศรเลื่อน |
+| `apps/velshop/src/components/shop/ProductCard.tsx` | ปุ่มหัวใจ |
+| `apps/velshop/src/components/shop/ProductActionBar.tsx` | like/save/share/comment |
+| `apps/velshop/src/pages/ShopProductDetail.tsx` | badge, ปุ่มเลื่อนรูป, ตัวนับรีวิว |
+| `VELNOX_DESIGN_THEME.md` | v2.2 + §7.1 + checklist + changelog |
+| `.ai/context/frontend.md` | ชี้ v2.2 + กฎ squircle |
+| `backend/tests/design-squircle.test.ts` | ใหม่ — guard test 17 เคส |
+| `backend/tests/product-gallery-description.test.ts` | อัปเดต assertion ของกรอบ gallery |
 
-**ทดสอบ interaction บน production:** คลิก thumbnail ใบที่ 2 → รูปหลักเปลี่ยน (cdfdab… → 109623…), ตัวนับ `2 / 4`, ใบที่ 2 ได้ `aria-selected`
+## 5. ผลตรวจ (รันจริง)
 
-มี: swipe · prev/next · ลูกศรซ้าย-ขวาบนเดสก์ท็อป · คลิกซูม · loading/error/empty · กล่อง 1:1 จองที่ไว้ (ไม่มี layout shift)
-ไม่มีเส้นแบ่งเมื่อมีรูปเดียว (`hasMoreThanOne &&`)
-
-## 3. การแยกภาพ 3 ประเภท — แก้บั๊กจริง
-
-**เดิม:** `ShopProductDetail` push detail images เข้า carousel เป็น `group: 2`
-→ รูปประกอบรายละเอียดไปโผล่ในแถบ thumbnail ของ gallery
-
-**ตอนนี้:** gallery ใช้เฉพาะ `gallery` + variant ที่เลือก · detail images render ในแท็บรายละเอียด
-ตาม `sort_order` — **วัดบน production: gallery 4 ใบ, detail 5 ใบแยกออกมาอยู่นอก gallery**
-
-## 4. Seller editor
-
-`packages/shared/src/components/seller/ProductFormDialog.tsx`
-
-- **ลากสลับลำดับ** (HTML5 DnD) + ปุ่ม "ตั้งเป็นหลัก" = ย้ายไป index 0
-  ซึ่งเป็น `sort_order 0` ที่ backend บันทึกอยู่แล้ว → ไม่มีแนวคิด "รูปหลัก" ที่สอง
-- **preview สด** ใช้ `ProductGallery` ตัวเดียวกับหน้าร้าน (เห็นเส้นแบ่งเหมือนของจริง)
-- ลบ / จำนวน 10 / สถานะ upload / อัปโหลดหลายรูป — ของเดิมที่มีอยู่แล้วคงไว้
-- เปิดแก้ไขสินค้าเดิม → ได้ลำดับ + รูปหลัก + บล็อกเดิมครบ (`setBlocks` จาก `descriptionBlocks`)
-
-## 5. Rich description
-
-`backend/lib/description-blocks.ts` (validator กลาง) + `products.description_blocks` JSONB
-
-| ชนิดบล็อก | ต้องมี |
+| ตรวจ | ผล |
 |---|---|
-| `heading` | text |
-| `text` | text |
-| `image` | imageUrl |
-| `image_caption` | imageUrl + caption |
-| `image_text` | imageUrl + text (side-by-side บนเดสก์ท็อป) |
+| `bun run typecheck` (4 แอป) | ผ่าน 4/4 (exit 0) |
+| `bun run build:apps` | ผ่าน 4/4 (velshop 12.8s · velseller 9.6s · velcenter 7.4s · velnox 8.2s) |
+| `bun test backend/tests/design-squircle.test.ts` + gallery test | 36 pass / 0 fail |
+| `bun test backend/tests` (ทั้งชุด) | 1370 pass · 431 skip · 3 fail (**มีอยู่ก่อนแล้ว** — ยืนยันด้วย stash บน HEAD สะอาด) |
+| `bun run i18n:check` | FAIL — **มีอยู่ก่อนแล้ว** (my locale ขาด 16 key, `productDetail.addedToast` interpolation) |
+| `git diff --check` | clean |
+| compiled CSS | squircle utilities ออกครบ 4 ค่า |
 
-- 40 บล็อก / 4,000 ตัวอักษรต่อบล็อก / เฉพาะ URL `http(s)` หรือ `//` / `id` ซ้ำ = 400
-- ค่าว่าง = `[]` (ไม่ error) → สินค้าเดิมยังใช้ plain description ได้
-- เขียนผ่าน 2 ทางเดิม (`PATCH /api/seller/products/:id`, `POST .../create-full`) โดยมี ownership check
-- อ่านกลับทั้ง seller list และ public API (เรียงตามลำดับที่ผู้ขายจัด)
-- รูปในบล็อกอัปโหลดเป็น **detail** image (`draftUpload(..., "details")`) → ไม่มีทางหลุดเข้า gallery
+**ยังไม่ได้ตรวจด้วยตาในเบราว์เซอร์จริง** — เครื่องนี้ไม่มี `.env`/DB จึงรัน backend + หน้าร้านไม่ได้
+ใช้ mockup `.harness/preview/squircle-theme.html` เทียบขนาดจริงแทน
 
-## 6. Database
+## 6. ที่ยังเหลือ (staged rollout)
 
-| ไฟล์ | สิ่งที่เพิ่ม |
-|---|---|
-| `db/schema.sql` | `products.description_blocks JSONB NOT NULL DEFAULT '[]'::jsonb` |
-| `db/run-sqleditor.sql` | CREATE TABLE + `ADD COLUMN IF NOT EXISTS` (reconciler) |
-| `db/verify-reconciler.sh` | `CANON="67|256|285|717"` (วัดจาก CI จริง: +1 column) |
-
-**ไม่มีการลบ/แก้ข้อมูลเดิม** — additive column ที่มี default
-
-## 7. ผลทดสอบ (รันจริง)
-
-| คำสั่ง | ผล |
-|---|---|
-| `bun run typecheck` (4 apps) | ✅ exit 0 |
-| `bun --filter @velnox/backend typecheck` | ✅ exit 0 |
-| `bun test ./backend/tests` | ✅ **1442 pass / 0 fail** / 425 skip (1889 tests, 104 ไฟล์) |
-| ใหม่: `product-gallery-description.test.ts` | ✅ 22 pass — layout/เส้นแบ่ง/ลำดับ=รูปหลัก/แยก detail/validation/schema/ownership/i18n |
-| `bun run i18n:check` | ✅ th=2256 en=2256 my=2256 parity |
-| `bun run build:apps` | ✅ 4/4 |
-| `git diff --check` | ✅ clean |
-| CI `Tests` | ✅ success `301a483` |
-| CI `Production DB Verify` | ✅ success `301a483` |
-| production DOM (velshop) | ✅ divider + 4 thumbs + counter + click เปลี่ยนรูป |
-
-**ยังไม่ได้ทดสอบ:** DB-gated end-to-end suites (425 skip ในเครื่องนี้ — ไม่มี PostgreSQL;
-รันบน CI เท่านั้น) และ UI ของ VelSeller ด้วยผู้ใช้จริง (ต้อง login เป็น seller)
-
-## 8. Git
-
-- `dea50dc` feat(product): gallery + rich description
-- `301a483` fix(db): CANON 717
-- push → `origin/main` = `301a483` · working tree clean
-
-## 9. ปัญหาที่ยังเหลือ
-
-1. **production ยังไม่มีคอลัมน์ `description_blocks`** — ต้องรัน *Production DB Reconcile*
-   (manual, เขียน DB จริง — รอ owner สั่ง) ระหว่างนี้อ่านปลอดภัย เขียน blocks จะ error
-2. 425 DB-gated tests skip ในเครื่อง — ต้องดูผลบน CI
-3. VelSeller ยังไม่ได้กดทดสอบด้วยบัญชี seller จริง (ต้อง login)
+Dialog/Sheet/Popover surface, Select, Textarea, Tabs, ตาราง VelCenter,
+หน้า checkout/orders ของ VelShop, หน้า seller — ทำเมื่อแตะหน้านั้นอยู่แล้ว
+(เขียนไว้ใน §7.1 "สถานะการ migrate" แล้ว)

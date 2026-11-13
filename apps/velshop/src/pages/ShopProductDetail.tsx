@@ -151,10 +151,10 @@ function ProductCarousel({ title, viewAllLink, products, emptyText, t }: {
         <h3 className="text-base font-bold text-slate-900">{title}</h3>
         <div className="flex items-center gap-2">
           {viewAllLink && <Link to={viewAllLink} className="text-xs font-medium text-brand transition-colors hover:text-brand-strong">{t("productDetail.viewAll")}</Link>}
-          <button type="button" onClick={() => scroll("left")} className="flex size-7 items-center justify-center rounded-full border border-slate-200 text-slate-400 transition-colors hover:border-slate-300 hover:text-slate-600" aria-label="Scroll left">
+          <button type="button" onClick={() => scroll("left")} className="flex size-7 items-center justify-center rounded-squircle-sm border border-slate-200 text-slate-400 transition-colors hover:border-slate-300 hover:text-slate-600" aria-label="Scroll left">
             <ChevronDown className="size-3.5 -rotate-90" />
           </button>
-          <button type="button" onClick={() => scroll("right")} className="flex size-7 items-center justify-center rounded-full border border-slate-200 text-slate-400 transition-colors hover:border-slate-300 hover:text-slate-600" aria-label="Scroll right">
+          <button type="button" onClick={() => scroll("right")} className="flex size-7 items-center justify-center rounded-squircle-sm border border-slate-200 text-slate-400 transition-colors hover:border-slate-300 hover:text-slate-600" aria-label="Scroll right">
             <ChevronDown className="size-3.5 rotate-90" />
           </button>
         </div>
@@ -1135,8 +1135,8 @@ export default function ShopProductDetail() {
           {/* Product Info */}
           <div className="flex min-w-0 flex-col">
             <div className="flex flex-wrap items-center gap-2">
-              <Badge className="rounded-full bg-slate-100 text-slate-600 ring-1 ring-inset ring-slate-600/10">{categoryMeta?.label ?? product.categorySlug ?? product.category}</Badge>
-              {product.supplier && <Badge className="rounded-full bg-accent text-emerald-700 ring-1 ring-inset ring-emerald-600/15">{product.supplier}</Badge>}
+              <Badge className="rounded-squircle-xs bg-slate-100 text-slate-600 ring-1 ring-inset ring-slate-600/10">{categoryMeta?.label ?? product.categorySlug ?? product.category}</Badge>
+              {product.supplier && <Badge className="rounded-squircle-xs bg-accent text-emerald-700 ring-1 ring-inset ring-emerald-600/15">{product.supplier}</Badge>}
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <ProductTitle name={product.name} t={t} />
@@ -1255,7 +1255,7 @@ export default function ShopProductDetail() {
             {tabs.map((tab) => (
               <button key={tab.key} type="button" onClick={() => setActiveTab(tab.key)} className={`flex-1 px-4 py-3 text-center text-sm font-semibold transition-colors ${activeTab === tab.key ? "border-b-2 border-brand text-slate-900" : "text-slate-400 hover:text-slate-600"}`}>
                 {tab.label}
-                {tab.key === "reviews" && reviewSummary.total > 0 && <span className="ml-1.5 rounded-full bg-slate-100 px-1.5 py-0.5 text-2xs font-medium tabular-nums text-slate-500">{reviewSummary.total}</span>}
+                {tab.key === "reviews" && reviewSummary.total > 0 && <span className="ml-1.5 rounded-squircle-xs bg-slate-100 px-1.5 py-0.5 text-2xs font-medium tabular-nums text-slate-500">{reviewSummary.total}</span>}
               </button>
             ))}
           </div>
