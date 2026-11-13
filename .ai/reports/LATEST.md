@@ -1,92 +1,109 @@
-# LATEST — 2026-11-11 · Compact Login + VelCenter Staff-Only
+# LATEST — 2026-11-11 · Fix: "กรุณายืนยันว่าไม่ใช่บอทก่อน" แม้ติ๊ก Turnstile แล้ว
 
-**Branch:** `main` · **Status:** DONE — วัดผลจริงในเบราว์เซอร์แล้ว
+**Branch:** `main` · **Status:** DONE (code) · ⚠️ **สาเหตุฝั่ง production ยังต้องให้ owner ตั้งค่า**
 
-## 1. สรุป
+## 1. อาการที่ owner แจ้ง
 
-ปรับหน้า Login/Register (shared component ใช้ร่วมทั้ง 3 เว็บ) ให้ **กระชับ พอดี 1 จอ**
-ตัดข้อความที่ไม่จำเป็นออก และเปลี่ยน VelCenter ให้ล็อกอินได้เฉพาะพนักงาน
+> "มันก็เช็คถูกแล้วนี่ ทำไมเข้าสู่ระบบไม่ได้ มันขึ้น กรุณายืนยันว่าไม่ใช่บอทก่อน"
 
-## 2. ผลการวัดจริง (dev server + browser)
+Turnstile ติ๊กถูกแล้ว แต่ระบบยังบอกให้ยืนยัน
 
-| สถานะ | ก่อน | หลัง |
-|---|---|---|
-| การ์ด (login) | ~680 px (ต้องเลื่อน) | **558 px** |
-| การ์ด (register) | ~730 px | **591 px** |
-| ความกว้างจำลอง | 360 px | 360 px |
+## 2. Root Cause — มี 2 อย่างซ้อนกัน
 
-วัดด้วย `getBoundingClientRect()` บนหน้า `/auth` จริง ไม่ใช่การประมาณ
+### 2.1 ทุก error จาก server ถูกแปลงเป็นข้อความ "ยืนยันก่อน" (บั๊กจริง)
 
-## 3. สิ่งที่เอาออก (ตามที่ขอ)
+`handleGoogleSignIn` ทำแบบนี้:
 
-- "ยืนยันว่าไม่ใช่บอทเพื่อดำเนินการต่อ" (บรรทัดเหนือ Turnstile)
-- "กำลังรอการยืนยัน…" (สถานะใต้ widget) — widget บอกสถานะเองอยู่แล้ว
-- "ป้องกันด้วยการยืนยันตัวตน Cloudflare" (footer)
-- โลโก้ + คำอธิบายโหมด (description)
-- ช่อง "ชื่อ" ตอนสมัคร
-- ปุ่ม "ดำเนินการต่อในฐานะแขก" (เทียบเท่าปุ่มย้อนกลับ ซึ่งยังอยู่)
+```ts
+if (!proofRes.ok) {
+  const code = payload?.error?.code;
+  throw new Error(
+    code === "TURNSTILE_UNAVAILABLE" || code === "TURNSTILE_TIMEOUT"
+      ? t("auth.turnstile.networkError")
+      : t("auth.turnstile.required"),   // ← ทุกอย่างที่เหลือ
+  );
+}
+```
 
-**เก็บไว้:** สถานะ `expired / error / unavailable` ใต้ widget เพราะเป็นข้อมูลที่ต้องลงมือทำ
-(ปุ่มถูก disable และผู้ใช้ต้องรู้ว่าทำไม) — ถ้าตัดออกด้วยจะกลายเป็นปุ่มตายที่ไม่มีคำอธิบาย
+ดังนั้น **503 เพราะไม่มี `TURNSTILE_SECRET_KEY`**, **400 เพราะ hostname ไม่ตรง**,
+หรือ **503 เพราะตาราง `preauth_nonces` ยังไม่มี** → ลูกค้าเห็น
+"กรุณายืนยันว่าไม่ใช่บอทก่อน" ทั้งที่ทำถูกแล้ว
 
-## 4. ความกระชับ
+### 2.2 ข้อความค้าง (stale state)
 
-- `Card` ของ shadcn มี `py-6` + `gap-6` = **72px ของที่ว่างเปล่า** → override เป็น `py-0 gap-0`
-- input/ปุ่ม `h-12` → `h-11` (ยังเป็น 44px ตามเกณฑ์ touch target)
-- gap 4 → 2.5, header/card padding ลด, บรรทัดกฎหมายเหลือแค่ 2 ลิงก์ในบรรทัดเดียว
+`setError(t("auth.turnstile.required"))` ถูกตั้งก่อน widget จะถูกติ๊ก และ **ไม่เคยถูกล้าง**
+เมื่อผ่านการยืนยัน → ติ๊กแล้วก็ยังเห็นข้อความเดิม
 
-## 5. การสมัครสมาชิก (VelShop + VelSeller)
+## 3. สิ่งที่แก้
 
-| ก่อน | หลัง |
+| ไฟล์ | การแก้ |
 |---|---|
-| ชื่อ + อีเมล + รหัสผ่าน | **อีเมล + รหัสผ่าน + ยืนยันรหัสผ่าน** |
-| ไม่มีปุ่มดูรหัสผ่าน | **ตาทั้ง 2 ช่อง** (เปิด/ปิดแยกกัน) |
-| ไม่มีการตรวจรหัสตรงกัน | **ไม่ตรง = ขึ้นข้อความ + ปุ่ม submit disabled** |
+| `packages/shared/src/pages/Auth.tsx` | map `error.code` → ข้อความที่ตรงความจริง (login/register/member/Google ทั้ง 4 ทาง) + ล้างข้อความ "ยืนยันก่อน" ทันทีที่ได้ token + โลโก้กลับมา |
+| `packages/shared/src/hooks/use-turnstile.ts` | เพิ่ม `peek()` อ่าน `turnstile.getResponse()` — token จริงจาก Cloudflare |
+| i18n 3 ภาษา | เพิ่ม `auth.turnstile.wrongSite`, `auth.turnstile.notConfigured` (2297×3) |
+| test | +13 เคส (compact / signup / VelCenter / error mapping) |
 
-- ฝั่ง client: `if (password !== confirmPassword)` ก่อนยิง request
-- ฝั่ง server: `name` กลายเป็น optional → derive จาก local part ของอีเมล
-  (`users.name` เป็น `NOT NULL DEFAULT ''` จึงปลอดภัย)
+**ตาราง map ที่ใช้ตอนนี้**
 
-## 6. VelCenter — พนักงานเท่านั้น
-
-| องค์ประกอบ | สถานะ |
+| code จาก server | ข้อความที่ลูกค้าเห็น |
 |---|---|
-| ปุ่ม Google | ❌ ไม่แสดง (ลบทางเข้าออก) |
-| แท็บสมัครสมาชิก | ❌ ไม่แสดง |
-| ฟอร์มอีเมล/รหัสผ่านลูกค้า | ❌ ไม่แสดง |
-| ฟอร์ม Member ID/อีเมล + รหัสผ่าน | ✅ เป็นทางเข้าเดียว แสดงทันที (ไม่มี toggle) |
-| Turnstile gate | ✅ ยังอยู่ครบ |
-| หัวข้อหน้า | "เข้าสู่ระบบพนักงาน" |
+| `TURNSTILE_REQUIRED` | กรุณายืนยันว่าไม่ใช่บอทก่อน |
+| `TURNSTILE_INVALID` | การยืนยันไม่สำเร็จ กรุณาลองอีกครั้ง |
+| `TURNSTILE_EXPIRED` / `REPLAYED` | การยืนยันหมดอายุ — กรุณายืนยันใหม่ |
+| `TURNSTILE_HOSTNAME_MISMATCH` / `ACTION_MISMATCH` | การยืนยันนี้ทำบนโดเมนอื่น กรุณาโหลดหน้าใหม่ |
+| `TURNSTILE_TIMEOUT` / `UNAVAILABLE` | เชื่อมต่อระบบยืนยันไม่ได้… |
+| `TURNSTILE_NOT_CONFIGURED` / `PREAUTH_*` | ระบบยืนยันยังไม่พร้อมใช้งาน กรุณาติดต่อผู้ดูแล |
 
-## 7. เทสต์
+**Token resolution:** `turnstile.token ?? turnstile.peek()` — ถ้า Cloudflare ถือ response อยู่
+แต่ React ยังไม่ได้รับ callback ก็ยัง submit ได้ (server ยังตรวจซ้ำ และปฏิเสธ token ที่ใช้แล้ว)
+ปุ่มใช้ค่าเดียวกันนี้ → ไม่มีทาง "ปุ่มเทาแต่ widget เขียว"
 
-- `auth-turnstile-gate.test.ts` — ปรับให้ยืนยัน **ทีละคอนโทรล** (บทเรียนจากบั๊กปุ่ม Google รอบก่อน
-  ที่ assert ทั้งไฟล์แล้วพลาด) + เพิ่มชุดใหม่:
-  - ข้อความที่ถูกเอาออกต้องไม่กลับมา
-  - เฉพาะสถานะที่ต้องลงมือทำเท่านั้นที่ render
-  - สมัคร: มี confirm, ไม่มี name, mismatch บล็อก, request ไม่ส่ง name
-  - VelCenter: ไม่มี Google/register/memberMode, ชื่อหน้าเป็นของพนักงาน
-- ผลรวม: **1495 pass** / 431 skip / 2 fail (ของเดิม)
+## 4. โลโก้ (ตามที่ขอ)
 
-## 8. ผลตรวจ (รันจริง หลัง patch สุดท้าย)
+เพิ่มกลับในหัวการ์ด ใช้ทั้ง login และ register — วัดจริงที่ความกว้างจำลอง 360px:
+**login 598px · register 631px** (ยังพอดี 1 จอบนมือถือทั่วไป)
+
+## 5. ⚠️ สาเหตุฝั่ง Production ที่ต้องแก้ (สำคัญ)
+
+โค้ดแก้ให้ "บอกความจริง" แล้ว แต่ **ต้นเหตุที่ login ไม่ผ่านคือฝั่ง server** ซึ่ง agent
+ตรวจสอบแทนไม่ได้ ต้องทำ 2 อย่างนี้:
+
+### (ก) รัน SQL สร้างตาราง (ถ้ายังไม่รัน)
+ถ้าไม่รัน → Google login จะตอบ 503 `PREAUTH_STORE_UNAVAILABLE` ทุกครั้ง
+
+```sql
+CREATE TABLE IF NOT EXISTS preauth_nonces (
+  nonce_hash TEXT PRIMARY KEY,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires_at TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_preauth_nonces_expires ON preauth_nonces (expires_at);
+```
+
+หรือรันทั้งไฟล์ `db/run-sqleditor.sql` ใน Neon SQL Editor (idempotent)
+
+### (ข) ตั้ง env บน Render
+```
+TURNSTILE_SECRET_KEY=<secret key จาก Cloudflare>
+TURNSTILE_HOSTNAMES=velshop.vercel.app,velseller.vercel.app,velcenter.vercel.app
+```
+ถ้าไม่ตั้ง secret → ทุก login ถูกปฏิเสธ (fail-closed) ด้วย `TURNSTILE_NOT_CONFIGURED`
+ถ้า hostname ไม่ตรง → `TURNSTILE_HOSTNAME_MISMATCH`
+
+หลังแก้แล้ว อาการจะเปลี่ยนจาก "กรุณายืนยัน…" เป็นข้อความที่บอกสาเหตุจริง —
+ถ้ายังไม่ผ่าน ให้ดูข้อความใหม่นั้นแล้วแจ้งกลับมาได้เลย
+
+## 6. ผลตรวจ (รันจริง)
 
 | คำสั่ง | ผล |
 |---|---|
 | `bun run typecheck` | **4/4 ผ่าน** |
-| `bun run i18n:check` | **OK — 2295 × 3 parity** |
-| `bun run build:velshop` | **ผ่าน** |
-| `bun run build:velseller` | **ผ่าน** |
-| `bun run build:velcenter` | **ผ่าน** |
-| `bun test backend/tests` | **1495 pass** / 431 skip / 2 fail (ของเดิม: chat transport, verification exports) |
+| `bun run i18n:check` | **OK — 2297 × 3** |
+| build velShop / velSeller / velCenter | **3/3 ผ่าน** |
+| `bun test backend/tests` | **1497 pass** / 431 skip / 2 fail (ของเดิม) |
 | `git diff --check` | **clean** |
+| วัด UI ในเบราว์เซอร์ | โลโก้แสดง, 598/631px, ไม่มีข้อความที่ถูกเอาออก |
 
-## 9. ข้อจำกัด
+## 7. Git
 
-- **VelCenter ไม่ได้เห็นด้วยตาในโหมดพนักงาน** — `currentSite()` ตรวจจาก hostname
-  (`velcenter.vercel.app`) หรือ path `/center` ซึ่งบน dev server localhost จะตกไปเป็น velshop
-  → ตรวจด้วยเทสต์ + โค้ดแทน (production จะเข้า branch ที่ถูกต้อง)
-- ยังไม่ได้ทดสอบบนเครื่องจริง 360/390/768/1280 — วัดด้วยการจำลองความกว้าง 336px (360 − padding)
-
-## 10. Git
-
-- commit `f4225a9` · push แล้ว · `HEAD = origin/main = f4225a9` · working tree clean
+- commit `f8c5728` · push แล้ว · `HEAD = origin/main = f8c5728` · working tree clean
