@@ -18,11 +18,13 @@ import crypto from "crypto";
 import { turnstileStatusFor, verifyTurnstile } from "../lib/turnstile.js";
 import {
   PREAUTH_COOKIE,
+  PREAUTH_NONCE_SCOPE,
   clearPreAuthCookieOptions,
   createPreAuthProof,
   preAuthCookieOptions,
   validatePreAuthProof,
 } from "../lib/preauth-proof.js";
+import { consumeNonce, recordNonce } from "../lib/nonce-store.js";
 
 /**
  * Google OAuth authentication routes.
@@ -671,6 +673,23 @@ export function setupGoogleAuth(app: Express): void {
         return;
       }
 
+      /**
+       * Record the nonce BEFORE the cookie exists.
+       *
+       * A signed cookie that cannot be consumed exactly once is just a bearer
+       * token with a TTL, so if the shared store is unavailable we refuse to
+       * issue it at all. This is the fail-closed half of the one-time design.
+       */
+      const recorded = await recordNonce(PREAUTH_NONCE_SCOPE, proof.nonce, proof.maxAgeMs);
+      if (!recorded) {
+        console.error("[auth] pre-auth nonce store unavailable — refusing to issue a proof");
+        res.status(503).json({
+          success: false,
+          error: { code: "PREAUTH_STORE_UNAVAILABLE", message: "Sign-in is temporarily unavailable" },
+        });
+        return;
+      }
+
       res.cookie(
         PREAUTH_COOKIE,
         proof.cookieValue,
@@ -686,7 +705,7 @@ export function setupGoogleAuth(app: Express): void {
     }
   });
 
-  app.get("/auth/google", (req: Request, res: Response) => {
+  app.get("/auth/google", async (req: Request, res: Response) => {
     /**
      * ── PRE-AUTH PROOF GATE ────────────────────────────────────────────────
      * Read, validate and CONSUME the one-time proof before anything else.
@@ -705,6 +724,23 @@ export function setupGoogleAuth(app: Express): void {
     const proof = validatePreAuthProof(proofCookie);
     if (!proof.ok) {
       console.warn(`[auth] /auth/google refused without pre-auth proof: ${proof.reason}`);
+      const frontendUrl = getFrontendUrl(req, sanitizeReturnTo(req.query.returnTo));
+      res.redirect(`${frontendUrl}/auth?error=preauth_required`);
+      return;
+    }
+
+    /**
+     * ── ONE-TIME CONSUMPTION ───────────────────────────────────────────────
+     * Clearing the cookie stops a replay in the SAME browser; it does not stop
+     * a captured value used concurrently, nor a second backend instance that
+     * never saw the first request. `consumeNonce` is a single atomic DELETE in
+     * the shared database, so exactly one caller — on any instance — can win.
+     */
+    const consumed = await consumeNonce(PREAUTH_NONCE_SCOPE, proof.nonce);
+    if (consumed !== "ok") {
+      // `replayed`, `expired` and `unavailable` are all rejections. Failing
+      // closed here is the point: never fall through to the OAuth redirect.
+      console.warn(`[auth] /auth/google proof not consumable: ${consumed}`);
       const frontendUrl = getFrontendUrl(req, sanitizeReturnTo(req.query.returnTo));
       res.redirect(`${frontendUrl}/auth?error=preauth_required`);
       return;

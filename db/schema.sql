@@ -825,6 +825,18 @@ CREATE TABLE IF NOT EXISTS revoked_tokens (
 );
 CREATE INDEX IF NOT EXISTS idx_revoked_tokens_id ON revoked_tokens (token_id);
 CREATE INDEX IF NOT EXISTS idx_revoked_tokens_user ON revoked_tokens (user_id);
+
+CREATE TABLE IF NOT EXISTS preauth_nonces (
+  -- One-time pre-authentication nonces for the Google OAuth gate.
+  -- Only the SHA-256 of the nonce is stored; the raw value lives solely in the
+  -- signed httpOnly cookie. A row exists from mint until first use, then the
+  -- consuming request DELETEs it — that single statement is what makes the
+  -- proof single-use across every backend instance.
+  nonce_hash TEXT PRIMARY KEY,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires_at TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_preauth_nonces_expires ON preauth_nonces (expires_at);
 CREATE INDEX IF NOT EXISTS idx_revoked_tokens_expires ON revoked_tokens (expires_at);
 CREATE TABLE IF NOT EXISTS product_reviews (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

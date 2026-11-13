@@ -21,7 +21,12 @@ import cookieParser from "cookie-parser";
 import type { Server } from "http";
 import type { AddressInfo } from "net";
 import { OAUTH_STATE_COOKIE, OAUTH_STATE_TTL_MS, createOAuthState } from "../lib/oauth-state.js";
-import { PREAUTH_COOKIE, createPreAuthProof } from "../lib/preauth-proof.js";
+import {
+  PREAUTH_COOKIE,
+  PREAUTH_NONCE_SCOPE,
+  createPreAuthProof,
+} from "../lib/preauth-proof.js";
+import { consumeNonce, recordNonce } from "../lib/nonce-store.js";
 
 // The route module reads these at import time — set them before the dynamic
 // import below. No real credential: the token endpoint is always stubbed.
@@ -66,8 +71,12 @@ afterAll(async () => {
  * tests are about the OAuth state machinery that runs AFTER that gate, so they
  * present a valid proof and stay focused on what they were written to prove.
  */
-function proofCookie(): string {
-  return `${PREAUTH_COOKIE}=${createPreAuthProof().cookieValue}`;
+async function proofCookie(): Promise<string> {
+  const proof = createPreAuthProof();
+  // The gate now consumes the nonce atomically, so a proof that was never
+  // recorded is (correctly) treated as replayed. Record it like /preauth does.
+  expect(await recordNonce(PREAUTH_NONCE_SCOPE, proof.nonce, proof.maxAgeMs)).toBe(true);
+  return `${PREAUTH_COOKIE}=${proof.cookieValue}`;
 }
 
 async function get(path: string, cookie?: string): Promise<Response> {
@@ -115,7 +124,7 @@ interface FlowStart {
 }
 
 async function startFlow(returnTo: string): Promise<FlowStart> {
-  const res = await get(`/auth/google?returnTo=${encodeURIComponent(returnTo)}`, proofCookie());
+  const res = await get(`/auth/google?returnTo=${encodeURIComponent(returnTo)}`, await proofCookie());
   expect(res.status).toBe(302);
   const location = new URL(res.headers.get("location") ?? "");
   expect(location.origin).toBe("https://accounts.google.com");
@@ -164,6 +173,25 @@ describe("oauth start — pre-auth proof gate", () => {
     expect(stateCookie(res)).toBeUndefined();
   });
 
+  test("the same proof cannot start two flows", async () => {
+    const cookie = await proofCookie();
+    const first = await get("/auth/google?returnTo=%2Fcart", cookie);
+    expect(new URL(first.headers.get("location") ?? "").origin).toBe("https://accounts.google.com");
+
+    // Replaying the identical cookie value: the nonce is already consumed.
+    const second = await get("/auth/google?returnTo=%2Fcart", cookie);
+    const location = second.headers.get("location") ?? "";
+    expect(location).not.toContain("accounts.google.com");
+    expect(location).toContain("preauth_required");
+  });
+
+  test("a proof that was never recorded is refused", async () => {
+    // Minted but never recorded — cannot be consumed, so it is not a proof.
+    const orphan = `${PREAUTH_COOKIE}=${createPreAuthProof().cookieValue}`;
+    const res = await get("/auth/google?returnTo=%2Fcart", orphan);
+    expect(res.headers.get("location") ?? "").toContain("preauth_required");
+  });
+
   test("a forged proof is refused", async () => {
     const forged = `${PREAUTH_COOKIE}=${Buffer.from(JSON.stringify({ n: "x", e: Date.now() + 60000 })).toString("base64url")}.deadbeef`;
     const res = await get("/auth/google?returnTo=%2Fcart", forged);
@@ -173,7 +201,7 @@ describe("oauth start — pre-auth proof gate", () => {
 
 describe("oauth start", () => {
   test("mints an opaque state and a browser-bound httpOnly cookie", async () => {
-    const res = await get("/auth/google?returnTo=%2Fcart", proofCookie());
+    const res = await get("/auth/google?returnTo=%2Fcart", await proofCookie());
     expect(res.status).toBe(302);
 
     const location = new URL(res.headers.get("location") ?? "");

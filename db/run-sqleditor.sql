@@ -724,6 +724,17 @@ CREATE TABLE IF NOT EXISTS revoked_tokens (
   revoked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   expires_at TIMESTAMPTZ NOT NULL
 );
+CREATE TABLE IF NOT EXISTS preauth_nonces (
+  -- One-time pre-authentication nonces for the Google OAuth gate.
+  -- Only the SHA-256 of the nonce is stored; the raw value lives solely in the
+  -- signed httpOnly cookie. A row exists from mint until first use, then the
+  -- consuming request DELETEs it — that single statement is what makes the
+  -- proof single-use across every backend instance.
+  nonce_hash TEXT PRIMARY KEY,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires_at TIMESTAMPTZ NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS product_reviews (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
@@ -1190,6 +1201,9 @@ CREATE TABLE IF NOT EXISTS reconciliation_findings (
 -- added nullable first and promoted afterwards, because a populated table
 -- cannot take a NOT NULL column with no value to give it.
 
+ALTER TABLE public.preauth_nonces ADD COLUMN IF NOT EXISTS nonce_hash TEXT;
+ALTER TABLE public.preauth_nonces ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
+ALTER TABLE public.preauth_nonces ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS id UUID DEFAULT uuid_generate_v4();
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS email TEXT;
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS name TEXT DEFAULT '' NOT NULL;
@@ -3153,6 +3167,7 @@ CREATE INDEX IF NOT EXISTS idx_platform_settings_key ON public.platform_settings
 CREATE INDEX IF NOT EXISTS idx_revoked_tokens_id ON public.revoked_tokens (token_id);
 CREATE INDEX IF NOT EXISTS idx_revoked_tokens_user ON public.revoked_tokens (user_id);
 CREATE INDEX IF NOT EXISTS idx_revoked_tokens_expires ON public.revoked_tokens (expires_at);
+CREATE INDEX IF NOT EXISTS idx_preauth_nonces_expires ON public.preauth_nonces (expires_at);
 CREATE INDEX IF NOT EXISTS idx_product_reviews_product ON public.product_reviews (product_id);
 CREATE INDEX IF NOT EXISTS idx_product_reviews_user ON public.product_reviews (user_id);
 CREATE INDEX IF NOT EXISTS idx_product_reviews_status ON public.product_reviews (product_id, status);

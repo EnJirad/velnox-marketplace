@@ -150,6 +150,14 @@ describe("every credential entry point is gated", () => {
     expect(routeBody("/api/auth/member-login")).toContain('enforceTurnstile(req, res, "member_login")');
   });
 
+  test("preauth records the nonce BEFORE the cookie is issued", () => {
+    const body = routeBody("/api/auth/preauth");
+    expect(body).toContain("recordNonce(PREAUTH_NONCE_SCOPE");
+    // Fail closed if the store is unavailable — no unrecorded proof.
+    expect(body).toContain("PREAUTH_STORE_UNAVAILABLE");
+    expect(body.indexOf("recordNonce(")).toBeLessThan(body.indexOf("res.cookie("));
+  });
+
   test("preauth verifies before minting a proof", () => {
     const body = routeBody("/api/auth/preauth");
     expect(body).toContain("verifyTurnstile(");
@@ -184,6 +192,16 @@ describe("GET /auth/google requires the proof and keeps the OAuth state flow", (
     expect(body.indexOf("validatePreAuthProof")).toBeLessThan(
       body.indexOf("createOAuthState("),
     );
+  });
+
+  test("the proof is consumed atomically before OAuth starts", () => {
+    const body = code(googleStart);
+    expect(body).toContain("consumeNonce(PREAUTH_NONCE_SCOPE, proof.nonce)");
+    // Consumption happens before the state is created.
+    expect(body.indexOf("consumeNonce(")).toBeLessThan(body.indexOf("createOAuthState("));
+    // Every non-ok outcome rejects: replayed, expired, unavailable.
+    expect(body).toContain('if (consumed !== "ok")');
+    expect(body).toContain("preauth_required");
   });
 
   test("a missing proof redirects with an error instead of starting OAuth", () => {
@@ -245,6 +263,47 @@ describe("frontend — no bypass, real gates", () => {
     // Buttons use a real disabled state, not CSS.
     expect(authPage).toContain("disabled={busy || !turnstileReady}");
     expect(authPage).toContain("!memberPassword || !turnstileReady");
+  });
+
+  /**
+   * A generic "the file contains disabled={busy || !turnstileReady}" assertion
+   * is what let the Google button slip through: the submit button satisfied it
+   * while the Google button still said `disabled={busy}`. Each control is now
+   * asserted on its OWN markup.
+   */
+  test("the Google button is disabled until verification succeeds", () => {
+    const google = authPage.slice(
+      authPage.indexOf("{/* Google Sign-In"),
+      authPage.indexOf("</Button>", authPage.indexOf("{/* Google Sign-In")),
+    );
+    expect(google).toContain("onClick={handleGoogleSignIn}");
+    expect(google).toContain("disabled={busy || !turnstileReady}");
+    expect(google).not.toMatch(/disabled=\{busy\}/);
+  });
+
+  test("the submit button (login + register) is gated", () => {
+    const submit = authPage.slice(
+      authPage.indexOf("{/* Submit Button */}"),
+      authPage.indexOf("</Button>", authPage.indexOf("{/* Submit Button */}")),
+    );
+    expect(submit).toContain("type=\"submit\"");
+    expect(submit).toContain("disabled={busy || !turnstileReady}");
+  });
+
+  test("the VelCenter member login submit is gated", () => {
+    expect(authPage).toMatch(/disabled=\{memberLoading[^}]*!turnstileReady\}/);
+  });
+
+  test("text inputs are NOT locked behind the bot check", () => {
+    // Locking the name/email/password fields until the challenge resolves
+    // stops the customer typing while the widget loads.
+    for (const id of ['id="name"', 'id="email"', 'id="password"']) {
+      const at = authPage.indexOf(id);
+      expect(at).toBeGreaterThan(-1);
+      const field = authPage.slice(at, at + 700);
+      expect(field).toContain("disabled={busy}");
+      expect(field).not.toContain("!turnstileReady");
+    }
   });
 
   test("a failed sign-in consumes the token instead of reusing it", () => {

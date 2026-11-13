@@ -534,13 +534,16 @@ function Auth() {
               </button>
             </div>
 
-            {/* Google Sign-In — official branding, real OAuth flow */}
+            {/* Google Sign-In — official branding, real OAuth flow.
+                Disabled until a real Turnstile token exists: the handler also
+                re-checks, but a pressable button that silently does nothing is
+                its own bug. */}
             <Button
               type="button"
               variant="outline"
               className="h-12 w-full gap-3 border-slate-300 bg-white text-[15px] font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
               onClick={handleGoogleSignIn}
-              disabled={busy}
+              disabled={busy || !turnstileReady}
             >
               {signingIn ? (
                 <>
@@ -589,7 +592,7 @@ function Auth() {
                       className="h-12 w-full rounded-md border border-slate-200 bg-white pl-10 pr-3 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand/40"
                       autoComplete="name"
                       required
-                      disabled={busy || !turnstileReady}
+                      disabled={busy}
                     />
                   </div>
                 </div>

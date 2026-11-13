@@ -56,8 +56,14 @@ export type PreAuthRejection =
   | "expired";
 
 export type PreAuthValidation =
-  | { ok: true }
+  | { ok: true; nonce: string }
   | { ok: false; reason: PreAuthRejection };
+
+/**
+ * Namespace for the one-time nonce store. Kept here so the minting side and the
+ * consuming side can never drift apart.
+ */
+export const PREAUTH_NONCE_SCOPE = "google_oauth_start";
 
 interface ProofEnvelope {
   /** nonce — random, never reused, carries no user data */
@@ -98,6 +104,11 @@ export interface PreAuthProof {
   /** Value to set in the PREAUTH_COOKIE. */
   cookieValue: string;
   maxAgeMs: number;
+  /**
+   * The envelope nonce. Callers record it in the one-time store at mint time;
+   * it is never sent to the browser except inside the signed cookie.
+   */
+  nonce: string;
 }
 
 /** Mint a proof. Throws when no signing key is configured (fail closed). */
@@ -109,12 +120,14 @@ export function createPreAuthProof(
   if (!secret) {
     throw new Error("Pre-authentication proof secret is not configured");
   }
-  const envelope: ProofEnvelope = {
-    n: crypto.randomBytes(NONCE_BYTES).toString("base64url"),
-    e: now + ttlMs,
-  };
+  const nonce = crypto.randomBytes(NONCE_BYTES).toString("base64url");
+  const envelope: ProofEnvelope = { n: nonce, e: now + ttlMs };
   const payload = Buffer.from(JSON.stringify(envelope), "utf8").toString("base64url");
-  return { cookieValue: `${payload}.${sign(payload, secret)}`, maxAgeMs: ttlMs };
+  return {
+    cookieValue: `${payload}.${sign(payload, secret)}`,
+    maxAgeMs: ttlMs,
+    nonce,
+  };
 }
 
 /**
@@ -160,7 +173,7 @@ export function validatePreAuthProof(
   }
   if (expiresAt <= now) return { ok: false, reason: "expired" };
 
-  return { ok: true };
+  return { ok: true, nonce };
 }
 
 /**
