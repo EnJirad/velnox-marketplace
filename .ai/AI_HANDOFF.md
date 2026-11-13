@@ -1,6 +1,6 @@
 # Velnox AI Handoff — Current State
 
-**Last verified:** 2026-11-11 · **Branch:** `main` · **HEAD:** `301a483` — product gallery + rich description
+**Last verified:** 2026-11-11 · **Branch:** `main` · **HEAD:** `76f2ade` — product gallery + rich description
 
 ## 1. Current Project State
 
