@@ -1,6 +1,6 @@
 # Velnox AI Handoff — Current State
 
-**Last verified:** 2026-11-11 · **Branch:** `main` · **HEAD:** `00d67e7` — Turnstile final hardening (Google gate + one-time proofs)
+**Last verified:** 2026-11-11 · **Branch:** `main` · **HEAD:** `f4225a9` — compact single-screen login + staff-only VelCenter
 
 ## 1. Current Project State
 
@@ -12,6 +12,7 @@
 
 
 ### Active Tasks
+- **Compact Login + VelCenter Staff-Only (2026-11-11)** — ✅ DONE · วัดผลจริงในเบราว์เซอร์ — `packages/shared/src/pages/Auth.tsx` (ใช้ร่วม 3 เว็บ) ถูกย่อให้พอดี 1 จอ: **การ์ด 558px (login) / 591px (register)** ที่ความกว้างจำลอง 360px (เดิม ~680/~730 ต้องเลื่อน). เอาออกตามที่ owner ขอ: บรรทัด "ยืนยันว่าไม่ใช่บอท…", สถานะ "กำลังรอการยืนยัน…" ใต้ widget, footer "ป้องกันด้วย Cloudflare", โลโก้+description, ช่องชื่อตอนสมัคร, ปุ่ม guest (เท่ากับปุ่มย้อนกลับ). **เก็บ** สถานะ expired/error/unavailable เพราะเป็นข้อมูลที่ต้องลงมือทำ. ความกระชับหลักมาจาก override `Card` ที่มี `py-6 gap-6` = 72px ของว่าง + input h-12→h-11 (ยัง 44px). **สมัครใหม่:** อีเมล + รหัสผ่าน + ยืนยันรหัสผ่าน, ตาดูรหัสผ่านแยก 2 ช่อง, ไม่ตรง = inline error + ปุ่ม disabled (client) และ backend `name` เป็น optional → derive จาก email local part. **VelCenter = พนักงานเท่านั้น:** ไม่มี Google, ไม่มีแท็บสมัคร, ไม่มีฟอร์มลูกค้า, ฟอร์ม Member ID + รหัสผ่านแสดงทันที (ไม่มี toggle) ยัง gate ด้วย Turnstile. test ปรับให้ยืนยัน **ทีละคอนโทรล** (บทเรียนจากบั๊กปุ่ม Google รอบก่อน) + ชุดใหม่ 11 เคส. ผล: typecheck 4/4, i18n OK 2295×3, build 3/3, **1495 pass**, diff --check clean. **ข้อจำกัด:** โหมด VelCenter ไม่ได้เห็นด้วยตา (dev localhost ตกเป็น velshop เพราะ `currentSite()` ดู hostname) — ตรวจด้วยเทสต์/โค้ด
 - **Turnstile Final Hardening (2026-11-11)** — ✅ DONE (code+tests) · ⚠️ **ต้องรัน migration + ตั้ง env ก่อน production** — แก้ 2 ข้อบกพร่องจากรอบก่อน:
   - **ปุ่ม Google ไม่ถูก gate**: patch เดิม `replace(count=1)` ไปโดนช่อง Name แทนปุ่ม Google → ปุ่มยัง `disabled={busy}` (กดได้ก่อนยืนยัน) และช่อง Name ถูก lock จนพิมพ์ชื่อไม่ได้. แก้เป็น Google = `busy || !turnstileReady`, input = `busy`. เพิ่มเทสต์แบบ **ต่อปุ่ม** (ไม่ใช่ contains ทั้งไฟล์ ซึ่งเป็นเหตุผลที่บั๊กหลุด)
   - **Proof ไม่ one-time จริง**: signed cookie + ลบ cookie หยุดได้แค่ replay ในเบราว์เซอร์เดิม. เพิ่ม `backend/lib/nonce-store.ts` — record ตอน mint (`INSERT … ON CONFLICT DO NOTHING`) + consume ด้วย `DELETE … RETURNING` (atomic, ชนะได้คนเดียวข้าม instance), เก็บแค่ sha256 ของ nonce, ไม่ log. `POST /api/auth/preauth` ปฏิเสธ 503 ถ้า store ใช้ไม่ได้; `GET /auth/google` ปฏิเสธ replayed/expired/unavailable
