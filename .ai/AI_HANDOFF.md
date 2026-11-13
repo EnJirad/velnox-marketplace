@@ -1,6 +1,6 @@
 # Velnox AI Handoff — Current State
 
-**Last verified:** 2026-11-11 · **Branch:** `main` · **HEAD:** `47c4657` — market filters + search rebuilt, V removed
+**Last verified:** 2026-11-11 · **Branch:** `main` · **HEAD:** `ac7d701` — Turnstile auth gate on every credential path
 
 ## 1. Current Project State
 
@@ -12,6 +12,7 @@
 
 
 ### Active Tasks
+- **Turnstile Authentication Gate (2026-11-11)** — ✅ DONE (code+tests) · ⚠️ **production ยังไม่เปิด** — audit พบ Critical 6 จุด: (1) `useTurnstile` คืน token ปลอม `"bypass"` เมื่อไม่มี site key, (2) `member-login` ไม่มีการตรวจสอบเลย, (3) `GET /auth/google` เรียกตรงได้, (4) password routes ข้ามตรวจเมื่อไม่มี secret, (5) `reset()` ไม่ reset widget จริง, (6) ไม่มี hostname/action/replay/timeout. **แก้:** `backend/lib/turnstile.ts` (verify กลาง fail-closed ทุกกรณี + replay cache + timeout 5s + hostname จาก server config เท่านั้น), `backend/lib/preauth-proof.ts` (HMAC one-time proof cookie สำหรับ Google), `POST /api/auth/preauth` + gate `GET /auth/google` (OAuth state เดิมไม่แตะ), `use-turnstile.ts` เขียนใหม่ 6 สถานะไม่มี bypass + reset จริง + ref-counted script, `Auth.tsx` gate ทุกปุ่ม (email/register/Google/member) + language selector + ลบไทย hardcode. **i18n:** เพิ่ม 11 key × 3 ภาษา + แก้ shallow-merge ที่ทำให้ my ขาด 16 key → **`i18n:check` ผ่านครั้งแรก 2294×3**. **test ใหม่ 58 เคส** (turnstile 24 + gate 34) + อัปเดต oauth-route. ผล: typecheck 4/4, backend tsc, build 3/3, 1461 pass, diff --check clean. **owner ต้องตั้ง env:** Vercel `VITE_TURNSTILE_SITE_KEY` × 3, Render `TURNSTILE_SECRET_KEY` + `TURNSTILE_HOSTNAMES`, Cloudflare Dashboard ใส่ hostname 3 โดเมน. รายละเอียด `.ai/reports/LATEST.md`
 - **Market filters + search + V removal (2026-11-11)** — ✅ DONE — 4 เรื่องในรอบเดียว:
   - **raw key `productDetail.addedFlashDesc`**: `t()` ใน `packages/shared/src/lib/i18n/index.tsx` resolve เฉพาะค่าที่เป็น **string** — `addedFlashDesc`/`addedToastDesc` เป็นฟังก์ชัน จึงคืนชื่อ key ออกมาที่จอ. แปลงเป็น string แบบ `{qty}` (convention ของระบบ) + แก้ `addedToast` ฝั่ง my ที่มี `{qty}` เกิน (ล้าง i18n error เดิมด้วย) + `t()` เตือนใน dev ว่า key นี้ resolve เป็น type อะไร ไม่ใช่แค่ "missing"
   - **ลบ V ออกจาก storefront หมด**: filter "ร้านค้าที่ได้รับการยืนยันเท่านั้น", การ์ด V ใน `ShopCategories`, announcement นับ `isVerifiedProduct` ใน `ShopHome`, ลิงก์ `?verified=true` ทุกจุด, prop `verifiedOnly`, filter `verified` ใน backend catalog, คีย์ i18n `verification.velshopVerified*` (30 บรรทัด). **seller identity verification ใน VelCenter ยังอยู่ครบ** — แค่ไม่ใช่ตัวกรอง/ป้ายฝั่งลูกค้า
