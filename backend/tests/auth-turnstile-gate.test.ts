@@ -257,12 +257,18 @@ describe("frontend — no bypass, real gates", () => {
 
   test("the page gates every submit on the real token", () => {
     expect(authPage).toContain("const turnstileReady = turnstile.ready");
-    // Email login, register, Google and member login each check it.
-    const occurrences = authPage.split("if (!turnstileReady || !turnstile.token)").length - 1;
-    expect(occurrences).toBeGreaterThanOrEqual(4);
+    // Email login, register, Google and member login each resolve a token and
+    // bail out with no token at all.
+    const guards = authPage.split("const token = resolveTurnstileToken();").length - 1;
+    expect(guards).toBeGreaterThanOrEqual(3); // login, register, member
+    expect(authPage).toContain("const googleToken = resolveTurnstileToken();");
+    // The resolver prefers React state but falls back to the widget's own
+    // answer — never to a fabricated value.
+    expect(authPage).toContain("return turnstile.token ?? turnstile.peek();");
     // Buttons use a real disabled state, not CSS.
-    expect(authPage).toContain("disabled={busy || !turnstileReady}");
-    expect(authPage).toContain("!memberPassword || !turnstileReady");
+    expect(authPage).toContain("const challengePassed = turnstileReady || turnstile.peek() !== null;");
+    expect(authPage).toContain("disabled={busy || !challengePassed}");
+    expect(authPage).toContain("!memberPassword || !challengePassed");
   });
 
   /**
@@ -275,18 +281,18 @@ describe("frontend — no bypass, real gates", () => {
     const at = authPage.indexOf("onClick={handleGoogleSignIn}");
     expect(at).toBeGreaterThan(-1);
     const button = authPage.slice(Math.max(0, at - 600), at + 120);
-    expect(button).toContain("disabled={busy || !turnstileReady}");
+    expect(button).toContain("disabled={busy || !challengePassed}");
   });
 
   test("the customer submit is gated by the real token and the password check", () => {
     expect(authPage).toContain(
-      "const submitDisabled = busy || !turnstileReady || registerMismatch;",
+      "const submitDisabled = busy || !challengePassed || registerMismatch;",
     );
     expect(authPage).toContain("disabled={submitDisabled}");
   });
 
   test("the VelCenter member login submit is gated", () => {
-    expect(authPage).toMatch(/disabled=\{memberLoading[^}]*!turnstileReady\}/);
+    expect(authPage).toMatch(/disabled=\{memberLoading[^}]*!challengePassed\}/);
   });
 
   test("text inputs are NOT locked behind the bot check", () => {
@@ -297,7 +303,7 @@ describe("frontend — no bypass, real gates", () => {
       expect(at).toBeGreaterThan(-1);
       const field = authPage.slice(at, at + 900);
       expect(field).toContain("disabled={busy}");
-      expect(field).not.toContain("!turnstileReady");
+      expect(field).not.toContain("!challengePassed");
     }
   });
 
@@ -315,9 +321,114 @@ describe("frontend — no bypass, real gates", () => {
   });
 
   test("no hardcoded Thai copy remains on the auth page", () => {
-    expect(authPage).not.toMatch(/"[ก-๙]/);
-    expect(authPage).not.toContain("ยืนยันว่าไม่ใช่บอท");
-    expect(authPage).not.toContain("ป้องกันด้วย Cloudflare");
+    // Strip comments first: a doc comment that QUOTES the old message must not
+    // fail this check, while real JSX copy still must.
+    const body = code(authPage);
+    expect(body).not.toMatch(/"[ก-๙]/);
+    expect(body).not.toContain("ยืนยันว่าไม่ใช่บอท");
+    expect(body).not.toContain("ป้องกันด้วย Cloudflare");
+  });
+});
+
+describe("compact auth page — one screen, no filler", () => {
+  const authPage = read("packages/shared/src/pages/Auth.tsx");
+
+  test("the Cloudflare instruction line, the waiting text and the footer are gone", () => {
+    expect(authPage).not.toContain("auth.turnstile.instructions");
+    expect(authPage).not.toContain("auth.turnstile.footer");
+    expect(authPage).not.toContain("auth.turnstile.verifying");
+    expect(authPage).not.toContain("auth.turnstile.loading");
+  });
+
+  test("only the actionable verification states render", () => {
+    expect(authPage).toContain('turnstile.state === "expired"');
+    expect(authPage).toContain('turnstile.state === "error"');
+    expect(authPage).toContain('turnstile.state === "unavailable"');
+    // The waiting / success copy is no longer a second line under the widget.
+    expect(authPage).not.toContain('turnstile.state === "verifying"');
+    expect(authPage).not.toContain('turnstile.state === "verified"');
+  });
+
+  test("the logo block is back and the mode description is gone", () => {
+    // The owner asked for the brand mark on login and register.
+    expect(authPage).toContain("<Logo className=");
+    expect(authPage).not.toContain("auth.${mode}.desc");
+  });
+
+  test("the card is sized to the viewport instead of scrolling", () => {
+    expect(authPage).toContain("min-h-[100dvh]");
+    expect(authPage).toContain("max-w-[380px]");
+  });
+});
+
+describe("sign-up — password twice, no name field", () => {
+  const authPage = read("packages/shared/src/pages/Auth.tsx");
+
+  test("the name field is gone and a confirmation field exists", () => {
+    expect(authPage).not.toContain('id="name"');
+    expect(authPage).toContain('id="confirm-password"');
+    expect(authPage).toContain('t("auth.register.confirmPassword")');
+  });
+
+  test("a mismatch blocks sign-up before the request is sent", () => {
+    expect(authPage).toContain(
+      "const passwordsMatch = password.length > 0 && password === confirmPassword;",
+    );
+    expect(authPage).toContain("if (password !== confirmPassword)");
+    expect(authPage).toContain('t("auth.passwordMismatch")');
+    expect(authPage).toContain('const registerMismatch = mode === "register" && !passwordsMatch;');
+  });
+
+  test("the register request no longer sends a name", () => {
+    const register = authPage.slice(
+      authPage.indexOf("const handleEmailPasswordRegister"),
+      authPage.indexOf("const handleMemberLogin"),
+    );
+    expect(register).not.toContain("name:");
+  });
+
+  test("both password fields have their own show/hide control", () => {
+    // definition + the password field + the confirmation field
+    const uses = authPage.split("passwordToggle(").length - 1;
+    expect(uses).toBeGreaterThanOrEqual(3);
+  });
+});
+
+describe("VelCenter — staff credentials only", () => {
+  const authPage = read("packages/shared/src/pages/Auth.tsx");
+
+  test("Google sign-in and the register tab are hidden on VelCenter", () => {
+    expect(authPage).toContain('const isCenter = currentSite() === "velcenter";');
+    // Both blocks are guarded by !isCenter.
+    expect(authPage).toContain("{!isCenter && (");
+    expect(authPage).toContain("onClick={handleGoogleSignIn}");
+  });
+
+  test("the member form is always visible — no toggle, no cancel", () => {
+    expect(authPage).not.toContain("memberMode");
+    expect(authPage).toContain("<form onSubmit={handleMemberLogin}");
+  });
+
+  test("the page title on VelCenter is the staff sign-in title", () => {
+    expect(authPage).toContain('{isCenter ? t("auth.memberLoginLabel") : t(`auth.${mode}.title`)}');
+  });
+});
+
+describe("verification errors say what actually happened", () => {
+  const authPage = read("packages/shared/src/pages/Auth.tsx");
+
+  test("a server failure is not reported as 'please verify first'", () => {
+    // The old code mapped every rejection to the challenge message, so a
+    // missing secret or a hostname mismatch looked like the customer's fault.
+    expect(authPage).toContain("const TURNSTILE_MESSAGE_KEYS: Record<string, string>");
+    expect(authPage).toContain("TURNSTILE_NOT_CONFIGURED: \"auth.turnstile.notConfigured\"");
+    expect(authPage).toContain("TURNSTILE_HOSTNAME_MISMATCH: \"auth.turnstile.wrongSite\"");
+    expect(authPage).toContain("PREAUTH_STORE_UNAVAILABLE: \"auth.turnstile.notConfigured\"");
+  });
+
+  test("the stale 'verify first' message clears once a token exists", () => {
+    expect(authPage).toContain("turnstileBlockedMessage");
+    expect(authPage).toContain("const hasToken = turnstile.ready || turnstile.token !== null || turnstile.peek() !== null;");
   });
 });
 

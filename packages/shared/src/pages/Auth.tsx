@@ -37,7 +37,7 @@ import {
   Lock,
   Mail,
 } from "lucide-react";
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { useTurnstile } from "@velnox/shared/hooks/use-turnstile";
 
@@ -113,6 +113,35 @@ const ERROR_MESSAGE_KEYS: Record<GoogleAuthErrorKind, string> = {
   generic: "auth.googleError",
 };
 
+/**
+ * Map a server Turnstile/preauth failure code to the message the customer
+ * should read.
+ *
+ * The previous code turned EVERY rejection into "please complete the bot
+ * verification first", including the cases where the challenge had already
+ * been solved and the SERVER refused it (missing secret, wrong hostname,
+ * nonce store unavailable). That message blamed the customer for a
+ * configuration or infrastructure fault.
+ */
+const TURNSTILE_MESSAGE_KEYS: Record<string, string> = {
+  TURNSTILE_REQUIRED: "auth.turnstile.required",
+  TURNSTILE_INVALID: "auth.turnstile.error",
+  TURNSTILE_EXPIRED: "auth.turnstile.expired",
+  TURNSTILE_REPLAYED: "auth.turnstile.expired",
+  TURNSTILE_HOSTNAME_MISMATCH: "auth.turnstile.wrongSite",
+  TURNSTILE_ACTION_MISMATCH: "auth.turnstile.wrongSite",
+  TURNSTILE_TIMEOUT: "auth.turnstile.networkError",
+  TURNSTILE_UNAVAILABLE: "auth.turnstile.networkError",
+  TURNSTILE_NOT_CONFIGURED: "auth.turnstile.notConfigured",
+  PREAUTH_NOT_CONFIGURED: "auth.turnstile.notConfigured",
+  PREAUTH_STORE_UNAVAILABLE: "auth.turnstile.notConfigured",
+  PREAUTH_FAILED: "auth.turnstile.notConfigured",
+};
+
+function turnstileMessageKey(code: string | undefined): string | null {
+  return code ? TURNSTILE_MESSAGE_KEYS[code] ?? null : null;
+}
+
 function Auth() {
   const { t, lang, setLang } = useLanguage();
   const { isLoading: authLoading, isAuthenticated, user, signIn } = useAuth();
@@ -130,6 +159,8 @@ function Auth() {
 
   const [mode, setMode] = useState<"login" | "register">("login");
   const [error, setError] = useState<string | null>(null);
+  /** True while the visible error is the "complete the challenge" one. */
+  const [turnstileBlockedMessage, setTurnstileBlockedMessage] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   // Sign-up asks for the password twice and never for a display name: the
@@ -163,6 +194,32 @@ function Auth() {
   const turnstile = useTurnstile({ action: "auth" });
   const turnstileRef = turnstile.containerRef;
   const turnstileReady = turnstile.ready;
+
+  /**
+   * A usable challenge response.
+   *
+   * `turnstile.ready` is React state and can lag Cloudflare by a render (the
+   * widget shows a green tick before the callback lands, and a `reset()` can
+   * leave the widget solved while state still says "verifying"). Reading the
+   * widget closes that window: the value is Cloudflare's own response, so a
+   * button enabled by it is still gated on a real challenge — never a bypass.
+   */
+  const challengePassed = turnstileReady || turnstile.peek() !== null;
+
+  /**
+   * Clear the "please verify first" message once a real token exists.
+   *
+   * The message used to stay on screen after the widget had been solved, so a
+   * customer who did exactly what it asked still saw "กรุณายืนยันว่าไม่ใช่บอทก่อน"
+   * and concluded the login was broken.
+   */
+  useEffect(() => {
+    if (!turnstileBlockedMessage) return;
+    const hasToken = turnstile.ready || turnstile.token !== null || turnstile.peek() !== null;
+    if (!hasToken) return;
+    setTurnstileBlockedMessage(false);
+    setError(null);
+  }, [turnstileBlockedMessage, turnstile]);
   const [langOpen, setLangOpen] = useState(false);
   const langMenuRef = useRef<HTMLDivElement>(null);
 
@@ -247,10 +304,31 @@ function Auth() {
    * is securely stored), handles the callback, creates a session cookie,
    * and redirects back to the frontend.
    */
+  /**
+   * The token to submit with.
+   *
+   * `turnstile.token` is React state; Cloudflare can already hold a valid
+   * response when the callback has not landed yet. Asking the widget closes
+   * that gap — the value is still Cloudflare's, and the server re-validates it.
+   */
+  const resolveTurnstileToken = useCallback((): string | null => {
+    return turnstile.token ?? turnstile.peek();
+  }, [turnstile]);
+
+  /** Show the "verify first" message and remember that it is a Turnstile one. */
+  const requireTurnstile = useCallback(
+    (setter: (message: string) => void) => {
+      setter(t("auth.turnstile.required"));
+      setTurnstileBlockedMessage(true);
+    },
+    [t],
+  );
+
   const handleGoogleSignIn = async () => {
     if (signingInRef.current) return;
-    if (!turnstileReady || !turnstile.token) {
-      setError(t("auth.turnstile.required"));
+    const googleToken = resolveTurnstileToken();
+    if (!googleToken) {
+      requireTurnstile(setError);
       return;
     }
     signingInRef.current = true;
@@ -266,17 +344,18 @@ function Auth() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ turnstileToken: turnstile.token }),
+        body: JSON.stringify({ turnstileToken: googleToken }),
       });
       if (!proofRes.ok) {
         const payload = await proofRes.json().catch(() => null);
         const code = payload?.error?.code as string | undefined;
         turnstile.consume();
-        throw new Error(
-          code === "TURNSTILE_UNAVAILABLE" || code === "TURNSTILE_TIMEOUT"
-            ? t("auth.turnstile.networkError")
-            : t("auth.turnstile.required"),
-        );
+        // Say what actually happened. Previously every rejection — including a
+        // missing server secret or a hostname mismatch — was reported as
+        // "please complete the bot verification first", which sent the
+        // customer round the loop even though the challenge was solved.
+        const messageKey = turnstileMessageKey(code);
+        throw new Error(messageKey ? t(messageKey) : t("auth.turnstile.notConfigured"));
       }
 
       sessionStorage.setItem(GOOGLE_AUTH_START_KEY, String(Date.now()));
@@ -305,8 +384,9 @@ function Auth() {
     // Double-submit guard (a second Enter press while in flight).
     if (submitting || signingIn || memberLoading) return;
     // Real gate: no token, no request. There is no placeholder token any more.
-    if (!turnstileReady || !turnstile.token) {
-      setError(t("auth.turnstile.required"));
+    const token = resolveTurnstileToken();
+    if (!token) {
+      requireTurnstile(setError);
       return;
     }
     setSubmitting(true);
@@ -315,7 +395,7 @@ function Auth() {
       const body: Record<string, string> = {
         email: email.trim().toLowerCase(),
         password,
-        turnstileToken: turnstile.token,
+        turnstileToken: token,
       };
       const res = await fetch(`${apiBaseUrl}/auth/password-login`, {
         method: "POST",
@@ -325,7 +405,9 @@ function Auth() {
       });
       const data = await res.json();
       if (!res.ok || !data.success) {
-        throw new Error(data?.error?.message || t("auth.invalidCredentials"));
+        const code = data?.error?.code as string | undefined;
+        const messageKey = turnstileMessageKey(code);
+        throw new Error(messageKey ? t(messageKey) : (data?.error?.message || t("auth.invalidCredentials")));
       }
       // Session cookie is set — reload to pick up auth state
       window.location.reload();
@@ -342,8 +424,9 @@ function Auth() {
   const handleEmailPasswordRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     if (submitting || signingIn || memberLoading) return;
-    if (!turnstileReady || !turnstile.token) {
-      setError(t("auth.turnstile.required"));
+    const token = resolveTurnstileToken();
+    if (!token) {
+      requireTurnstile(setError);
       return;
     }
     if (password.length < 8) {
@@ -361,7 +444,7 @@ function Auth() {
       const body: Record<string, string> = {
         email: email.trim().toLowerCase(),
         password,
-        turnstileToken: turnstile.token,
+        turnstileToken: token,
       };
       const res = await fetch(`${apiBaseUrl}/auth/password-register`, {
         method: "POST",
@@ -371,7 +454,9 @@ function Auth() {
       });
       const data = await res.json();
       if (!res.ok || !data.success) {
-        throw new Error(data?.error?.message || t("auth.registerError"));
+        const code = data?.error?.code as string | undefined;
+        const messageKey = turnstileMessageKey(code);
+        throw new Error(messageKey ? t(messageKey) : (data?.error?.message || t("auth.registerError")));
       }
       // Session cookie is set — reload to pick up auth state
       window.location.reload();
@@ -387,8 +472,9 @@ function Auth() {
     e.preventDefault();
     if (memberLoading || submitting || signingIn) return;
     // Staff sign-in had NO bot gate at all before this change.
-    if (!turnstileReady || !turnstile.token) {
-      setMemberError(t("auth.turnstile.required"));
+    const token = resolveTurnstileToken();
+    if (!token) {
+      requireTurnstile(setMemberError);
       return;
     }
     setMemberLoading(true);
@@ -401,12 +487,14 @@ function Auth() {
         body: JSON.stringify({
           identifier: memberIdentifier.trim(),
           password: memberPassword,
-          turnstileToken: turnstile.token,
+          turnstileToken: token,
         }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) {
-        throw new Error(data?.error?.message || t("auth.memberLoginError"));
+        const code = data?.error?.code as string | undefined;
+        const messageKey = turnstileMessageKey(code);
+        throw new Error(messageKey ? t(messageKey) : (data?.error?.message || t("auth.memberLoginError")));
       }
       // Session cookie is set — reload to pick up auth state
       window.location.reload();
@@ -423,7 +511,7 @@ function Auth() {
   const isCenter = currentSite() === "velcenter";
   const passwordsMatch = password.length > 0 && password === confirmPassword;
   const registerMismatch = mode === "register" && !passwordsMatch;
-  const submitDisabled = busy || !turnstileReady || registerMismatch;
+  const submitDisabled = busy || !challengePassed || registerMismatch;
 
   // No login-form flash (spec §92–§97, §99–§100): while the session is still
   // loading — or right after authentication resolved but before the redirect
@@ -574,6 +662,12 @@ function Auth() {
               </div>
             </div>
 
+            {/* Brand mark — present on both login and register. Kept small so
+                the card still fits one screen. */}
+            <div className="mb-1 flex justify-center">
+              <Logo className="scale-[0.92]" />
+            </div>
+
             <CardTitle className="text-center text-lg font-bold tracking-tight">
               {/* VelCenter is staff-only, so its title is the staff form's. */}
               {isCenter ? t("auth.memberLoginLabel") : t(`auth.${mode}.title`)}
@@ -616,7 +710,7 @@ function Auth() {
                 variant="outline"
                 className="h-11 w-full gap-2.5 rounded-squircle border-slate-300 bg-white text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
                 onClick={handleGoogleSignIn}
-                disabled={busy || !turnstileReady}
+                disabled={busy || !challengePassed}
               >
                 {signingIn ? (
                   <>
@@ -682,7 +776,7 @@ function Auth() {
                 <Button
                   type="submit"
                   className="h-11 w-full rounded-squircle bg-brand text-sm font-medium text-white hover:bg-brand-strong disabled:opacity-50"
-                  disabled={memberLoading || !memberIdentifier.trim() || !memberPassword || !turnstileReady}
+                  disabled={memberLoading || !memberIdentifier.trim() || !memberPassword || !challengePassed}
                 >
                   {memberLoading ? (
                     <>

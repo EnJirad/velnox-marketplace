@@ -94,6 +94,11 @@ export interface UseTurnstileResult {
   reset: () => void;
   /** Invalidate the current token after a failed sign-in, then reset. */
   consume: () => void;
+  /**
+   * Cloudflare's current response for the mounted widget, or null. Used as a
+   * submit-time fallback when the callback has not reached React yet.
+   */
+  peek: () => string | null;
 }
 
 const SCRIPT_SRC = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
@@ -343,6 +348,27 @@ export function useTurnstile(options: UseTurnstileOptions = {}): UseTurnstileRes
     reset();
   }, [reset]);
 
+  /**
+   * Ask the widget directly what it currently holds.
+   *
+   * Cloudflare can own a valid response for a moment before our `callback`
+   * runs (and a `reset()` can leave the widget solved while React state still
+   * says "verifying"). Reading `getResponse` closes that gap at submit time.
+   *
+   * This is a FALLBACK, not a bypass: the value is Cloudflare's own response,
+   * and the server still validates it — a spent token is rejected as replayed.
+   */
+  const peek = useCallback((): string | null => {
+    const id = widgetIdRef.current;
+    if (!id || !window.turnstile?.getResponse) return null;
+    try {
+      const live = window.turnstile.getResponse(id);
+      return typeof live === "string" && live.length > 0 ? live : null;
+    } catch {
+      return null;
+    }
+  }, []);
+
   return {
     state,
     token,
@@ -350,5 +376,6 @@ export function useTurnstile(options: UseTurnstileOptions = {}): UseTurnstileRes
     containerRef,
     reset,
     consume,
+    peek,
   };
 }

@@ -1636,6 +1636,8 @@ export const en: Dict = {
       error: "Verification failed. Please try again.",
       required: "Please complete the bot verification first",
       unavailable: "Verification is unavailable right now. Please reload the page.",
+      wrongSite: "This verification was completed on a different site. Please reload the page.",
+      notConfigured: "Sign-in verification is not available right now. Please contact support.",
       networkError: "Could not reach the verification service. Check your connection and try again.",
       footer: "Protected by Cloudflare bot verification",
     },
