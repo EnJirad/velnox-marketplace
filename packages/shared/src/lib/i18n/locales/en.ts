@@ -1613,6 +1613,7 @@ export const en: Dict = {
       submit: "Create account",
       desc: "Create a new account to start buying and selling on Velnox",
     },
+    passwordMismatch: "The two passwords do not match",
     passwordTooShort: "Password must be at least 8 characters",
     loginError: "Sign-in failed. Please try again.",
     registerError: "Sign-up failed. Please try again.",

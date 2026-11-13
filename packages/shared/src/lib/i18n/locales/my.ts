@@ -1768,6 +1768,7 @@ export const my = {
     },
     showPassword: "စကားဝှက် ပြပါ",
     hidePassword: "စကားဝှက် ချ samen",
+    passwordMismatch: "စကားဝှက် နှစ်ခု မတူညီပါ",
     passwordTooShort: "စကားဝှက် အနည်းဆုံး ၈ စာလုံး ရလိုသည်",
     loginError: "ဝင်ရောက်လို့ မရပါ — ထပ်ကြိုးစားပါ",
     registerError: "အကောင့် ဖွင့်လို့ မရပါ — ထပ်ကြိုးစားပါ",

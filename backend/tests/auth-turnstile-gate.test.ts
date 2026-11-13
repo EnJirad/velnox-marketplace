@@ -272,22 +272,17 @@ describe("frontend — no bypass, real gates", () => {
    * asserted on its OWN markup.
    */
   test("the Google button is disabled until verification succeeds", () => {
-    const google = authPage.slice(
-      authPage.indexOf("{/* Google Sign-In"),
-      authPage.indexOf("</Button>", authPage.indexOf("{/* Google Sign-In")),
-    );
-    expect(google).toContain("onClick={handleGoogleSignIn}");
-    expect(google).toContain("disabled={busy || !turnstileReady}");
-    expect(google).not.toMatch(/disabled=\{busy\}/);
+    const at = authPage.indexOf("onClick={handleGoogleSignIn}");
+    expect(at).toBeGreaterThan(-1);
+    const button = authPage.slice(Math.max(0, at - 600), at + 120);
+    expect(button).toContain("disabled={busy || !turnstileReady}");
   });
 
-  test("the submit button (login + register) is gated", () => {
-    const submit = authPage.slice(
-      authPage.indexOf("{/* Submit Button */}"),
-      authPage.indexOf("</Button>", authPage.indexOf("{/* Submit Button */}")),
+  test("the customer submit is gated by the real token and the password check", () => {
+    expect(authPage).toContain(
+      "const submitDisabled = busy || !turnstileReady || registerMismatch;",
     );
-    expect(submit).toContain("type=\"submit\"");
-    expect(submit).toContain("disabled={busy || !turnstileReady}");
+    expect(authPage).toContain("disabled={submitDisabled}");
   });
 
   test("the VelCenter member login submit is gated", () => {
@@ -295,12 +290,12 @@ describe("frontend — no bypass, real gates", () => {
   });
 
   test("text inputs are NOT locked behind the bot check", () => {
-    // Locking the name/email/password fields until the challenge resolves
-    // stops the customer typing while the widget loads.
-    for (const id of ['id="name"', 'id="email"', 'id="password"']) {
+    // Locking the text fields until the challenge resolves stops the customer
+    // typing while the widget loads. Inputs are not auth triggers.
+    for (const id of ['id="email"', 'id="password"', 'id="confirm-password"']) {
       const at = authPage.indexOf(id);
       expect(at).toBeGreaterThan(-1);
-      const field = authPage.slice(at, at + 700);
+      const field = authPage.slice(at, at + 900);
       expect(field).toContain("disabled={busy}");
       expect(field).not.toContain("!turnstileReady");
     }

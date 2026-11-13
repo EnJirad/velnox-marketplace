@@ -501,11 +501,21 @@ export function setupGoogleAuth(app: Express): void {
    */
   app.post("/api/auth/password-register", async (req: Request, res: Response) => {
     try {
-      const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
       const email = typeof req.body?.email === "string" ? normalizeEmail(req.body.email) : "";
       const password = typeof req.body?.password === "string" ? req.body.password : "";
-      if (!name || !email || !password) {
-        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Name, email and password are required" } });
+      /**
+       * The display name is OPTIONAL on purpose.
+       *
+       * Requiring it forced a third field onto a sign-up form that only needs
+       * email + password; the customer can set a real name later from the
+       * profile. `users.name` is NOT NULL DEFAULT '', so an empty value is
+       * valid — and the email local part ("somchai" from
+       * "somchai@example.com") is friendlier than a blank greeting.
+       */
+      const suppliedName = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+      const name = suppliedName || (email.includes("@") ? email.split("@")[0] : "");
+      if (!email || !password) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "Email and password are required" } });
         return;
       }
       if (password.length < 8) {

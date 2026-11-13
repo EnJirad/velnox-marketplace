@@ -36,7 +36,6 @@ import {
   Loader2,
   Lock,
   Mail,
-  User,
 } from "lucide-react";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
@@ -133,13 +132,17 @@ function Auth() {
   const [error, setError] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [name, setName] = useState("");
+  // Sign-up asks for the password twice and never for a display name: the
+  // name can be set later from the profile, and a typo in an unverified
+  // password locks the customer out of the account they just created.
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [signingIn, setSigningIn] = useState(false); // Google flow in progress
   const signingInRef = useRef(false); // double-click / double-start guard
-  // Member login (VelCenter only)
-  const [memberMode, setMemberMode] = useState(false);
+  // Member login (VelCenter only). The form is always visible there — there is
+  // no toggle any more, because VelCenter has no other way in.
   const [memberIdentifier, setMemberIdentifier] = useState("");
   const [memberPassword, setMemberPassword] = useState("");
   const [memberLoading, setMemberLoading] = useState(false);
@@ -347,11 +350,15 @@ function Auth() {
       setError(t("auth.passwordTooShort"));
       return;
     }
+    // Never create an account whose password the customer cannot reproduce.
+    if (password !== confirmPassword) {
+      setError(t("auth.passwordMismatch"));
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
       const body: Record<string, string> = {
-        name: name.trim(),
         email: email.trim().toLowerCase(),
         password,
         turnstileToken: turnstile.token,
@@ -412,6 +419,11 @@ function Auth() {
   };
 
   const busy = signingIn || memberLoading || submitting;
+  /** VelCenter is staff-only: no Google, no self-registration. */
+  const isCenter = currentSite() === "velcenter";
+  const passwordsMatch = password.length > 0 && password === confirmPassword;
+  const registerMismatch = mode === "register" && !passwordsMatch;
+  const submitDisabled = busy || !turnstileReady || registerMismatch;
 
   // No login-form flash (spec §92–§97, §99–§100): while the session is still
   // loading — or right after authentication resolved but before the redirect
@@ -428,420 +440,381 @@ function Auth() {
     );
   }
 
+  /**
+   * The Cloudflare widget, once.
+   *
+   * The instructions line and the "waiting for verification" status are gone:
+   * the widget already says what it is doing, and the status text was a second
+   * line that only pushed the form down. What remains is the widget itself and
+   * — because they are actionable — the three failure states. Everything else
+   * (loading / verifying / verified) is visible on the widget.
+   */
+  const turnstileBlock = (
+    <div className="w-full">
+      <div
+        ref={turnstileRef}
+        className="flex min-h-[65px] w-full items-center justify-center"
+        data-testid="turnstile-widget"
+        data-state={turnstile.state}
+      />
+      {(turnstile.state === "expired" ||
+        turnstile.state === "error" ||
+        turnstile.state === "unavailable") && (
+        <div
+          className="mt-0.5 flex items-center justify-center gap-1.5 text-2xs"
+          role="status"
+          aria-live="polite"
+        >
+          {turnstile.state === "expired" ? (
+            <>
+              <AlertCircle className="size-3.5 shrink-0 text-amber-500" aria-hidden />
+              <span className="font-medium text-amber-600">{t("auth.turnstile.expired")}</span>
+            </>
+          ) : turnstile.state === "error" ? (
+            <>
+              <AlertCircle className="size-3.5 shrink-0 text-red-500" aria-hidden />
+              <span className="font-medium text-red-600">{t("auth.turnstile.error")}</span>
+            </>
+          ) : (
+            <>
+              <AlertTriangle className="size-3.5 shrink-0 text-red-500" aria-hidden />
+              <span className="font-medium text-red-600">{t("auth.turnstile.unavailable")}</span>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
+  const errorBox = (message: string) => (
+    <div className="flex items-center gap-2 rounded-squircle-sm bg-red-50 px-3 py-2 text-red-600 text-xs" role="alert">
+      <AlertCircle className="size-3.5 shrink-0" />
+      <span className="min-w-0">{message}</span>
+    </div>
+  );
+
+  const passwordToggle = (shown: boolean, onToggle: () => void, label: string) => (
+    <button
+      type="button"
+      onClick={onToggle}
+      className="absolute right-2 top-1/2 -translate-y-1/2 rounded-squircle-sm p-1.5 text-slate-400 transition-colors hover:text-slate-600"
+      aria-label={label}
+    >
+      {shown ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+    </button>
+  );
+
   return (
-    <div className="min-h-screen flex flex-col bg-background">
-      {/* Auth Content — centered card on desktop, app-like on mobile */}
-      <div className="flex-1 flex items-center justify-center px-4 py-8 pb-[max(env(safe-area-inset-bottom),2rem)]">
-        <Card className="relative w-full max-w-[400px] border shadow-md">
-          <CardHeader className="text-center pb-2">
-            <button
-              type="button"
-              onClick={handleBack}
-              className="absolute left-4 top-4 flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"
-              aria-label={t("auth.backAria")}
-            >
-              <ArrowLeft className="size-4" />
-              {t("auth.back")}
-            </button>
-            {/* Language selector — top-right, mirroring the Back button.
-                Switching re-renders copy instantly (context update, no reload),
-                is persisted by the shared i18n provider, and never touches
-                authentication state, the form fields, the URL or returnTo. */}
-            <div ref={langMenuRef} className="absolute right-3 top-3">
+    <div className="min-h-[100dvh] bg-background">
+      {/* One compact card that fits a phone without scrolling. Removed on
+          purpose: the logo block, the mode description, the Turnstile
+          instructions, the verification status text and the Cloudflare footer.
+          Every remaining line either takes input or is actionable. */}
+      <div className="flex min-h-[100dvh] items-center justify-center px-3 py-3 pb-[max(env(safe-area-inset-bottom),0.75rem)]">
+        <Card className="relative w-full max-w-[380px] gap-0 border py-0 shadow-sm">
+          <CardHeader className="relative px-4 pb-0.5 pt-3">
+            <div className="mb-1.5 flex items-center justify-between gap-2">
               <button
                 type="button"
-                onClick={() => setLangOpen((open) => !open)}
-                aria-haspopup="listbox"
-                aria-expanded={langOpen}
-                aria-label={t("auth.languageSelector")}
-                className="flex items-center gap-1.5 rounded-squircle-sm border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50"
+                onClick={handleBack}
+                className="-ml-1.5 flex items-center gap-1 rounded-squircle-sm px-1.5 py-1 text-xs text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"
+                aria-label={t("auth.backAria")}
               >
-                <Globe className="size-3.5" aria-hidden />
-                <span>{languageLabel(lang)}</span>
+                <ArrowLeft className="size-3.5" aria-hidden />
+                {t("auth.back")}
               </button>
-              {langOpen && (
-                <ul
-                  role="listbox"
+
+              {/* Language selector — instant switch, persisted by the shared
+                  i18n provider; never reloads, never resets the form, never
+                  touches the URL or returnTo. */}
+              <div ref={langMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setLangOpen((open) => !open)}
+                  aria-haspopup="listbox"
+                  aria-expanded={langOpen}
                   aria-label={t("auth.languageSelector")}
-                  className="absolute right-0 z-20 mt-1 w-44 overflow-hidden rounded-squircle border border-slate-200 bg-white py-1 shadow-float"
+                  className="flex items-center gap-1 rounded-squircle-sm border border-slate-200 bg-white px-2 py-1 text-2xs font-medium text-slate-600 transition-colors hover:bg-slate-50"
                 >
-                  {SUPPORTED_LANGUAGES.map((option) => {
-                    const selected = option.code === lang;
-                    return (
-                      <li key={option.code}>
-                        <button
-                          type="button"
-                          role="option"
-                          aria-selected={selected}
-                          onClick={() => {
-                            setLang(option.code as Language);
-                            setLangOpen(false);
-                          }}
-                          className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm transition-colors ${
-                            selected
-                              ? "bg-brand/10 font-semibold text-brand-strong"
-                              : "text-slate-600 hover:bg-slate-50"
-                          }`}
-                        >
-                          <span>{option.label}</span>
-                          {selected && <Check className="size-3.5 shrink-0" aria-hidden />}
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
+                  <Globe className="size-3" aria-hidden />
+                  <span>{languageLabel(lang)}</span>
+                </button>
+                {langOpen && (
+                  <ul
+                    role="listbox"
+                    aria-label={t("auth.languageSelector")}
+                    className="absolute right-3 z-20 mt-1 w-40 overflow-hidden rounded-squircle border border-slate-200 bg-white py-1 shadow-float"
+                  >
+                    {SUPPORTED_LANGUAGES.map((option) => {
+                      const selected = option.code === lang;
+                      return (
+                        <li key={option.code}>
+                          <button
+                            type="button"
+                            role="option"
+                            aria-selected={selected}
+                            onClick={() => {
+                              setLang(option.code as Language);
+                              setLangOpen(false);
+                            }}
+                            className={`flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-xs transition-colors ${
+                              selected
+                                ? "bg-brand/10 font-semibold text-brand-strong"
+                                : "text-slate-600 hover:bg-slate-50"
+                            }`}
+                          >
+                            <span>{option.label}</span>
+                            {selected && <Check className="size-3 shrink-0" aria-hidden />}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
             </div>
 
-            <button
-              type="button"
-              onClick={() => navigate("/")}
-              className="mx-auto mb-5 cursor-pointer rounded-xl transition-opacity hover:opacity-80"
-              aria-label={t("auth.backHomeAria")}
-            >
-              <Logo />
-            </button>
-            <CardTitle className="text-xl font-bold">{t(`auth.${mode}.title`)}</CardTitle>
-            <CardDescription className="text-slate-500">{t(`auth.${mode}.desc`)}</CardDescription>
+            <CardTitle className="text-center text-lg font-bold tracking-tight">
+              {/* VelCenter is staff-only, so its title is the staff form's. */}
+              {isCenter ? t("auth.memberLoginLabel") : t(`auth.${mode}.title`)}
+            </CardTitle>
           </CardHeader>
 
-          <CardContent className="grid gap-4">
-            {/* Mode Switcher — Login / Register */}
-            <div className="flex gap-1 bg-slate-100 rounded-xl p-1" role="tablist" aria-label={t("auth.modeSwitcherLabel")}>
-              <button
-                role="tab"
-                aria-selected={mode === "login"}
-                onClick={() => { setMode("login"); setError(null); }}
-                className={`flex-1 py-2 px-3 text-sm font-medium rounded-lg transition-colors ${
-                  mode === "login"
-                    ? "bg-white text-slate-900 shadow-sm"
-                    : "text-slate-500 hover:text-slate-700"
-                }`}
+          <CardContent className="grid gap-2.5 px-4 pb-3 pt-2.5">
+            {!isCenter && (
+              <div
+                className="flex gap-1 rounded-squircle bg-slate-100 p-1"
+                role="tablist"
+                aria-label={t("auth.modeSwitcherLabel")}
               >
-                {t("auth.login.title")}
-              </button>
-              <button
-                role="tab"
-                aria-selected={mode === "register"}
-                onClick={() => { setMode("register"); setError(null); }}
-                className={`flex-1 py-2 px-3 text-sm font-medium rounded-lg transition-colors ${
-                  mode === "register"
-                    ? "bg-white text-slate-900 shadow-sm"
-                    : "text-slate-500 hover:text-slate-700"
-                }`}
-              >
-                {t("auth.register.title")}
-              </button>
-            </div>
-
-            {/* Google Sign-In — official branding, real OAuth flow.
-                Disabled until a real Turnstile token exists: the handler also
-                re-checks, but a pressable button that silently does nothing is
-                its own bug. */}
-            <Button
-              type="button"
-              variant="outline"
-              className="h-12 w-full gap-3 border-slate-300 bg-white text-[15px] font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
-              onClick={handleGoogleSignIn}
-              disabled={busy || !turnstileReady}
-            >
-              {signingIn ? (
-                <>
-                  <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
-                  {t("auth.signingInGoogle")}
-                </>
-              ) : (
-                <>
-                  <GoogleIcon className="h-5 w-5 shrink-0" />
-                  {t("auth.googleContinue")}
-                </>
-              )}
-            </Button>
-
-            {mode === "register" && (
-              <p className="text-center text-xs text-slate-500 mt-2">
-                {t("auth.register.desc")}
-              </p>
+                <button
+                  role="tab"
+                  aria-selected={mode === "login"}
+                  onClick={() => { setMode("login"); setError(null); }}
+                  className={`flex-1 rounded-squircle-sm py-1.5 text-xs font-medium transition-colors ${
+                    mode === "login" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                  }`}
+                >
+                  {t("auth.login.title")}
+                </button>
+                <button
+                  role="tab"
+                  aria-selected={mode === "register"}
+                  onClick={() => { setMode("register"); setError(null); }}
+                  className={`flex-1 rounded-squircle-sm py-1.5 text-xs font-medium transition-colors ${
+                    mode === "register" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                  }`}
+                >
+                  {t("auth.register.title")}
+                </button>
+              </div>
             )}
 
-            {/* Divider */}
-            <div className="relative my-1">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t border-slate-200" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase tracking-wide text-slate-400">
-                <span className="bg-white px-2">{t("auth.or")}</span>
-              </div>
-            </div>
+            {!isCenter && (
+              <Button
+                type="button"
+                variant="outline"
+                className="h-11 w-full gap-2.5 rounded-squircle border-slate-300 bg-white text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+                onClick={handleGoogleSignIn}
+                disabled={busy || !turnstileReady}
+              >
+                {signingIn ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin text-slate-400" />
+                    {t("auth.signingInGoogle")}
+                  </>
+                ) : (
+                  <>
+                    <GoogleIcon className="size-4 shrink-0" />
+                    {t("auth.googleContinue")}
+                  </>
+                )}
+              </Button>
+            )}
 
-            {/* Email + Password Form */}
-            <form onSubmit={mode === "login" ? handleEmailPasswordLogin : handleEmailPasswordRegister} className="grid gap-4">
-              {mode === "register" && (
-                <div className="grid gap-2">
-                  <Label htmlFor="name" className="text-sm font-medium text-slate-700">
-                    {t("auth.register.name")}
-                  </Label>
+            {!isCenter && (
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <span className="w-full border-t border-slate-200" />
+                </div>
+                <div className="relative flex justify-center text-2xs uppercase tracking-wide text-slate-400">
+                  <span className="bg-card px-2">{t("auth.or")}</span>
+                </div>
+              </div>
+            )}
+
+            {isCenter ? (
+              /* ── VelCenter: staff credentials only ──────────────────────
+                 No Google sign-in and no self-registration: a staff session
+                 can only come from a member ID / email plus a password that
+                 VelCenter issued. */
+              <form onSubmit={handleMemberLogin} className="grid gap-2.5">
+                <Input
+                  type="text"
+                  value={memberIdentifier}
+                  onChange={(e) => setMemberIdentifier(e.target.value)}
+                  placeholder={t("auth.memberIdentifierPlaceholder")}
+                  aria-label={t("auth.memberIdentifierPlaceholder")}
+                  className="h-11 rounded-squircle border-slate-200 bg-white px-3 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand/40"
+                  autoComplete="username"
+                  required
+                  disabled={memberLoading}
+                />
+                <div className="relative">
+                  <Input
+                    type={showPassword ? "text" : "password"}
+                    value={memberPassword}
+                    onChange={(e) => setMemberPassword(e.target.value)}
+                    placeholder={t("auth.memberPasswordPlaceholder")}
+                    aria-label={t("auth.memberPasswordPlaceholder")}
+                    className="h-11 rounded-squircle border-slate-200 bg-white pl-3 pr-10 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand/40"
+                    autoComplete="current-password"
+                    required
+                    disabled={memberLoading}
+                  />
+                  {passwordToggle(showPassword, () => setShowPassword(!showPassword), showPassword ? t("auth.hidePassword") : t("auth.showPassword"))}
+                </div>
+
+                {turnstileBlock}
+
+                {memberError && errorBox(memberError)}
+
+                <Button
+                  type="submit"
+                  className="h-11 w-full rounded-squircle bg-brand text-sm font-medium text-white hover:bg-brand-strong disabled:opacity-50"
+                  disabled={memberLoading || !memberIdentifier.trim() || !memberPassword || !turnstileReady}
+                >
+                  {memberLoading ? (
+                    <>
+                      <Loader2 className="mr-2 size-4 animate-spin" />
+                      {t("auth.memberSubmit")}
+                    </>
+                  ) : (
+                    t("auth.memberSubmit")
+                  )}
+                </Button>
+              </form>
+            ) : (
+              <form
+                onSubmit={mode === "login" ? handleEmailPasswordLogin : handleEmailPasswordRegister}
+                className="grid gap-2.5"
+              >
+                <Input
+                  id="email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder={t(`auth.${mode}.email`)}
+                  aria-label={t(`auth.${mode}.email`)}
+                  className="h-11 w-full rounded-squircle border border-slate-200 bg-white px-3 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand/40"
+                  autoComplete="email"
+                  required
+                  disabled={busy}
+                />
+
+                <div className="grid gap-1">
                   <div className="relative">
-                    <User className="absolute left-3 top-1/2 -translate-y-1/2 size-5 text-slate-400" />
                     <Input
-                      id="name"
-                      type="text"
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      placeholder={t("auth.register.name")}
-                      className="h-12 w-full rounded-md border border-slate-200 bg-white pl-10 pr-3 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand/40"
-                      autoComplete="name"
+                      id="password"
+                      type={showPassword ? "text" : "password"}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder={t(`auth.${mode}.password`)}
+                      aria-label={t(`auth.${mode}.password`)}
+                      className="h-11 w-full rounded-squircle border border-slate-200 bg-white pl-3 pr-10 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand/40"
+                      autoComplete={mode === "login" ? "current-password" : "new-password"}
                       required
                       disabled={busy}
                     />
+                    {passwordToggle(showPassword, () => setShowPassword(!showPassword), showPassword ? t("auth.hidePassword") : t("auth.showPassword"))}
                   </div>
-                </div>
-              )}
-
-              <div className="grid gap-2">
-                <Label htmlFor="email" className="text-sm font-medium text-slate-700">
-                  {t(`auth.${mode}.email`)}
-                </Label>
-                <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 size-5 text-slate-400" />
-                  <Input
-                    id="email"
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder={t(`auth.${mode}.email`)}
-                    className="h-12 w-full rounded-md border border-slate-200 bg-white pl-10 pr-3 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand/40"
-                    autoComplete="email"
-                    required
-                    disabled={busy}
-                  />
-                </div>
-              </div>
-
-              <div className="grid gap-2">
-                <div className="flex justify-between">
-                  <Label htmlFor="password" className="text-sm font-medium text-slate-700">
-                    {t(`auth.${mode}.password`)}
-                  </Label>
                   {mode === "login" && (
                     <a
                       href="/forgot-password"
-                      className="text-sm font-medium text-brand hover:underline"
+                      className="justify-self-end text-2xs font-medium text-brand hover:underline"
                     >
                       {t("auth.login.forgotPassword")}
                     </a>
                   )}
                 </div>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 size-5 text-slate-400" />
-                  <Input
-                    id="password"
-                    type={showPassword ? "text" : "password"}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder={t(`auth.${mode}.password`)}
-                    className="h-12 w-full rounded-md border border-slate-200 bg-white pl-10 pr-12 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand/40"
-                    autoComplete={mode === "login" ? "current-password" : "new-password"}
-                    required
-                    disabled={busy}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                    aria-label={showPassword ? t("auth.hidePassword") : t("auth.showPassword")}
-                  >
-                    {showPassword ? <EyeOff className="size-5" /> : <Eye className="size-5" />}
-                  </button>
-                </div>
-              </div>
 
-              {/* ── Cloudflare Turnstile — the gate every submit depends on ──
-                  The container reserves its height, so the widget appearing
-                  never shifts the form. The status row below also keeps a
-                  fixed line height for the same reason. */}
-              <div className="w-full py-2">
-                <p className="mb-2 text-center text-xs text-slate-500">
-                  {t("auth.turnstile.instructions")}
-                </p>
-                <div
-                  ref={turnstileRef}
-                  className="flex min-h-[70px] w-full items-center justify-center"
-                  data-testid="turnstile-widget"
-                  data-state={turnstile.state}
-                />
-                <div
-                  className="mt-1 flex min-h-[18px] items-center justify-center gap-1.5 text-2xs"
-                  role="status"
-                  aria-live="polite"
+                {mode === "register" && (
+                  <div className="grid gap-1">
+                    <div className="relative">
+                      <Input
+                        id="confirm-password"
+                        type={showConfirmPassword ? "text" : "password"}
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        placeholder={t("auth.register.confirmPassword")}
+                        aria-label={t("auth.register.confirmPassword")}
+                        className="h-11 w-full rounded-squircle border border-slate-200 bg-white pl-3 pr-10 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand/40"
+                        autoComplete="new-password"
+                        required
+                        disabled={busy}
+                        aria-invalid={confirmPassword.length > 0 && !passwordsMatch}
+                      />
+                      {passwordToggle(showConfirmPassword, () => setShowConfirmPassword(!showConfirmPassword), showConfirmPassword ? t("auth.hidePassword") : t("auth.showPassword"))}
+                    </div>
+                    {confirmPassword.length > 0 && !passwordsMatch && (
+                      <p className="text-2xs font-medium text-red-600" role="alert">
+                        {t("auth.passwordMismatch")}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {turnstileBlock}
+
+                {error && errorBox(error)}
+
+                <Button
+                  type="submit"
+                  className="h-11 w-full rounded-squircle bg-brand text-sm font-medium text-white hover:bg-brand-strong disabled:opacity-50"
+                  disabled={submitDisabled}
                 >
-                  {turnstile.state === "verified" && (
+                  {submitting ? (
                     <>
-                      <Check className="size-3.5 shrink-0 text-brand" aria-hidden />
-                      <span className="font-medium text-brand-strong">{t("auth.turnstile.verified")}</span>
+                      <Loader2 className="mr-2 size-4 animate-spin" />
+                      {mode === "login" ? t("auth.login.signingIn") : t("auth.register.signingUp")}
                     </>
+                  ) : (
+                    t(`auth.${mode}.submit`)
                   )}
-                  {(turnstile.state === "verifying" || turnstile.state === "loading") && (
-                    <>
-                      <Loader2 className="size-3.5 shrink-0 animate-spin text-slate-400" aria-hidden />
-                      <span className="text-slate-500">
-                        {turnstile.state === "loading"
-                          ? t("auth.turnstile.loading")
-                          : t("auth.turnstile.verifying")}
-                      </span>
-                    </>
-                  )}
-                  {turnstile.state === "expired" && (
-                    <>
-                      <AlertCircle className="size-3.5 shrink-0 text-amber-500" aria-hidden />
-                      <span className="font-medium text-amber-600">{t("auth.turnstile.expired")}</span>
-                    </>
-                  )}
-                  {turnstile.state === "error" && (
-                    <>
-                      <AlertCircle className="size-3.5 shrink-0 text-red-500" aria-hidden />
-                      <span className="font-medium text-red-600">{t("auth.turnstile.error")}</span>
-                    </>
-                  )}
-                  {turnstile.state === "unavailable" && (
-                    <>
-                      <AlertTriangle className="size-3.5 shrink-0 text-red-500" aria-hidden />
-                      <span className="font-medium text-red-600">{t("auth.turnstile.unavailable")}</span>
-                    </>
-                  )}
-                </div>
-              </div>
+                </Button>
+              </form>
+            )}
 
-              {error && (
-                <div className="flex items-center gap-2 rounded-lg bg-red-50 p-3 text-red-600 text-sm" role="alert">
-                  <AlertCircle className="size-4 shrink-0" />
-                  <span>{error}</span>
-                </div>
-              )}
+            {!isCenter && (
+              <>
+                <p className="text-center text-2xs leading-4 text-slate-400">
+                  <a href={`${SITE_URLS.corporate}/terms`} target="_blank" rel="noopener noreferrer" className="underline hover:text-brand">
+                    {t("auth.termsLink")}
+                  </a>
+                  {" · "}
+                  <a href={`${SITE_URLS.corporate}/privacy`} target="_blank" rel="noopener noreferrer" className="underline hover:text-brand">
+                    {t("auth.privacyLink")}
+                  </a>
+                </p>
 
-              {/* Submit Button */}
-              <Button
-                type="submit"
-                className="h-12 w-full rounded-md bg-brand text-white text-[15px] font-medium hover:bg-brand-strong disabled:opacity-50"
-                disabled={busy || !turnstileReady}
-              >
-                {submitting ? (
-                  <>
-                    <Loader2 className="mr-2 size-4 animate-spin" />
-                    {mode === "login" ? t("auth.login.signingIn") : t("auth.register.signingUp")}
-                  </>
-                ) : (
-                  t(`auth.${mode}.submit`)
-                )}
-              </Button>
-            </form>
-
-            {/* Member login — VelCenter staff only */}
-            {currentSite() === "velcenter" && mode === "login" && (
-              <div className="mt-2 border-t border-slate-100 pt-4">
-                {!memberMode ? (
+                <p className="text-center text-xs text-slate-500">
+                  {mode === "login" ? t("auth.login.noAccount") : t("auth.register.already")}
                   <button
                     type="button"
-                    onClick={() => setMemberMode(true)}
-                    className="w-full text-center text-sm font-medium text-slate-500 hover:text-slate-700"
+                    onClick={() => { setMode(mode === "login" ? "register" : "login"); setError(null); }}
+                    className="ml-1 font-medium text-brand hover:underline"
                   >
-                    {t("auth.memberLoginLabel")}
+                    {mode === "login" ? t("auth.register.title") : t("auth.login.title")}
                   </button>
-                ) : (
-                  <form onSubmit={handleMemberLogin} className="grid gap-2.5">
-                    <Input
-                      type="text"
-                      value={memberIdentifier}
-                      onChange={(e) => setMemberIdentifier(e.target.value)}
-                      placeholder={t("auth.memberIdentifierPlaceholder")}
-                      className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand/40"
-                      autoComplete="username"
-                      required
-                    />
-                    <Input
-                      type="password"
-                      value={memberPassword}
-                      onChange={(e) => setMemberPassword(e.target.value)}
-                      placeholder={t("auth.memberPasswordPlaceholder")}
-                      className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand/40"
-                      autoComplete="current-password"
-                      required
-                    />
-                    <Button
-                      type="submit"
-                      className="h-10 w-full rounded-md bg-brand text-white hover:bg-brand-strong"
-                      disabled={memberLoading || !memberIdentifier.trim() || !memberPassword || !turnstileReady}
-                    >
-                      {memberLoading ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
-                      {t("auth.memberSubmit")}
-                    </Button>
-                    <button
-                      type="button"
-                      onClick={() => { setMemberMode(false); setMemberError(null); }}
-                      className="text-center text-xs text-slate-400 hover:text-slate-600"
-                    >
-                      {t("auth.cancel")}
-                    </button>
-                  </form>
-                )}
-                {memberError && (
-                  <p role="alert" className="mt-2 text-center text-sm text-red-500">{memberError}</p>
-                )}
-              </div>
+                </p>
+              </>
             )}
-
-            {/* Error */}
-            {error && (
-              <div className="flex items-center gap-2 rounded-lg bg-red-50 p-3 text-red-600 text-sm" role="alert">
-                <AlertCircle className="size-4 shrink-0" />
-                <span>{error}</span>
-              </div>
-            )}
-
-            {/* Terms & Privacy */}
-            <p className="text-center text-xs leading-5 text-slate-400">
-              {t("auth.terms")}{" "}
-              <a href={`${SITE_URLS.corporate}/terms`} target="_blank" rel="noopener noreferrer" className="underline hover:text-brand">
-                {t("auth.termsLink")}
-              </a>
-              {" · "}
-              <a href={`${SITE_URLS.corporate}/privacy`} target="_blank" rel="noopener noreferrer" className="underline hover:text-brand">
-                {t("auth.privacyLink")}
-              </a>
-            </p>
-
-            {/* Guest / Later button */}
-            <button
-              type="button"
-              onClick={() => navigate("/")}
-              className="w-full text-center text-sm font-medium text-slate-500 hover:text-slate-700 mt-2"
-            >
-              {mode === "login" ? t("auth.login.continueAsGuest") : t("auth.register.later")}
-            </button>
-
-            {/* Switch mode link */}
-            <p className="text-center text-sm text-slate-500">
-              {mode === "login" ? t("auth.login.noAccount") : t("auth.register.already")}
-              <button
-                type="button"
-                onClick={() => { setMode(mode === "login" ? "register" : "login"); setError(null); }}
-                className="ml-1 font-medium text-brand hover:underline"
-              >
-                {mode === "login" ? t("auth.register.title") : t("auth.login.title")}
-              </button>
-            </p>
           </CardContent>
-
-          <div className="rounded-b-lg border-t bg-muted px-6 py-3 text-center text-xs text-slate-500">
-            <p className="flex items-center justify-center gap-1">
-              <Globe className="size-3 shrink-0" aria-hidden />
-              {t("auth.turnstile.footer")}
-            </p>
-          </div>
         </Card>
       </div>
     </div>
   );
+
 }
 
 export default function AuthPage() {
