@@ -1,6 +1,6 @@
 # Velnox AI Handoff — Current State
 
-**Last verified:** 2026-11-11 · **Branch:** `main` · **HEAD:** `ac7d701` — Turnstile auth gate on every credential path
+**Last verified:** 2026-11-11 · **Branch:** `main` · **HEAD:** `00d67e7` — Turnstile final hardening (Google gate + one-time proofs)
 
 ## 1. Current Project State
 
@@ -12,6 +12,14 @@
 
 
 ### Active Tasks
+- **Turnstile Final Hardening (2026-11-11)** — ✅ DONE (code+tests) · ⚠️ **ต้องรัน migration + ตั้ง env ก่อน production** — แก้ 2 ข้อบกพร่องจากรอบก่อน:
+  - **ปุ่ม Google ไม่ถูก gate**: patch เดิม `replace(count=1)` ไปโดนช่อง Name แทนปุ่ม Google → ปุ่มยัง `disabled={busy}` (กดได้ก่อนยืนยัน) และช่อง Name ถูก lock จนพิมพ์ชื่อไม่ได้. แก้เป็น Google = `busy || !turnstileReady`, input = `busy`. เพิ่มเทสต์แบบ **ต่อปุ่ม** (ไม่ใช่ contains ทั้งไฟล์ ซึ่งเป็นเหตุผลที่บั๊กหลุด)
+  - **Proof ไม่ one-time จริง**: signed cookie + ลบ cookie หยุดได้แค่ replay ในเบราว์เซอร์เดิม. เพิ่ม `backend/lib/nonce-store.ts` — record ตอน mint (`INSERT … ON CONFLICT DO NOTHING`) + consume ด้วย `DELETE … RETURNING` (atomic, ชนะได้คนเดียวข้าม instance), เก็บแค่ sha256 ของ nonce, ไม่ log. `POST /api/auth/preauth` ปฏิเสธ 503 ถ้า store ใช้ไม่ได้; `GET /auth/google` ปฏิเสธ replayed/expired/unavailable
+  - **Store:** ไม่มี Redis/Upstash ในระบบ (rate-limit.ts ยืนยัน) → ใช้ **Postgres** ที่ทุก instance ใช้ร่วมกัน. in-memory ใช้ได้เฉพาะ non-production; production ไม่มี store = `unavailable` (fail closed) — มีเทสต์ยืนยันว่า production ไม่อ่าน memory
+  - **Schema ใหม่ 1 ตาราง** `preauth_nonces (nonce_hash PK, created_at, expires_at)` ใน `db/schema.sql` + `db/run-sqleditor.sql` (วางถูก pass ตาม contract ของ reconciler)
+  - test ใหม่: nonce 15 เคส (รวม concurrent 10 พร้อมกัน), gate +6, oauth-route +2
+  - ผล: typecheck 4/4, i18n OK 2294×3, build 3/3, **1484 pass**, diff --check clean. ที่เหลือ fail 2 = ของเดิม
+  - **owner ต้องทำ:** (1) รัน `db/run-sqleditor.sql` สร้างตาราง `preauth_nonces` (ไม่งั้น Google login 503), (2) ตั้ง Vercel `VITE_TURNSTILE_SITE_KEY` ×3, (3) Render `TURNSTILE_SECRET_KEY` + `TURNSTILE_HOSTNAMES=velshop.vercel.app,velseller.vercel.app,velcenter.vercel.app`, (4) Cloudflare Dashboard ใส่ 3 hostname
 - **Turnstile Authentication Gate (2026-11-11)** — ✅ DONE (code+tests) · ⚠️ **production ยังไม่เปิด** — audit พบ Critical 6 จุด: (1) `useTurnstile` คืน token ปลอม `"bypass"` เมื่อไม่มี site key, (2) `member-login` ไม่มีการตรวจสอบเลย, (3) `GET /auth/google` เรียกตรงได้, (4) password routes ข้ามตรวจเมื่อไม่มี secret, (5) `reset()` ไม่ reset widget จริง, (6) ไม่มี hostname/action/replay/timeout. **แก้:** `backend/lib/turnstile.ts` (verify กลาง fail-closed ทุกกรณี + replay cache + timeout 5s + hostname จาก server config เท่านั้น), `backend/lib/preauth-proof.ts` (HMAC one-time proof cookie สำหรับ Google), `POST /api/auth/preauth` + gate `GET /auth/google` (OAuth state เดิมไม่แตะ), `use-turnstile.ts` เขียนใหม่ 6 สถานะไม่มี bypass + reset จริง + ref-counted script, `Auth.tsx` gate ทุกปุ่ม (email/register/Google/member) + language selector + ลบไทย hardcode. **i18n:** เพิ่ม 11 key × 3 ภาษา + แก้ shallow-merge ที่ทำให้ my ขาด 16 key → **`i18n:check` ผ่านครั้งแรก 2294×3**. **test ใหม่ 58 เคส** (turnstile 24 + gate 34) + อัปเดต oauth-route. ผล: typecheck 4/4, backend tsc, build 3/3, 1461 pass, diff --check clean. **owner ต้องตั้ง env:** Vercel `VITE_TURNSTILE_SITE_KEY` × 3, Render `TURNSTILE_SECRET_KEY` + `TURNSTILE_HOSTNAMES`, Cloudflare Dashboard ใส่ hostname 3 โดเมน. รายละเอียด `.ai/reports/LATEST.md`
 - **Market filters + search + V removal (2026-11-11)** — ✅ DONE — 4 เรื่องในรอบเดียว:
   - **raw key `productDetail.addedFlashDesc`**: `t()` ใน `packages/shared/src/lib/i18n/index.tsx` resolve เฉพาะค่าที่เป็น **string** — `addedFlashDesc`/`addedToastDesc` เป็นฟังก์ชัน จึงคืนชื่อ key ออกมาที่จอ. แปลงเป็น string แบบ `{qty}` (convention ของระบบ) + แก้ `addedToast` ฝั่ง my ที่มี `{qty}` เกิน (ล้าง i18n error เดิมด้วย) + `t()` เตือนใน dev ว่า key นี้ resolve เป็น type อะไร ไม่ใช่แค่ "missing"
