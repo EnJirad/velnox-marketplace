@@ -1,73 +1,86 @@
-# LATEST — 2026-11-11 · Add-to-cart UX + dead header bar
+# LATEST — 2026-11-11 · Market filters, search, V removal, i18n raw key
 
-**Branch:** `main` · **Status:** DONE — typecheck 4/4, build velshop ผ่าน, test ใหม่ 12/12
+**Branch:** `main` · **Status:** DONE — typecheck 4/4, build:apps 4/4, 1401 pass
 
 ## 1. สรุป
 
-owner แจ้ง 2 ปัญหาบนหน้าสินค้า:
+owner แจ้ง 4 เรื่อง รวมเป็นงานเดียว:
 
-1. มี **เส้นสีเทาขีดคั่น** เหนือเนื้อหา — ถามว่า "มันคืออะไร เอาให้หน่อย"
-2. กด **"เพิ่มลงตะกร้า"** แล้วไม่ปิดตัวเลือก และไม่มีข้อความยืนยันกลางจอ
+1. ข้อความใต้ "เพิ่มลงตะกร้าสำเร็จ" ขึ้นเป็น `productDetail.addedFlashDesc` (raw key)
+2. เอาตัวกรอง V "ร้านค้าที่ได้รับการยืนยันเท่านั้น" ออกจากหน้าตลาด และเอา V ออกให้หมด
+3. ปรับตัวกรองหน้าตลาดให้ดีขึ้น (มาตรฐานเดียวกับ marketplace อื่น)
+4. ทำให้ search แม่นยำ ถูกต้อง
 
-## 2. ต้นเหตุและวิธีแก้
+## 2. ต้นเหตุของ raw key
 
-### 2.1 เส้นสีเทา
+`t()` ใน `packages/shared/src/lib/i18n/index.tsx` มี `resolvePath()` ที่คืนค่าเฉพาะ
+`typeof node === "string"` — แต่ `addedFlashDesc` / `addedToastDesc` ถูกเขียนเป็น
+**ฟังก์ชัน** `(p) => ...` จึงไม่ถูก resolve แล้วตกไปที่ "คืนชื่อ key"
 
-`apps/velshop/src/components/shop/ShopHeader.tsx` มี **แถบเมนูที่สอง** ติดใต้ header:
+**แก้:** เปลี่ยนเป็น string ตาม convention ของระบบ (`"มี {qty} รายการในตะกร้า"`)
++ แก้ `addedToast` ของ my ที่มี `{qty}` เกิน (ล้าง i18n error เดิม)
++ `t()` เตือนใน dev ว่า key นี้ resolve เป็น type อะไร (ไม่ใช่แค่ missing)
 
-```
-sticky top-[3.5rem] md:top-[4rem] z-30 border-b border-slate-200 bg-white
-```
+## 3. ลบ V (thorough removal)
 
-ลิงก์ข้างในใช้ `navItem()` ซึ่งออกแบบมาสำหรับพื้นสีเขียว (`text-white/80`, `bg-white/20`)
-บนพื้น `bg-white` จึง **มองไม่เห็นทั้งหมด** เหลือเพียง `border-slate-200` = เส้นเทาที่เห็น
-
-**แก้:** ลบทั้งบล็อก (ไม่กระทบ desktop nav ที่มีลิงก์เดียวกันอยู่แล้ว)
-
-### 2.2 ปุ่มเพิ่มลงตะกร้า
-
-`handleSheetConfirm` (โหมด direct ใน `ShopProductDetail`) มีบั๊ก:
-- เพิ่มลงตะกร้าแล้ว **ไม่เรียก `setVariantSheetOpen(false)`** → sheet ค้างเปิด
-- toast `position: "top-center"` ถูก sheet บัง
-
-**แก้:**
-- ปิด sheet ก่อน (`setVariantSheetOpen(false)` + `setPendingAction(null)`)
-- แสดงข้อความ **"เพิ่มลงตะกร้าสำเร็จ"** กลางจอ แล้วเฟดหาย
-
-## 3. ของใหม่
-
-| ไฟล์ | สิ่งที่ทำ |
+| จุด | การเปลี่ยนแปลง |
 |---|---|
-| `packages/shared/src/components/ui/center-flash.tsx` | ใหม่ — `useCenterFlash()` คืน `{ flash, node }` แสดงข้อความกลางจอ เฟดเข้า–ค้าง–เฟดออก |
-| `packages/shared/src/index.css` | เพิ่ม `@keyframes velnox-center-flash` |
-| `apps/velshop/src/pages/ShopProductDetail.tsx` | ปิด sheet + ใช้ `flashCenter` ทั้ง 2 เส้นทาง (multi-mode และ direct-mode) |
-| `apps/velshop/src/components/shop/ProductSelectionSheet.tsx` | ใช้ `flashCenter` แทน toast, mount node นอก `<Sheet>` |
-| `apps/velshop/src/components/shop/ShopHeader.tsx` | ลบแถบเมนูที่สอง (เส้นเทา) |
-| i18n en/th/my | `productDetail.addedFlash` + `addedFlashDesc` |
-| `backend/tests/product-add-to-cart-ux.test.ts` | ใหม่ — guard test 12 เคส |
+| `ShopProducts.tsx` | ลบ filter block `V …velshopVerifiedFilter`, state `verifiedOnly`, param `verified`, prop ที่ส่งให้ grid |
+| `ProductGrid.tsx` | ลบ prop/param `verifiedOnly` |
+| `ShopCategories.tsx` | ลบการ์ด "VelShop Verified" (มี `V` + ลิงก์ 2 จุด) |
+| `ShopHome.tsx` | ลบ announcement ที่นับ `isVerifiedProduct` และลิงก์ `?verified=true` |
+| `ShopPromoCarousel.tsx` | `/shops?verified=true` → `/shops` |
+| `backend/routes/products.ts` | ลบ filter `req.query.verified` + คอมเมนต์ endpoint ที่ไม่มีจริง |
+| `api-routes.ts` | ลบ `params.set("verified", …)` |
+| i18n | ลบ `verification.velshopVerified`, `velshopVerifiedDesc`, `velshopVerifiedFilter` (30 บรรทัด) |
 
-### คุณสมบัติของ CenterFlash
-- ทีละข้อความ (เรียกซ้ำ = แทนที่ ไม่ซ้อน)
-- `pointer-events-none` ทั้ง overlay → ไม่บล็อกการกด
-- `role="status"` + `aria-live="polite"` → screen reader อ่าน
-- เฟดด้วย CSS keyframes, JS แค่ unmount
-- `prefers-reduced-motion: reduce` → แสดงข้อความแต่ไม่ animate
+**ไม่แตะ:** seller identity verification ใน VelCenter (คิวรีวิว/อนุมัติ) — ยังทำงานเหมือนเดิม
 
-## 4. ผลตรวจ (รันจริง)
+## 4. Search ใหม่
+
+เดิม: `(p.name ILIKE %q% OR p.description ILIKE %q%)` — ค้นทั้งประโยคเป็นก้อนเดียว
+ไม่จัดอันดับ ไม่ค้นชื่อร้าน/หมวด/แบรนด์
+
+ใหม่:
+
+1. **Tokenize** — ตัดคำตาม whitespace สูงสุด 6 คำ
+2. **Strict pass (AND)** — ทุกคำต้องเจอใน `name` / `short_description` / `description` / `supplier` / `sh.name` / `c.name` (ทุกฟิลด์ NULL-safe)
+3. **Fallback (OR)** — ใช้เฉพาะเมื่อ strict pass ไม่ได้ผลเลย และมีมากกว่า 1 คำ (ดีกว่าหน้าว่าง)
+4. **Relevance** — `CASE` ให้คะแนน: ชื่อตรงเป๊ะ 100 > ขึ้นต้นด้วย 60 > มีคำอยู่ในชื่อ 40 > ชื่อร้าน 25 > แบรนด์ 15 > อื่น ๆ 1 แล้วเรียงตามคะแนน + sold_count + created_at
+5. **Sort ที่ผู้ใช้เลือกยังชนะ** relevance (price_asc, price_desc, rating, discount, best_selling)
+
+## 5. ตัวกรองใหม่ (มาตรฐาน marketplace)
+
+- **หมวด** (เดิม) · **ร้าน** (เดิม)
+- **ช่วงราคา** เป็นปุ่มสำเร็จรูป: ต่ำกว่า ฿200 · ฿200–500 · ฿500–1,000 · ฿1,000–3,000 · มากกว่า ฿3,000 + กรอกเองได้
+- **คะแนนรีวิว**: 4★ ขึ้นไป · 3★ ขึ้นไป
+- **เฉพาะลดราคา** (compare_at_price > price) · **เฉพาะมีสินค้า**
+- **sort**: ใหม่ · ขายดี · คะแนนสูงสุด · ราคา ต่ำ→สูง · ราคา สูง→ต่ำ · ลดมากที่สุด
+- **active filter chips** เหนือรายการสินค้า กดลบทีละตัวได้ + "ล้างทั้งหมด" → เห็นทันทีว่าทำไมผลลัพธ์สั้น
+
+## 6. บั๊กที่เจอเพิ่ม
+
+`ProductGrid` ส่ง `sort` แต่ `catalogProductsAction` อ่าน `a?.sortBy` → **ตัวเลือก sort ไม่เคยถูกส่งไป backend เลย**
+(ทุก grid ได้ "newest" ตลอด) แก้ให้รับทั้ง `sortBy` และ `sort`
+
+## 7. ไฟล์ที่แก้
+
+`apps/velshop/src/pages/ShopProducts.tsx` · `ShopCategories.tsx` · `ShopHome.tsx` ·
+`components/shop/ShopPromoCarousel.tsx` · `packages/shared/src/components/shop/ProductGrid.tsx` ·
+`packages/shared/src/lib/api-routes.ts` · `packages/shared/src/lib/i18n/index.tsx` ·
+i18n locales (th/en/my + index) · `backend/routes/products.ts` · tests
+
+## 8. ผลตรวจ (รันจริง)
 
 | ตรวจ | ผล |
 |---|---|
 | `bun run typecheck` (4 แอป) | ผ่าน 4/4 |
-| `bun --filter @velnox/velshop build` | ผ่าน (17.67s) |
-| `bun test backend/tests/product-add-to-cart-ux.test.ts` | 12 pass / 0 fail |
-| `bun test backend/tests` (ทั้งชุด) | 1389 pass · 431 skip · 5 fail (**ของเดิม** — ยืนยันด้วย stash บน HEAD สะอาด) |
-| `bun run i18n:check` | FAIL เฉพาะ 2 จุดเดิม (my ขาด 16 key ของ auth, `addedToast` interpolation) |
+| `bun run build:apps` | ผ่าน 4/4 |
+| `bun test backend/tests` | 1401 pass · 431 skip · 2 fail (ของเดิม: chat transport, verification exports) |
+| test ใหม่ `catalog-search-filters.test.ts` | 11 pass |
+| `bun run i18n:check` | เหลือเฉพาะ 16 key ของ auth ที่ my ขาด (ของเดิม) |
 | `git diff --check` | clean |
 
-## 5. สถานะ Git
+## 9. สถานะ Git
 
-- branch `main` · commit `42c449c` · push แล้ว · `HEAD = origin/main = 42c449c` · working tree clean
-
-## 6. หมายเหตุ
-
-ไม่ได้ตรวจด้วยตาในเบราว์เซอร์จริง (ไม่มี `.env`/DB ในเครื่อง) — พฤติกรรมยืนยันจาก source + guard test
+branch `main` · commit `47c4657` · push แล้ว · `HEAD = origin/main = 47c4657` · working tree clean

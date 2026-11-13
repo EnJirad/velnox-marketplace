@@ -1,6 +1,6 @@
 # Velnox AI Handoff — Current State
 
-**Last verified:** 2026-11-11 · **Branch:** `main` · **HEAD:** `42c449c` — add-to-cart UX + dead header bar removed
+**Last verified:** 2026-11-11 · **Branch:** `main` · **HEAD:** `47c4657` — market filters + search rebuilt, V removed
 
 ## 1. Current Project State
 
@@ -12,6 +12,14 @@
 
 
 ### Active Tasks
+- **Market filters + search + V removal (2026-11-11)** — ✅ DONE — 4 เรื่องในรอบเดียว:
+  - **raw key `productDetail.addedFlashDesc`**: `t()` ใน `packages/shared/src/lib/i18n/index.tsx` resolve เฉพาะค่าที่เป็น **string** — `addedFlashDesc`/`addedToastDesc` เป็นฟังก์ชัน จึงคืนชื่อ key ออกมาที่จอ. แปลงเป็น string แบบ `{qty}` (convention ของระบบ) + แก้ `addedToast` ฝั่ง my ที่มี `{qty}` เกิน (ล้าง i18n error เดิมด้วย) + `t()` เตือนใน dev ว่า key นี้ resolve เป็น type อะไร ไม่ใช่แค่ "missing"
+  - **ลบ V ออกจาก storefront หมด**: filter "ร้านค้าที่ได้รับการยืนยันเท่านั้น", การ์ด V ใน `ShopCategories`, announcement นับ `isVerifiedProduct` ใน `ShopHome`, ลิงก์ `?verified=true` ทุกจุด, prop `verifiedOnly`, filter `verified` ใน backend catalog, คีย์ i18n `verification.velshopVerified*` (30 บรรทัด). **seller identity verification ใน VelCenter ยังอยู่ครบ** — แค่ไม่ใช่ตัวกรอง/ป้ายฝั่งลูกค้า
+  - **Search ใหม่**: เดิมเป็น `%q%` ก้อนเดียว. ตอนนี้ตัดเป็น token (สูงสุด 6) ทุกคำต้องเจอใน name / short_description / description / supplier / ชื่อร้าน / ชื่อหมวด (strict pass) + มี OR fallback เฉพาะเมื่อ strict ไม่เจออะไรเลย + **จัดอันดับ** exact name 100 > prefix 60 > contains 40 > ชื่อร้าน 25 > แบรนด์ 15; sort ที่ผู้ใช้เลือกยังชนะ relevance
+  - **ตัวกรองมาตรฐาน**: ช่วงราคาสำเร็จรูป (ต่ำกว่า 200 … มากกว่า 3,000) + กรอกเอง, คะแนน 4★/3★, เฉพาะลดราคา, เฉพาะมีสินค้า, ร้าน, หมวด; sort เพิ่ม best selling / top rated / biggest discount; **active filter chips** ที่กดลบได้ + "ล้างทั้งหมด"
+  - บั๊กที่เจอระหว่างทาง: `ProductGrid` ส่ง `sort` แต่ mapper อ่าน `sortBy` → sort ไม่เคยถูกส่งไปเลย (แก้ให้รับทั้งคู่)
+  - test: `backend/tests/catalog-search-filters.test.ts` (ใหม่ 11 เคส), อัปเดต `product-visibility.test.ts` + `product-add-to-cart-ux.test.ts`
+  - ผล: typecheck 4/4, `build:apps` 4/4, 1401 pass, `git diff --check` clean. ที่ fail เหลือ 2 ตัว (chat transport, verification exports) = ของเดิมบน HEAD สะอาด
 - **Add-to-cart UX + dead header bar (2026-11-11)** — ✅ DONE — owner แจ้ง 2 ปัญหาบนหน้าสินค้า:
   - **เส้นสีเทาเหนือเนื้อหา**: ต้นเหตุคือ "แถบเมนูที่สอง" (`Category sticky bar`, `sticky top-[3.5rem] border-b border-slate-200 bg-white`) ใน `ShopHeader` ซึ่งลิงก์ข้างในเป็น `text-white/80` บนพื้น `bg-white` → มองไม่เห็น เหลือแค่เส้นขอบเทา. **ลบทั้งบล็อก** (desktop nav + mobile brand bar ยังพาลิงก์ครบ)
   - **กด "เพิ่มลงตะกร้า" แล้วดูเหมือนไม่เกิดอะไร**: `handleSheetConfirm` (โหมด direct) เพิ่มลงตะกร้าแล้ว **ไม่ปิด sheet** และ toast ไปโผล่มุมจอใต้ sheet. แก้เป็น ปิด sheet ก่อน → `flashCenter()` แสดง "เพิ่มลงตะกร้าสำเร็จ" กลางจอ แล้วเฟดหาย
