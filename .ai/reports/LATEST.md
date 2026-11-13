@@ -1,75 +1,34 @@
-# LATEST — 2026-11-11 · Fix: "กรุณายืนยันว่าไม่ใช่บอทก่อน" แม้ติ๊ก Turnstile แล้ว
+# LATEST — 2026-11-11 · Neon: สร้างตาราง preauth_nonces (แก้ login ไม่ได้)
 
-**Branch:** `main` · **Status:** DONE (code) · ⚠️ **สาเหตุฝั่ง production ยังต้องให้ owner ตั้งค่า**
+**Branch:** `main` · **Status:** DONE · **Production DB แก้แล้ว**
 
-## 1. อาการที่ owner แจ้ง
+## 1. อาการ
 
-> "มันก็เช็คถูกแล้วนี่ ทำไมเข้าสู่ระบบไม่ได้ มันขึ้น กรุณายืนยันว่าไม่ใช่บอทก่อน"
+> "ระบบยืนยันการเข้าสู่ระบบยังไม่พร้อมใช้งาน กรุณาติดต่อผู้ดูแล"
 
-Turnstile ติ๊กถูกแล้ว แต่ระบบยังบอกให้ยืนยัน
+## 2. Root Cause — พบจาก log จริงของ Render
 
-## 2. Root Cause — มี 2 อย่างซ้อนกัน
-
-### 2.1 ทุก error จาก server ถูกแปลงเป็นข้อความ "ยืนยันก่อน" (บั๊กจริง)
-
-`handleGoogleSignIn` ทำแบบนี้:
-
-```ts
-if (!proofRes.ok) {
-  const code = payload?.error?.code;
-  throw new Error(
-    code === "TURNSTILE_UNAVAILABLE" || code === "TURNSTILE_TIMEOUT"
-      ? t("auth.turnstile.networkError")
-      : t("auth.turnstile.required"),   // ← ทุกอย่างที่เหลือ
-  );
-}
+```
+message: 'relation "preauth_nonces" does not exist'
+[auth] pre-auth nonce store unavailable — refusing to issue a proof
 ```
 
-ดังนั้น **503 เพราะไม่มี `TURNSTILE_SECRET_KEY`**, **400 เพราะ hostname ไม่ตรง**,
-หรือ **503 เพราะตาราง `preauth_nonces` ยังไม่มี** → ลูกค้าเห็น
-"กรุณายืนยันว่าไม่ใช่บอทก่อน" ทั้งที่ทำถูกแล้ว
+**ตาราง `preauth_nonces` ไม่มีใน production Neon** → `recordNonce()` ล้มเหลว →
+`POST /api/auth/preauth` ตอบ 503 `PREAUTH_STORE_UNAVAILABLE` → frontend แสดง
+`auth.turnstile.notConfigured`
 
-### 2.2 ข้อความค้าง (stale state)
+### สิ่งที่ log พิสูจน์เพิ่มเติม (สำคัญ)
 
-`setError(t("auth.turnstile.required"))` ถูกตั้งก่อน widget จะถูกติ๊ก และ **ไม่เคยถูกล้าง**
-เมื่อผ่านการยืนยัน → ติ๊กแล้วก็ยังเห็นข้อความเดิม
+โค้ดไปถึงบรรทัด `recordNonce()` ได้ แปลว่า **Turnstile verification ผ่านแล้ว**:
 
-## 3. สิ่งที่แก้
-
-| ไฟล์ | การแก้ |
+| ตรวจ | ผล |
 |---|---|
-| `packages/shared/src/pages/Auth.tsx` | map `error.code` → ข้อความที่ตรงความจริง (login/register/member/Google ทั้ง 4 ทาง) + ล้างข้อความ "ยืนยันก่อน" ทันทีที่ได้ token + โลโก้กลับมา |
-| `packages/shared/src/hooks/use-turnstile.ts` | เพิ่ม `peek()` อ่าน `turnstile.getResponse()` — token จริงจาก Cloudflare |
-| i18n 3 ภาษา | เพิ่ม `auth.turnstile.wrongSite`, `auth.turnstile.notConfigured` (2297×3) |
-| test | +13 เคส (compact / signup / VelCenter / error mapping) |
+| `TURNSTILE_SECRET_KEY` | ✅ ตั้งแล้ว (ถ้าไม่มีจะ fail ก่อนถึงขั้นนี้) |
+| `TURNSTILE_HOSTNAMES` | ✅ ตรง (hostname check ผ่าน) |
+| `VITE_TURNSTILE_SITE_KEY` | ✅ ตั้งแล้ว (widget แสดงและติ๊กได้) |
+| **ตาราง `preauth_nonces`** | ❌ **ไม่มี** ← ต้นเหตุเดียว |
 
-**ตาราง map ที่ใช้ตอนนี้**
-
-| code จาก server | ข้อความที่ลูกค้าเห็น |
-|---|---|
-| `TURNSTILE_REQUIRED` | กรุณายืนยันว่าไม่ใช่บอทก่อน |
-| `TURNSTILE_INVALID` | การยืนยันไม่สำเร็จ กรุณาลองอีกครั้ง |
-| `TURNSTILE_EXPIRED` / `REPLAYED` | การยืนยันหมดอายุ — กรุณายืนยันใหม่ |
-| `TURNSTILE_HOSTNAME_MISMATCH` / `ACTION_MISMATCH` | การยืนยันนี้ทำบนโดเมนอื่น กรุณาโหลดหน้าใหม่ |
-| `TURNSTILE_TIMEOUT` / `UNAVAILABLE` | เชื่อมต่อระบบยืนยันไม่ได้… |
-| `TURNSTILE_NOT_CONFIGURED` / `PREAUTH_*` | ระบบยืนยันยังไม่พร้อมใช้งาน กรุณาติดต่อผู้ดูแล |
-
-**Token resolution:** `turnstile.token ?? turnstile.peek()` — ถ้า Cloudflare ถือ response อยู่
-แต่ React ยังไม่ได้รับ callback ก็ยัง submit ได้ (server ยังตรวจซ้ำ และปฏิเสธ token ที่ใช้แล้ว)
-ปุ่มใช้ค่าเดียวกันนี้ → ไม่มีทาง "ปุ่มเทาแต่ widget เขียว"
-
-## 4. โลโก้ (ตามที่ขอ)
-
-เพิ่มกลับในหัวการ์ด ใช้ทั้ง login และ register — วัดจริงที่ความกว้างจำลอง 360px:
-**login 598px · register 631px** (ยังพอดี 1 จอบนมือถือทั่วไป)
-
-## 5. ⚠️ สาเหตุฝั่ง Production ที่ต้องแก้ (สำคัญ)
-
-โค้ดแก้ให้ "บอกความจริง" แล้ว แต่ **ต้นเหตุที่ login ไม่ผ่านคือฝั่ง server** ซึ่ง agent
-ตรวจสอบแทนไม่ได้ ต้องทำ 2 อย่างนี้:
-
-### (ก) รัน SQL สร้างตาราง (ถ้ายังไม่รัน)
-ถ้าไม่รัน → Google login จะตอบ 503 `PREAUTH_STORE_UNAVAILABLE` ทุกครั้ง
+## 3. การแก้ไข (ทำบน production Neon แล้ว)
 
 ```sql
 CREATE TABLE IF NOT EXISTS preauth_nonces (
@@ -80,30 +39,48 @@ CREATE TABLE IF NOT EXISTS preauth_nonces (
 CREATE INDEX IF NOT EXISTS idx_preauth_nonces_expires ON preauth_nonces (expires_at);
 ```
 
-หรือรันทั้งไฟล์ `db/run-sqleditor.sql` ใน Neon SQL Editor (idempotent)
+### ยืนยันหลังสร้าง
 
-### (ข) ตั้ง env บน Render
 ```
-TURNSTILE_SECRET_KEY=<secret key จาก Cloudflare>
-TURNSTILE_HOSTNAMES=velshop.vercel.app,velseller.vercel.app,velcenter.vercel.app
+columns: nonce_hash text NOT NULL (PK)
+         created_at timestamptz NOT NULL DEFAULT now()
+         expires_at timestamptz NOT NULL
+indexes: preauth_nonces_pkey, idx_preauth_nonces_expires
 ```
-ถ้าไม่ตั้ง secret → ทุก login ถูกปฏิเสธ (fail-closed) ด้วย `TURNSTILE_NOT_CONFIGURED`
-ถ้า hostname ไม่ตรง → `TURNSTILE_HOSTNAME_MISMATCH`
 
-หลังแก้แล้ว อาการจะเปลี่ยนจาก "กรุณายืนยัน…" เป็นข้อความที่บอกสาเหตุจริง —
-ถ้ายังไม่ผ่าน ให้ดูข้อความใหม่นั้นแล้วแจ้งกลับมาได้เลย
+### ทดสอบ SQL เส้นทางเดียวกับ backend (บน production)
 
-## 6. ผลตรวจ (รันจริง)
+| ขั้น | คำสั่ง | ผล |
+|---|---|---|
+| 1. record (ตอน mint proof) | `INSERT … ON CONFLICT DO NOTHING RETURNING` | ✅ คืนแถว |
+| 2. consume ครั้งแรก | `DELETE … RETURNING expires_at` | ✅ คืนแถว → ผ่าน |
+| 3. consume ครั้งที่สอง | `DELETE … RETURNING` | ✅ คืน **ว่าง** → ถูกปฏิเสธ (replay block) |
+| 4. ตรวจว่าตารางว่าง | `SELECT count(*)` | ✅ 0 แถว |
 
-| คำสั่ง | ผล |
-|---|---|
-| `bun run typecheck` | **4/4 ผ่าน** |
-| `bun run i18n:check` | **OK — 2297 × 3** |
-| build velShop / velSeller / velCenter | **3/3 ผ่าน** |
-| `bun test backend/tests` | **1497 pass** / 431 skip / 2 fail (ของเดิม) |
-| `git diff --check` | **clean** |
-| วัด UI ในเบราว์เซอร์ | โลโก้แสดง, 598/631px, ไม่มีข้อความที่ถูกเอาออก |
+## 4. ทดสอบ endpoint จริงบน production
+
+```
+POST https://velnox-api.onrender.com/api/auth/preauth  body {}
+→ HTTP 400 { "code": "TURNSTILE_REQUIRED" }
+```
+
+**ไม่ใช่ 503** → secret ถูกตั้งค่า และ route ทำงาน (ถ้า secret หายจะได้ 503
+`TURNSTILE_NOT_CONFIGURED`) และการส่ง token ว่างถูกปฏิเสธ (ไม่มี bypass)
+
+## 5. Deploy ที่ใช้งานอยู่
+
+- Render `velnox-api` (srv-da5dg76417fc73f3krkg) · live deploy `b27d40b0` · 1 instance
+- ไม่ต้อง redeploy หลังสร้างตาราง — backend query ตอน runtime
+
+## 6. ขั้นตอนถัดไป (owner)
+
+1. ลองล็อกอินอีกครั้ง — ควรผ่านแล้ว
+2. ถ้ายังไม่ผ่าน ให้ดูข้อความใหม่ (ตอนนี้บอกสาเหตุจริงแล้ว) แล้วแจ้งกลับ:
+   - "การยืนยันนี้ทำบนโดเมนอื่น" → hostname ไม่อยู่ใน `TURNSTILE_HOSTNAMES`/Cloudflare
+   - "การยืนยันหมดอายุ" → ติ๊กช้าเกิน 3 นาที หรือ token ถูกใช้แล้ว
+   - "ระบบยืนยันยังไม่พร้อม" → ยังมีปัญหาฝั่ง server (ส่ง log มาให้ดู)
 
 ## 7. Git
 
-- commit `f8c5728` · push แล้ว · `HEAD = origin/main = f8c5728` · working tree clean
+- ไม่มีการเปลี่ยนโค้ดในรอบนี้ — แก้เฉพาะฐานข้อมูล production
+- repo ล่าสุด: `b27d40b` (= deploy ที่ live)
