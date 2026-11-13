@@ -41,12 +41,23 @@ describe("gallery layout — main image left, thumbnails right, one divider", ()
     const src = read(GALLERY);
     const main = src.indexOf('className="relative min-w-0 flex-1 overflow-hidden rounded-2xl');
     const divider = src.indexOf("self-stretch bg-slate-200");
-    const thumbs = src.indexOf("flex shrink-0 flex-col gap-2");
+    // The rail is a stretched flex item whose scrolling list is absolutely
+    // positioned inside it, so a long list can never make the gallery taller.
+    const thumbs = src.indexOf("relative shrink-0 self-stretch overflow-hidden");
     expect(main).toBeGreaterThan(-1);
     expect(divider).toBeGreaterThan(main);
     expect(thumbs).toBeGreaterThan(divider);
+    expect(src).toContain("absolute inset-0 flex flex-col");
     // Uniform thumbnails: one size for every tile, never the image's own ratio.
     expect(src).toContain("style={{ width: thumbSize, height: thumbSize }}");
+  });
+
+  test("the thumbnail rail carries the same rounded corner as the main frame", () => {
+    const src = read(GALLERY);
+    // Same rounding as the main image box, so the clipped top/bottom edge of the
+    // scrolling strip is round rather than a hard square cut.
+    expect(src).toContain("relative shrink-0 self-stretch overflow-hidden rounded-2xl");
+    expect(src).toContain("className=\"relative min-w-0 flex-1 overflow-hidden rounded-2xl");
   });
 
   test("the selected thumbnail carries the accent border", () => {

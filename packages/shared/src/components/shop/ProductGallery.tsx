@@ -235,15 +235,20 @@ export function ProductGallery({
           The rail is a stretched flex item with NO in-flow content of its own
           (the list is absolutely positioned inside), so a long thumbnail list
           can never make the gallery taller. Its height is exactly the main
-          image's height, and extra thumbnails scroll inside it. */}
+          image's height, and extra thumbnails scroll inside it.
+
+          The rail carries the SAME rounded-2xl corner as the main image frame,
+          so the clipped top/bottom of the scrolling strip is round instead of a
+          hard square cut. The list is inset by the same 4px the rail adds to
+          thumbSize, so the rounding shows on both sides. */}
       {hasMoreThanOne && (
         <div
-          className="relative shrink-0 self-stretch overflow-hidden"
+          className="relative shrink-0 self-stretch overflow-hidden rounded-2xl"
           style={{ width: thumbSize + 8 }}
           role="tablist"
           aria-label={labels.mainImageAlt}
         >
-          <div className="absolute inset-0 flex flex-col gap-1 overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="absolute inset-0 flex flex-col items-center gap-1 overflow-y-auto overscroll-contain p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {images.map((img, i) => {
             const key = img.id ?? img.url;
             const isActive = i === safeIndex;
