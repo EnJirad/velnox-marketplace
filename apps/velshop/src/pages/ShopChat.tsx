@@ -235,8 +235,9 @@ export default function ShopChat() {
       conversationMessages({ conversationId: activeId })
         .then((res) => {
           // Dedup against receivedMessageIds to prevent duplicate render on reconnect
-          const newMessages = (res.items ?? []).filter(m => !receivedMessageIds.current.has(m.id));
-          newMessages.forEach(m => receivedMessageIds.current.add(m.id));
+          const items = (res.items ?? []) as ChatMessage[];
+          const newMessages = items.filter((m) => !receivedMessageIds.current.has(m.id));
+          newMessages.forEach((m) => receivedMessageIds.current.add(m.id));
           setMessages(newMessages);
           setHasMore(!!res.hasMore);
         })

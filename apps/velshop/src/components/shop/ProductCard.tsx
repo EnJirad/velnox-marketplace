@@ -85,7 +85,7 @@ export function ProductCard({ product, onOpen: _onOpen, onAdd: _onAdd, badgeLabe
             keeps just two items. */}
         {displayDiscountPercent != null && displayDiscountPercent > 0 && (
             <span
-              className={`absolute left-1.5 top-1.5 rounded-md bg-emerald-600/95 px-1.5 py-0.5 font-semibold tabular-nums text-white backdrop-blur-sm ${compact ? "text-2xs" : "text-2xs"}`}
+              className={`absolute left-1.5 top-1.5 rounded-md bg-red-600/95 px-1.5 py-0.5 font-semibold tabular-nums text-white backdrop-blur-sm ${compact ? "text-2xs" : "text-2xs"}`}
             >
               -{Math.round(displayDiscountPercent)}%
             </span>
@@ -117,14 +117,19 @@ export function ProductCard({ product, onOpen: _onOpen, onAdd: _onAdd, badgeLabe
           {product.name}
         </Link>
 
-        {/* Price — two numbers, never three (the badge moved to the image). */}
-        <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
-                    <div className="flex items-baseline gap-x-1">
-                      <span className="text-3xl font-bold tabular-nums tracking-tight text-slate-900" style={{ overflowWrap: "anywhere" }}>{priceWhole}</span>
-                      <span className="text-xs font-medium text-slate-600">{priceDecimal}</span>
-                    </div>
-                    <span className="text-sm font-normal text-slate-400">/{product.unit}</span>
-                  </div>
+        {/* Price — current price + struck-through original when discounted. */}
+        <div className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-1">
+          <div className="flex items-baseline gap-x-1">
+            <span className="text-xl font-bold tabular-nums tracking-tight text-red-600" style={{ overflowWrap: "anywhere" }}>{priceWhole}</span>
+            <span className="text-2xs font-medium text-red-600">{priceDecimal}</span>
+          </div>
+          <span className="text-xs font-normal text-slate-400">/{product.unit}</span>
+          {displayCompareAtPrice != null && displayCompareAtPrice > displayPrice && (
+            <span className="text-2xs text-slate-400 line-through tabular-nums" style={{ overflowWrap: "anywhere" }}>
+              {formatBaht(displayCompareAtPrice)}
+            </span>
+          )}
+        </div>
 
         {/* Rating + Sold */}
         {(hasReviews || sold > 0) && (

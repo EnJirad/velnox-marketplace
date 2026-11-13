@@ -231,14 +231,19 @@ export function ProductGallery({
         <span aria-hidden className="mx-2.5 w-px shrink-0 self-stretch bg-slate-200" />
       )}
 
-      {/* ── THUMBNAILS (vertical, fixed-size, scrollable, fade out when scrolled) ──────────────────────────────── */}
+      {/* ── THUMBNAILS (vertical rail, height locked to the main image) ────
+          The rail is a stretched flex item with NO in-flow content of its own
+          (the list is absolutely positioned inside), so a long thumbnail list
+          can never make the gallery taller. Its height is exactly the main
+          image's height, and extra thumbnails scroll inside it. */}
       {hasMoreThanOne && (
         <div
-          className="flex shrink-0 flex-col gap-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          style={{ width: thumbSize + 8, maxHeight: "100%" }}
+          className="relative shrink-0 self-stretch overflow-hidden"
+          style={{ width: thumbSize + 8 }}
           role="tablist"
           aria-label={labels.mainImageAlt}
         >
+          <div className="absolute inset-0 flex flex-col gap-1 overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {images.map((img, i) => {
             const key = img.id ?? img.url;
             const isActive = i === safeIndex;
@@ -276,6 +281,7 @@ export function ProductGallery({
               </button>
             );
           })}
+          </div>
         </div>
       )}
     </div>
