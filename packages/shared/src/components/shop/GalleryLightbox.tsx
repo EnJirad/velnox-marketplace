@@ -27,6 +27,21 @@ interface GalleryLightboxProps {
   productId?: string;
 }
 
+/**
+ * The top-right toolbar control: a SQUIRCLE plate (rounded square — neither a
+ * circle nor a hard square) with the icon centred in it.
+ *
+ * The flex centring matters: without it the inline SVG sits on the text
+ * baseline and rides high inside its plate, which is what made the share /
+ * close icons look like they were hanging off their own background.
+ */
+const TOOLBAR_BUTTON = cn(
+  "flex size-10 items-center justify-center rounded-xl",
+  "border border-white/10 bg-white/10 text-white",
+  "transition-colors hover:bg-white/20 active:bg-white/25",
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500",
+);
+
 export function GalleryLightbox({
   images,
   initialIndex = 0,
@@ -247,14 +262,14 @@ export function GalleryLightbox({
         )}
       </div>
 
-      {/* Top toolbar */}
-      <div className="absolute top-4 right-4 flex items-center gap-2 z-10 md:absolute md:top-4 md:right-4">
+      {/* Top toolbar — one squircle plate per control, icons centred inside. */}
+      <div className="absolute right-4 top-4 z-10 flex items-center gap-2 md:right-4 md:top-4">
         {/* Fullscreen toggle */}
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); toggleFullscreen(); }}
           aria-label={isFullscreen ? t("galleryLightbox.exitFullscreen") ?? "Exit fullscreen" : t("galleryLightbox.enterFullscreen") ?? "Enter fullscreen"}
-          className="size-10 rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+          className={TOOLBAR_BUTTON}
         >
           {isFullscreen ? <Minimize2 className="size-5" /> : <Maximize2 className="size-5" />}
         </button>
@@ -264,7 +279,7 @@ export function GalleryLightbox({
           type="button"
           onClick={(e) => { e.stopPropagation(); handleDownload(); }}
           aria-label={t("galleryLightbox.download") ?? "Download image"}
-          className="size-10 rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+          className={TOOLBAR_BUTTON}
         >
           <Download className="size-5" />
         </button>
@@ -274,7 +289,7 @@ export function GalleryLightbox({
           type="button"
           onClick={(e) => { e.stopPropagation(); handleShare(); }}
           aria-label={t("galleryLightbox.share") ?? "Share image"}
-          className="size-10 rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+          className={TOOLBAR_BUTTON}
         >
           <Share2 className="size-5" />
         </button>
@@ -284,7 +299,7 @@ export function GalleryLightbox({
           type="button"
           onClick={(e) => { e.stopPropagation(); onOpenChange(false); }}
           aria-label={t("galleryLightbox.close") ?? "Close gallery"}
-          className="size-10 rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+          className={TOOLBAR_BUTTON}
         >
           <X className="size-5" />
         </button>
