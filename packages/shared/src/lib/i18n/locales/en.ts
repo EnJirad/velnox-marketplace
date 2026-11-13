@@ -829,6 +829,8 @@ export const en: Dict = {
     imageAlt: "Photo {n}",
     addedToast: "Added to cart",
     addedToastDesc: (p: { qty: number }) => `${p.qty} item(s)`,
+    addedFlash: "Added to cart successfully",
+    addedFlashDesc: (p: { qty: number }) => `${p.qty} item(s) in your cart`,
     wishlistAdded: "Added to your wishlist",
     wishlistRemoved: "Removed from your wishlist",
     wishlistFailed: "Couldn't update your wishlist",

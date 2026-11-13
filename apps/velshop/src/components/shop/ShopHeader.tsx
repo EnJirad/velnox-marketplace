@@ -165,20 +165,6 @@ export function ShopHeader() {
         </div>
       </div>
 
-      {/* Category sticky bar — ชั้นที่สองใต้ header */}
-      <div className="sticky top-[3.5rem] md:top-[4rem] z-30 border-b border-slate-200 bg-white px-4 sm:px-6">
-        <nav className="flex overflow-x-auto whitespace-nowrap py-3 sm:py-4">
-          {navItem("/", t("nav.home"), true)}
-          {navItem("/products", t("nav.market"))}
-          {navItem("/categories", t("nav.categories"))}
-          {/* Additional categories for horizontal scroll */}
-          {navItem("/shop", t("nav.shop"))}
-          {navItem("/promotions", t("nav.promotions"))}
-          {navItem("/new-arrivals", t("nav.newArrivals"))}
-          {navItem("/sale", t("nav.sale"))}
-        </nav>
-      </div>
-
       <CartDrawer open={cartOpen} onOpenChange={setCartOpen} />
     </header>
   );

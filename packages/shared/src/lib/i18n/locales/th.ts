@@ -871,6 +871,8 @@ export const th = {
     imageAlt: "รูปที่ {n}",
     addedToast: "เพิ่มลงตะกร้าแล้ว",
     addedToastDesc: (p: { qty: number }) => `${p.qty} รายการ`,
+    addedFlash: "เพิ่มลงตะกร้าสำเร็จ",
+    addedFlashDesc: (p: { qty: number }) => `มี ${p.qty} รายการในตะกร้า`,
     wishlistAdded: "เพิ่มในรายการโปรดแล้ว",
     wishlistRemoved: "นำออกจากรายการโปรดแล้ว",
     wishlistFailed: "บันทึกรายการโปรดไม่สำเร็จ",

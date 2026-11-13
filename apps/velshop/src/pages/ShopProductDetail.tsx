@@ -24,6 +24,7 @@ import { setSeo } from "@/lib/seo";
 import { ACTION_BUTTON_CLASSES } from "@/lib/productActions";
 import { useAction } from "@velnox/shared/lib/api-routes";
 import { GalleryLightbox } from "@velnox/shared/components/shop/GalleryLightbox";
+import { useCenterFlash } from "@velnox/shared/components/ui/center-flash";
 import {
   ArrowLeft,
   BadgeCheck,
@@ -266,6 +267,8 @@ export default function ShopProductDetail() {
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const [compactSheet, setCompactSheet] = useState(false);
   const addBtnRef = useRef<HTMLButtonElement>(null);
+  /** Centred "added to cart" confirmation (see components/ui/center-flash). */
+  const { flash: flashCenter, node: centerFlashNode } = useCenterFlash();
 
   /* ── Gallery Lightbox state ─────────────────────────────────────── */
   const [galleryOpen, setGalleryOpen] = useState(false);
@@ -972,14 +975,15 @@ export default function ShopProductDetail() {
         imageUrl: cartImageUrl,
       }, sheetQty);
       fly(addBtnRef.current);
-      toast.success(t("productDetail.addedToast", { name: product.name, qty: sheetQty }), {
-        duration: 1000,
-        position: "top-center",
-        className: "bg-slate-900 text-white text-sm",
-        description: `${t("productDetail.addedToastDesc", { qty: sheetQty })}`,
-      });
+      // Close the option sheet FIRST, then confirm in the middle of the screen:
+      // the customer sees the sheet collapse and the acknowledgement in one
+      // gesture instead of a toast behind a still-open sheet.
       setVariantSheetOpen(false);
       setPendingAction(null);
+      flashCenter({
+        message: t("productDetail.addedFlash"),
+        description: t("productDetail.addedFlashDesc", { qty: sheetQty }),
+      });
     } else if (action === "buy") {
       // Direct purchase: NO cart mutation. The checkout page sends the chosen
       // quantity to the server, which charges exactly that quantity.
@@ -992,7 +996,7 @@ export default function ShopProductDetail() {
       setVariantSheetOpen(false);
       setPendingAction(null);
     }
-  }, [product, isAuthenticated, navigate, outOfStock, optionGroups, selectedOptions, add, buyNowState, sheetQty, fly, t]);
+  }, [product, isAuthenticated, navigate, outOfStock, optionGroups, selectedOptions, add, buyNowState, sheetQty, fly, t, flashCenter]);
 
   const handleSheetConfirm = useCallback(() => {
     if (!product || !pendingAction) return;
@@ -1012,11 +1016,13 @@ export default function ShopProductDetail() {
         imageUrl: cartImageUrl,
       }, sheetQty);
       fly(addBtnRef.current);
-      toast.success(t("productDetail.addedToast", { name: product.name, qty: sheetQty }), {
-        duration: 1000,
-        position: "top-center",
-        className: "bg-slate-900 text-white text-sm",
-        description: `${t("productDetail.addedToastDesc", { qty: sheetQty })}`,
+      // The sheet must CLOSE on success — leaving it open made the add look
+      // like it had not gone through. Close first, then confirm at the centre.
+      setVariantSheetOpen(false);
+      setPendingAction(null);
+      flashCenter({
+        message: t("productDetail.addedFlash"),
+        description: t("productDetail.addedFlashDesc", { qty: sheetQty }),
       });
     } else if (pendingAction === "buy") {
       // Direct purchase: NO cart mutation (see handleSheetAction).
@@ -1029,7 +1035,7 @@ export default function ShopProductDetail() {
       setVariantSheetOpen(false);
       setPendingAction(null);
     }
-  }, [product, pendingAction, optionGroups, selectedOptions, outOfStock, add, buyNowState, sheetQty, fly, navigate, t]);
+  }, [product, pendingAction, optionGroups, selectedOptions, outOfStock, add, buyNowState, sheetQty, fly, navigate, t, flashCenter]);
 
   const handleOptionSelect = useCallback((groupId: string, valueText: string) => {
     setSelectedOptions((prev) => ({
@@ -1785,6 +1791,9 @@ export default function ShopProductDetail() {
       />
 
       <ShopFooter />
+
+      {/* Centred "added to cart" confirmation — fades in, holds, fades out. */}
+      {centerFlashNode}
     </div>
   );
 }

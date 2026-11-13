@@ -310,6 +310,31 @@ body {
   }
 }
 
+/* ─── center-flash — the add-to-cart confirmation ──────────────────────
+ * One message, centred on the screen, that fades in, holds and fades out.
+ * Sonner toasts are anchored to a corner by design, so a confirmation that
+ * must be read at the centre of the viewport needs its own surface.
+ * Reduced motion is handled in the component (no animation, same lifetime).
+ * ────────────────────────────────────────────────────────────────────── */
+@keyframes velnox-center-flash {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.94);
+  }
+  12% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  82% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.98);
+  }
+}
+
 /* ─── scrollbar-hide — a REAL utility ─────────────────────────────────────
  * CategoryStrip and HorizontalRail were already writing `scrollbar-hide`, but
  * Tailwind v4 does not ship that utility and nothing here defined it, so the

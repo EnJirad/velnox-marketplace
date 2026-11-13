@@ -32,6 +32,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
+import { useCenterFlash } from "@velnox/shared/components/ui/center-flash";
 
 interface ProductSelectionSheetProps {
   product: StoreProduct | null;
@@ -67,6 +68,8 @@ export function ProductSelectionSheet({
   const isMobile = useIsMobile();
   const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
+  /** Centred "added to cart" confirmation — same surface as the product page. */
+  const { flash: flashCenter, node: centerFlashNode } = useCenterFlash();
 
   // ── State ─────────────────────────────────────────────────────
   const [nameExpanded, setNameExpanded] = useState(false);
@@ -339,7 +342,10 @@ export function ProductSelectionSheet({
       }, 650);
     }
 
-    toast.success(t("productDetail.addedToast", { qty }));
+    flashCenter({
+      message: t("productDetail.addedFlash"),
+      description: t("productDetail.addedFlashDesc", { qty }),
+    });
   }, [
     product,
     qty,
@@ -356,6 +362,7 @@ export function ProductSelectionSheet({
     track,
     t,
     navigate,
+    flashCenter,
   ]);
 
   const handleBuyNow = useCallback(() => {
@@ -738,23 +745,28 @@ export function ProductSelectionSheet({
 
   // ── Mobile: Bottom Sheet ──────────────────────────────────────
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="bottom"
-        className="max-h-[85dvh] rounded-t-2xl border-t border-slate-200 p-0"
-        onOpenAutoFocus={(e) => e.preventDefault()}
-      >
-        <SheetTitle className="sr-only">{product.name}</SheetTitle>
-        <SheetDescription className="sr-only">
-          {t("productDetail.seoDesc", {
-            name: product.name,
-            price: formatBaht(product.price),
-            unit: product.unit,
-            shop: product.shopName ?? t("productDetail.defaultShop"),
-          })}
-        </SheetDescription>
-        {sheetContent}
-      </SheetContent>
-    </Sheet>
+    <>
+      <Sheet open={open} onOpenChange={onOpenChange}>
+        <SheetContent
+          side="bottom"
+          className="max-h-[85dvh] rounded-t-2xl border-t border-slate-200 p-0"
+          onOpenAutoFocus={(e) => e.preventDefault()}
+        >
+          <SheetTitle className="sr-only">{product.name}</SheetTitle>
+          <SheetDescription className="sr-only">
+            {t("productDetail.seoDesc", {
+              name: product.name,
+              price: formatBaht(product.price),
+              unit: product.unit,
+              shop: product.shopName ?? t("productDetail.defaultShop"),
+            })}
+          </SheetDescription>
+          {sheetContent}
+        </SheetContent>
+      </Sheet>
+      {/* Centred confirmation — lives outside the sheet so closing it cannot
+          unmount the message the customer is reading. */}
+      {centerFlashNode}
+    </>
   );
 }

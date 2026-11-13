@@ -660,6 +660,8 @@ export const my = {
     imageAlt: "ပုံ {n}",
     addedToast: "ခြင်းတောင်းထဲ ထည့်ပြီးပါပြီ (×{qty})",
     addedToastDesc: (p: { qty: number }) => `${p.qty} ပစ္စည်း`,
+    addedFlash: "ခြင်းတောင်းထဲ ထည့်ပြီးပါပြီ",
+    addedFlashDesc: (p: { qty: number }) => `ခြင်းတောင်းထဲ ${p.qty} မျိုး ရှိသည်`,
     wishlistAdded: "နှစ်သက်ရာစာရင်းတွင် ထည့်ပြီးပါပြီ",
     wishlistRemoved: "နှစ်သက်ရာစာရင်းမှ ဖယ်ရှားပြီးပါပြီ",
     wishlistFailed: "နှစ်သက်ရာစာရင်း သိမ်းမရပါ",
