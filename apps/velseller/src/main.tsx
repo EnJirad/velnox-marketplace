@@ -1,4 +1,4 @@
-import { Toaster } from "@velnox/shared/components/ui/sonner";
+import { CenterFlashHost } from "@velnox/shared/lib/flash-toast";
 import { RequireRole } from "@velnox/shared/components/RequireRole";
 import {
   RootErrorBoundary,
@@ -181,7 +181,8 @@ createRoot(document.getElementById("root")!).render(
       <SellerTabBar />
       </div>
     </BrowserRouter>
-    <Toaster />
+    {/* ONE notification surface: every toast renders as the centred flash. */}
+      <CenterFlashHost />
 
     </LanguageProvider>
   </RootErrorBoundary>,

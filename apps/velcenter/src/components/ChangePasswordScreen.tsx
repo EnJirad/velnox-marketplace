@@ -6,7 +6,7 @@ import { Label } from "@velnox/shared/components/ui/label";
 import { useAction } from "@velnox/shared/lib/api-routes";
 import { KeyRound, Loader2, LockKeyhole } from "lucide-react";
 import { useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@velnox/shared/lib/flash-toast";
 
 /**
  * VelCenter force password change (spec §10).

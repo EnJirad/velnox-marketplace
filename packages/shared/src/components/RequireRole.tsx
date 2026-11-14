@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Navigate, useLocation } from "react-router";
-import { toast } from "sonner";
+import { toast } from "@velnox/shared/lib/flash-toast";
 
 const API_BASE = apiBaseUrl;
 

@@ -5,7 +5,7 @@ import { refetchCurrentUser } from "@velnox/shared/lib/api-client";
 import { useLanguage } from "@/lib/i18n";
 import { Loader2 } from "lucide-react";
 import { useCallback, useRef, useState, type ReactNode } from "react";
-import { toast } from "sonner";
+import { toast } from "@velnox/shared/lib/flash-toast";
 
 const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/avif"];
 const MAX_BYTES = 10 * 1024 * 1024; // 10 MB

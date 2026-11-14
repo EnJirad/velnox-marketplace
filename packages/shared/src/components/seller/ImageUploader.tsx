@@ -13,7 +13,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useRef, useState, useMemo } from "react";
-import { toast } from "sonner";
+import { toast } from "@velnox/shared/lib/flash-toast";
 import type { StoreProduct, StoreImage } from "@velnox/shared/lib/commerce";
 
 const MAX_IMAGES = 10;

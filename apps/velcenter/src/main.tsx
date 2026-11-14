@@ -1,4 +1,4 @@
-import { Toaster } from "@velnox/shared/components/ui/sonner";
+import { CenterFlashHost } from "@velnox/shared/lib/flash-toast";
 import { OrderShipDialogHost } from "@/components/OrderShipDialog";
 import { RequireRole } from "@velnox/shared/components/RequireRole";
 import { LanguageProvider } from "@velnox/shared/lib/i18n";
@@ -49,7 +49,8 @@ createRoot(document.getElementById("root")!).render(
     {/* The fulfilment ship dialog: `packing → shipped` needs a carrier + tracking
         number, and the orders table cannot own the dialog (see the component). */}
     <OrderShipDialogHost />
-    <Toaster />
+    {/* ONE notification surface: every toast renders as the centred flash. */}
+      <CenterFlashHost />
 
     </LanguageProvider>
   </RootErrorBoundary>,

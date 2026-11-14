@@ -26,7 +26,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@velnox/shared/lib/flash-toast";
 import { emitCenterEvent, onCenterEvent } from "../lib/center-events";
 
 /** Rows per page — the queue is bounded; mirrors `backend/lib/pagination.ts`. */

@@ -20,7 +20,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@velnox/shared/lib/flash-toast";
 
 interface NotificationRow {
   id: string;

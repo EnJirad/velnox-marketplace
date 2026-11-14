@@ -45,7 +45,7 @@ import { Label } from "@velnox/shared/components/ui/label";
 import { api, useAction } from "@velnox/shared/lib/api-routes";
 import { Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@velnox/shared/lib/flash-toast";
 
 import { emitCenterEvent } from "../lib/center-events";
 

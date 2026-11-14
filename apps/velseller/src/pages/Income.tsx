@@ -24,7 +24,7 @@ import {
   PackageCheck, Receipt, RefreshCw, ShieldCheck, TrendingUp, TrendingDown, Wallet,
   BarChart3, PieChart, ArrowUpRight, CalendarDays, PackageSearch,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@velnox/shared/lib/flash-toast";
 import { Link } from "react-router";
 import {
   bucketByPeriod, bucketLabel,

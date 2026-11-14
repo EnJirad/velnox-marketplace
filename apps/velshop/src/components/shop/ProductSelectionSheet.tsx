@@ -31,8 +31,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
-import { toast } from "sonner";
-import { useCenterFlash } from "@velnox/shared/components/ui/center-flash";
+import { toast } from "@velnox/shared/lib/flash-toast";
 
 interface ProductSelectionSheetProps {
   product: StoreProduct | null;
@@ -68,8 +67,6 @@ export function ProductSelectionSheet({
   const isMobile = useIsMobile();
   const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
-  /** Centred "added to cart" confirmation — same surface as the product page. */
-  const { flash: flashCenter, node: centerFlashNode } = useCenterFlash();
 
   // ── State ─────────────────────────────────────────────────────
   const [nameExpanded, setNameExpanded] = useState(false);
@@ -342,8 +339,7 @@ export function ProductSelectionSheet({
       }, 650);
     }
 
-    flashCenter({
-      message: t("productDetail.addedFlash"),
+    toast.success(t("productDetail.addedFlash"), {
       description: t("productDetail.addedFlashDesc", { qty }),
     });
   }, [
@@ -362,7 +358,6 @@ export function ProductSelectionSheet({
     track,
     t,
     navigate,
-    flashCenter,
   ]);
 
   const handleBuyNow = useCallback(() => {
@@ -764,9 +759,6 @@ export function ProductSelectionSheet({
           {sheetContent}
         </SheetContent>
       </Sheet>
-      {/* Centred confirmation — lives outside the sheet so closing it cannot
-          unmount the message the customer is reading. */}
-      {centerFlashNode}
     </>
   );
 }

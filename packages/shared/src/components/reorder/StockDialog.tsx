@@ -14,7 +14,7 @@ import { Label } from "@velnox/shared/components/ui/label";
 import { useMutation } from "@velnox/shared/lib/api-routes";
 import { Loader2, MinusCircle } from "lucide-react";
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@velnox/shared/lib/flash-toast";
 
 interface StockDialogProps {
   product: Product | null;

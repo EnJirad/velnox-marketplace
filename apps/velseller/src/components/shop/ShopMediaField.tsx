@@ -14,7 +14,7 @@
  */
 import { useRef, useState } from "react";
 import { ImagePlus, Loader2, Trash2, Upload } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@velnox/shared/lib/flash-toast";
 
 import { Button } from "@velnox/shared/components/ui/button";
 import { api, useAction } from "@velnox/shared/lib/api-routes";

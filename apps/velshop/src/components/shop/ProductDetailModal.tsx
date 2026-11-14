@@ -26,7 +26,7 @@ import {
   Store,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@velnox/shared/lib/flash-toast";
 
 interface ProductDetailModalProps {
   product: StoreProduct | null;

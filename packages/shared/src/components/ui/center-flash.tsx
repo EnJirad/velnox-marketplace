@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CircleCheck, CircleAlert } from "lucide-react";
+import { CircleCheck, CircleAlert, TriangleAlert, Info } from "lucide-react";
 import { cn } from "@velnox/shared/lib/utils";
 
 /**
@@ -23,7 +23,13 @@ import { cn } from "@velnox/shared/lib/utils";
  *  - `role="status"` + `aria-live="polite"` so a screen reader announces it
  */
 
-export type CenterFlashTone = "success" | "error";
+/**
+ * Four tones, matching the four kinds of message the product actually sends:
+ * a confirmation, a failure, a "this worked but read the detail" and plain
+ * information. Keeping them in one vocabulary is what makes every surface look
+ * like the same system.
+ */
+export type CenterFlashTone = "success" | "error" | "warning" | "info";
 
 export interface CenterFlashOptions {
   /** The single line the customer reads, e.g. "เพิ่มลงตะกร้าสำเร็จ". */
@@ -56,7 +62,22 @@ function CenterFlashView({
   totalMs,
   reduced,
 }: CenterFlashViewProps) {
-  const Icon = tone === "error" ? CircleAlert : CircleCheck;
+  const Icon =
+    tone === "error"
+      ? CircleAlert
+      : tone === "warning"
+        ? TriangleAlert
+        : tone === "info"
+          ? Info
+          : CircleCheck;
+  const surface =
+    tone === "error"
+      ? "bg-rose-600 text-white"
+      : tone === "warning"
+        ? "bg-amber-500 text-white"
+        : tone === "info"
+          ? "bg-slate-700 text-white"
+          : "bg-slate-900 text-white";
   return (
     <div
       className="pointer-events-none fixed inset-0 z-[200] flex items-center justify-center px-6"
@@ -67,7 +88,7 @@ function CenterFlashView({
         aria-live="polite"
         className={cn(
           "pointer-events-none flex max-w-[min(22rem,100%)] items-center gap-2.5 rounded-squircle-lg px-4 py-3 shadow-overlay",
-          tone === "error" ? "bg-rose-600 text-white" : "bg-slate-900 text-white",
+          surface,
         )}
         style={{
           left: "50%",

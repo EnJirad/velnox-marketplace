@@ -15,7 +15,7 @@ import { api, useAction } from "@velnox/shared/lib/api-routes";
 import { apiBaseUrl } from "@velnox/shared/lib/sites";
 import { compressImage } from "@velnox/shared/lib/image-optimize";
 import { useLanguage } from "@velnox/shared/lib/i18n";
-import { toast } from "sonner";
+import { toast } from "@velnox/shared/lib/flash-toast";
 
 /**
  * Banner contract v2 (client mirror of backend/lib/banners.ts). v1 rows from

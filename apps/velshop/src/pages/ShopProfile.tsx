@@ -44,7 +44,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router";
-import { toast } from "sonner";
+import { toast } from "@velnox/shared/lib/flash-toast";
 
 /**
  * Append a cache-busting ?v= param to force the browser to refetch.

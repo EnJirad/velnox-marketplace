@@ -16,7 +16,7 @@ import { ArrowLeft, ChevronDown, ChevronUp, MessageCircle, Package, ShieldCheck,
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { useAuth } from "@velnox/shared/hooks/use-auth";
-import { toast } from "sonner";
+import { toast } from "@velnox/shared/lib/flash-toast";
 
 interface ShopRow {
   id: string;

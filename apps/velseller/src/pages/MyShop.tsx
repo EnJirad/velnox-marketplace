@@ -26,7 +26,7 @@ import {
   Trash2,
   XCircle,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@velnox/shared/lib/flash-toast";
 
 import { AppHeader } from "@velnox/shared/components/AppHeader";
 import { ProductFormDialog } from "@velnox/shared/components/seller/ProductFormDialog";

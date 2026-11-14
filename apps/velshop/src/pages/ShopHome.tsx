@@ -54,7 +54,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { toast } from "sonner";
+import { toast } from "@velnox/shared/lib/flash-toast";
 import { apiBaseUrl as API_BASE } from "@velnox/shared/lib/sites";
 import { api } from "@velnox/shared/lib/api-routes";
 import { useAction } from "@velnox/shared/lib/api-routes";

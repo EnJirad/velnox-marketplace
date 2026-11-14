@@ -24,7 +24,6 @@ import { setSeo } from "@/lib/seo";
 import { ACTION_BUTTON_CLASSES } from "@/lib/productActions";
 import { useAction } from "@velnox/shared/lib/api-routes";
 import { GalleryLightbox } from "@velnox/shared/components/shop/GalleryLightbox";
-import { useCenterFlash } from "@velnox/shared/components/ui/center-flash";
 import {
   ArrowLeft,
   BadgeCheck,
@@ -53,7 +52,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { toast } from "sonner";
+import { toast } from "@velnox/shared/lib/flash-toast";
 
 /* ─── Types ────────────────────────────────────────────────────────────── */
 
@@ -267,8 +266,6 @@ export default function ShopProductDetail() {
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const [compactSheet, setCompactSheet] = useState(false);
   const addBtnRef = useRef<HTMLButtonElement>(null);
-  /** Centred "added to cart" confirmation (see components/ui/center-flash). */
-  const { flash: flashCenter, node: centerFlashNode } = useCenterFlash();
 
   /* ── Gallery Lightbox state ─────────────────────────────────────── */
   const [galleryOpen, setGalleryOpen] = useState(false);
@@ -980,8 +977,7 @@ export default function ShopProductDetail() {
       // gesture instead of a toast behind a still-open sheet.
       setVariantSheetOpen(false);
       setPendingAction(null);
-      flashCenter({
-        message: t("productDetail.addedFlash"),
+      toast.success(t("productDetail.addedFlash"), {
         description: t("productDetail.addedFlashDesc", { qty: sheetQty }),
       });
     } else if (action === "buy") {
@@ -996,7 +992,7 @@ export default function ShopProductDetail() {
       setVariantSheetOpen(false);
       setPendingAction(null);
     }
-  }, [product, isAuthenticated, navigate, outOfStock, optionGroups, selectedOptions, add, buyNowState, sheetQty, fly, t, flashCenter]);
+  }, [product, isAuthenticated, navigate, outOfStock, optionGroups, selectedOptions, add, buyNowState, sheetQty, fly, t]);
 
   const handleSheetConfirm = useCallback(() => {
     if (!product || !pendingAction) return;
@@ -1020,8 +1016,7 @@ export default function ShopProductDetail() {
       // like it had not gone through. Close first, then confirm at the centre.
       setVariantSheetOpen(false);
       setPendingAction(null);
-      flashCenter({
-        message: t("productDetail.addedFlash"),
+      toast.success(t("productDetail.addedFlash"), {
         description: t("productDetail.addedFlashDesc", { qty: sheetQty }),
       });
     } else if (pendingAction === "buy") {
@@ -1035,7 +1030,7 @@ export default function ShopProductDetail() {
       setVariantSheetOpen(false);
       setPendingAction(null);
     }
-  }, [product, pendingAction, optionGroups, selectedOptions, outOfStock, add, buyNowState, sheetQty, fly, navigate, t, flashCenter]);
+  }, [product, pendingAction, optionGroups, selectedOptions, outOfStock, add, buyNowState, sheetQty, fly, navigate, t]);
 
   const handleOptionSelect = useCallback((groupId: string, valueText: string) => {
     setSelectedOptions((prev) => ({
@@ -1792,8 +1787,6 @@ export default function ShopProductDetail() {
 
       <ShopFooter />
 
-      {/* Centred "added to cart" confirmation — fades in, holds, fades out. */}
-      {centerFlashNode}
     </div>
   );
 }

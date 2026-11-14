@@ -58,14 +58,14 @@ describe("add to cart — closes the sheet, then confirms at the centre", () => 
 
   test("both cart paths use the centred flash instead of a corner toast", () => {
     const src = read(DETAIL);
-    expect(src).toContain('import { useCenterFlash } from "@velnox/shared/components/ui/center-flash"');
-    expect(src).toContain("const { flash: flashCenter, node: centerFlashNode } = useCenterFlash()");
-    expect(src).toContain("flashCenter({");
+    // ONE surface for the whole app: the shared flash-toast shim.
+    expect(src).toContain('import { toast } from "@velnox/shared/lib/flash-toast"');
+    expect(src).toContain('toast.success(t("productDetail.addedFlash"');
+    // No page-local flash instance competing with the global host.
+    expect(src).not.toContain("useCenterFlash");
     // The old dark corner toast for "added" is gone.
     expect(src).not.toContain('position: "top-center"');
     expect(src).not.toContain('t("productDetail.addedToast"');
-    // The node is rendered by the page that owns the action.
-    expect(src).toContain("{centerFlashNode}");
   });
 
   test("the shared selection sheet closes first, then flashes", () => {
@@ -75,9 +75,12 @@ describe("add to cart — closes the sheet, then confirms at the centre", () => 
     const add = src.slice(addStart, addEnd);
     // Close before confirming — the message must outlive the sheet.
     expect(add).toContain("onOpenChange(false)");
-    expect(add.indexOf("onOpenChange(false)")).toBeLessThan(add.indexOf("flashCenter("));
-    // The message is mounted outside the Sheet, so closing it cannot unmount it.
-    expect(src).toContain("{centerFlashNode}");
+    expect(add.indexOf("onOpenChange(false)")).toBeLessThan(
+      add.indexOf('toast.success(t("productDetail.addedFlash"'),
+    );
+    // The message renders from the app-wide host, so closing the Sheet cannot
+    // unmount it.
+    expect(src).not.toContain("centerFlashNode");
     expect(src).not.toContain('t("productDetail.addedToast"');
   });
 });

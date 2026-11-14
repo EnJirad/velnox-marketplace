@@ -60,7 +60,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@velnox/shared/components/ui/dialog";
-import { toast } from "sonner";
+import { toast } from "@velnox/shared/lib/flash-toast";
 import { cn } from "@velnox/shared/lib/utils";
 import { IconifyIconPicker } from "./IconifyIconPicker";
 

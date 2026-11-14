@@ -27,7 +27,7 @@ import { Textarea } from "@velnox/shared/components/ui/textarea";
 import { useMutation } from "@velnox/shared/lib/api-routes";
 import { Loader2, Store } from "lucide-react";
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@velnox/shared/lib/flash-toast";
 
 interface ProductFormDialogProps {
   open: boolean;

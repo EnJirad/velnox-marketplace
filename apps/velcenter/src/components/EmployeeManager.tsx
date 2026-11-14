@@ -43,7 +43,7 @@ import {
   UserPlus,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@velnox/shared/lib/flash-toast";
 import { onCenterEvent } from "../lib/center-events";
 
 interface EmployeeRow {

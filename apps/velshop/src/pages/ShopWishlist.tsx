@@ -10,7 +10,7 @@ import { useAction } from "@velnox/shared/lib/api-routes";
 import { Heart, ImageOff, Loader2, Plus, ShoppingBag, Star, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { toast } from "sonner";
+import { toast } from "@velnox/shared/lib/flash-toast";
 
 /**
  * Wishlist row — the backend already joins product data into the wishlist

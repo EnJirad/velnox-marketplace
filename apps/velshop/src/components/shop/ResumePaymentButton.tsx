@@ -12,7 +12,7 @@ import { useLanguage } from "@/lib/i18n";
 import { Check, CreditCard, Loader2, QrCode, type LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router";
-import { toast } from "sonner";
+import { toast } from "@velnox/shared/lib/flash-toast";
 
 /**
  * "Pay now" for an order the backend will still accept a Stripe Checkout Session

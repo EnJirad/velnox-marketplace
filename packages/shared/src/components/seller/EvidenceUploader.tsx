@@ -12,7 +12,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { useRef, useState, useCallback, useEffect, useMemo } from "react";
-import { toast } from "sonner";
+import { toast } from "@velnox/shared/lib/flash-toast";
 
 const MAX_FILES = 20;
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB

@@ -1,4 +1,4 @@
-import { Toaster } from "@velnox/shared/components/ui/sonner";
+import { CenterFlashHost } from "@velnox/shared/lib/flash-toast";
 import { RequireAuth } from "@velnox/shared/components/RequireAuth";
 import { CartProvider } from "@/lib/cart";
 import { CookieConsentProvider } from "@/lib/cookie-consent";
@@ -202,7 +202,10 @@ createRoot(document.getElementById("root")!).render(
       </div>
       </CookieConsentProvider>
     </CartProvider>
-    </BrowserRouter>          <Toaster />
+    </BrowserRouter>
+    {/* ONE notification surface for the whole shop: every `toast.*` call
+        renders as the centred flash, the same one "added to cart" uses. */}
+    <CenterFlashHost />
     </LanguageProvider>
   </RootErrorBoundary>,
 );

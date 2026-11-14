@@ -14,7 +14,7 @@
  */
 import { useState } from "react";
 import { ArrowLeft, ArrowRight, Loader2, Store } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@velnox/shared/lib/flash-toast";
 
 import { EvidenceUploader, type EvidenceFile } from "@velnox/shared/components/seller/EvidenceUploader";
 import { Button } from "@velnox/shared/components/ui/button";

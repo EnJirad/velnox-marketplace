@@ -25,7 +25,7 @@ import { useAction, api } from "@velnox/shared/lib/api-routes";
 import { useLanguage } from "@velnox/shared/lib/i18n";
 import { AlertCircle, CheckCircle2, Image as ImageIcon, Loader2, RefreshCw, Trash2, Upload } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@velnox/shared/lib/flash-toast";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB — matches the evidence backend limit
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/avif"];

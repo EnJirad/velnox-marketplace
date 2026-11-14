@@ -46,7 +46,7 @@ import {
 import { useAuth } from "@velnox/shared/hooks/use-auth";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
-import { toast } from "sonner";
+import { toast } from "@velnox/shared/lib/flash-toast";
 import { ProductGrid } from "@velnox/shared/components/shop/ProductGrid";
 
 const PAGE_SIZE = 24;

@@ -12,7 +12,7 @@ import { api } from "@velnox/shared/lib/api-routes";
 import { useAction } from "@velnox/shared/lib/api-routes";
 import { AlertCircle, Loader2, MapPin, Pencil, Plus, Star, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@velnox/shared/lib/flash-toast";
 
 interface AddressRow {
   id: string;

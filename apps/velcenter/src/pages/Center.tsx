@@ -113,7 +113,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
-import { toast } from "sonner";
+import { toast } from "@velnox/shared/lib/flash-toast";
 
 type Tab = "overview" | "marketing" | "orders" | "incidents" | "products" | "sellers" | "categories" | "staff" | "audit" | "settings" | "chat" | "tracking";
 

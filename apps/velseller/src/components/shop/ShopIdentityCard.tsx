@@ -14,7 +14,7 @@
  */
 import { useState } from "react";
 import { ExternalLink, Loader2, MapPin, Pencil, Store, Truck } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@velnox/shared/lib/flash-toast";
 
 import { Badge } from "@velnox/shared/components/ui/badge";
 import { Button } from "@velnox/shared/components/ui/button";

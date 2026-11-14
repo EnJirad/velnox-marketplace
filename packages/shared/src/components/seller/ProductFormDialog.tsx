@@ -54,7 +54,7 @@ import { CategoryPicker } from "@velnox/shared/components/seller/CategoryPicker"
 import { pendingUploads, seedGalleries } from "@velnox/shared/lib/product-images";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
-import { toast } from "sonner";
+import { toast } from "@velnox/shared/lib/flash-toast";
 import { useLanguage } from "@velnox/shared/lib/i18n";
 
 // ─── Types ────────────────────────────────────────────────────────────
