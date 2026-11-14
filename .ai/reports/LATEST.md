@@ -1,60 +1,76 @@
-# LATEST — 2026-11-11 · ตะกร้า: ไม่ต้องรีโหลดทุกครั้งที่กด +/- จำนวน
+# LATEST — 2026-11-11 · แจ้งเตือนกลางจอแบบเดียวกันทั้งระบบ
 
-**Branch:** `main` · **Status:** DONE · commit `bf1a0d6`
+**Branch:** `main` · **Status:** DONE · commit `228c2ba` · ยืนยันด้วยตาในเบราว์เซอร์แล้ว
 
-## 1. อาการ
+## 1. ปัญหา
 
-กดเพิ่ม/ลดจำนวนสินค้าในตะกร้า → ตะกร้า "รีโหลดใหม่" ทุกครั้ง (รายการหายไปแวบ
-แล้วขึ้นใหม่ทั้งหมด) โดยเฉพาะตอนกดรัว ๆ
+ระบบมี **2 ช่องทางแจ้งเตือน** ที่หน้าตาไม่เหมือนกัน:
 
-## 2. Root Cause — response ของ API ถูกอ่านผิดรูป
+| งาน | เดิม |
+|---|---|
+| เพิ่มลงตะกร้า | flash กลางจอ (สวย ตรงตามที่ต้องการ) |
+| เพิ่มรายการโปรด / บันทึกที่อยู่ / เขียนรีวิว / error ต่าง ๆ | toast มุมซ้ายบน (sonner) |
 
-ทุก endpoint ของตะกร้าตอบกลับเป็น envelope:
+ผู้ใช้ต้องการให้ **ทุกอย่างเป็นแบบกลางจอเหมือนกันหมด**
 
-```json
-{ "success": true, "data": { "items": [ … ] } }
+## 2. วิธีแก้ — สลับ import บรรทัดเดียว ไม่แตะ call site
+
+`packages/shared/src/lib/flash-toast.tsx` (ใหม่) export `toast` ที่มีชื่อเมธอด
+เหมือน sonner เดิม (`success` / `error` / `warning` / `info` / `message`)
+ดังนั้นในไฟล์ต่าง ๆ **เปลี่ยนแค่บรรทัด import**:
+
+```diff
+- import { toast } from "sonner";
++ import { toast } from "@velnox/shared/lib/flash-toast";
 ```
 
-| Route | บรรทัดใน `backend/routes/cart.ts` |
+→ สลับ **47 ไฟล์** โดยไม่ต้องแก้ `toast.success(...)` แม้แต่จุดเดียว
+
+### องค์ประกอบ
+
+| ส่วน | หน้าที่ |
 |---|---|
-| `GET    /api/customer/cart` | 415 |
-| `POST   /api/customer/cart/add` | 572 |
-| `PUT    /api/customer/cart/item/:id` | 676 |
-| `DELETE /api/customer/cart/item/:id` | 699 |
+| `CenterFlashHost` | mount ครั้งเดียวต่อแอป, ผูก dispatcher กับ flash |
+| `setFlashDispatcher` | ตัวเชื่อมระดับโมดูล (ใช้ในเทสต์ได้) |
+| `toast.*` | shim เข้ากันได้กับ sonner |
+| `CenterFlashTone` | ขยายเป็น `success / error / warning / info` (สีต่างกันชัด) |
 
-แต่ `apps/velshop/src/lib/cart.tsx` เขียนไว้แบบนี้:
+### พฤติกรรมที่คงไว้
+- **ทีละข้อความ** — เรียกซ้ำแทนที่ ไม่ซ้อน
+- `pointer-events: none` — ไม่บล็อกการกด
+- `role="status"` + `aria-live="polite"`
+- เคารพ `prefers-reduced-motion`
+- ถ้าไม่มี host → **no-op ปลอดภัย** ไม่ crash (shared component ใช้ในแอปที่ยังไม่รับได้)
+- option ของ sonner (`position`, `className`) ถูกเมิน ไม่หลุดเข้า render
+- ข้อความว่าง → ไม่แสดงกล่องเปล่า
 
-```ts
-const applyServer = useCallback((items: unknown[]) => {
-  setLines(items.map(toLine));   // items จริงคือ { items: [...] }
-}, []);
-```
+## 3. ครอบคลุมทั้ง 3 แอป
 
-→ `items.map` **throw TypeError** ทุกครั้ง → ไปตกที่ `.catch(() => reload())`
-→ `reload()` เพิ่ม `version` → effect โหลดตะกร้าใหม่ + `setSyncing(true)`
-→ หน้า `ShopCart` เห็น `syncing` แล้ว **สลับทั้งรายการเป็น skeleton**
+| แอป | ไฟล์ที่สลับ | host |
+|---|---|---|
+| VelShop | 17 | `<CenterFlashHost />` |
+| VelSeller | 11 (รวม shared seller components) | `<CenterFlashHost />` |
+| VelCenter | 9 | `<CenterFlashHost />` |
+| shared components | 10 (RequireRole, goals, reorder, seller uploaders) | — |
 
-นี่คือ "การรีโหลด" ที่ผู้ใช้เห็น
+**ถอด `<Toaster />` ออกทั้ง 3 แอป** — ถ้าเก็บไว้จะเป็นช่องทางที่สองอีกครั้ง
+และย้าย shared seller components มาด้วย เพื่อไม่ให้ toast ของ seller หายเงียบ ๆ
 
-## 3. การแก้
+**รวม add-to-cart ให้ใช้ตัวกลางเดียวกัน**: ลบ `useCenterFlash` ที่ mount ในหน้า
+`ShopProductDetail` และ `ProductSelectionSheet` ออก → เหลือช่องทางเดียวทั้งระบบ
 
-| ไฟล์ | การแก้ |
+## 4. ยืนยันด้วยตาในเบราว์เซอร์จริง
+
+รัน dev server แล้วเรียก `toast.success()` จากหน้าเว็บจริง:
+
+| ตรวจ | ผล |
 |---|---|
-| `apps/velshop/src/lib/cart-response.ts` (ใหม่) | `cartItemsFromResponse()` — pure, รับได้ทั้ง `{ items }` และ array, คืน `null` เมื่อไม่มีข้อมูล (ไม่ throw) |
-| `apps/velshop/src/lib/cart.tsx` | `applyServer` ใช้ตัว unwrap นี้ + ถ้าไม่มี cart ในคำตอบ **คง optimistic state** ไม่ refetch |
-| `apps/velshop/src/lib/cart.tsx` | เพิ่ม `lineRequestSeq` — จองลำดับต่อบรรทัด **ก่อน** ยิง request → กดรัว ๆ แล้ว response เก่าที่มาช้าไม่สามารถย้อนค่าที่ใหม่กว่าได้ |
-| `apps/velshop/src/lib/cart.tsx` | `apiCartItemUpdate` / `apiCartItemRemove` **throw เมื่อ response ไม่ ok** (เดิมกลืน 400 เช่น เกินสต็อก ทำให้เลขบนจอไม่ตรงกับ server) |
-
-> หมายเหตุ: การ throw นี้สำคัญ เพราะ refetch ที่เคยเกิด "โดยบังเอิญ" จากบั๊ก
-> เป็นตัวกลบข้อผิดพลาดจริงอยู่ → ตอนนี้แยกชัด: สำเร็จ = apply, ล้มเหลว = reload
-
-## 4. เทสต์ใหม่ 8 เคส (`backend/tests/cart-response-shape.test.ts`)
-
-- unwrap `{ items }` และ array ได้ / คืน `null` สำหรับรูปอื่น (ไม่ throw)
-- ทั้ง 4 route ของ backend ตอบ envelope จริง
-- `applyServer` **ไม่มี** `reload()` อยู่ข้างใน
-- mutation ทั้งหมด `.then(apply…)` และ reload อยู่บน error path เท่านั้น
-- มี sequence guard กัน response เก่าย้อนค่า
+| แสดงผล | ✅ `role="status"` ปรากฏ |
+| กึ่งกลางแนวนอน | ✅ คลาดเคลื่อน < 4px |
+| กึ่งกลางแนวตั้ง | ✅ คลาดเคลื่อน < 4px |
+| `pointer-events` | ✅ `none` |
+| เรียก 2 ครั้งติด | ✅ เหลือ **1** ข้อความ (อันใหม่ทับอันเก่า) |
+| สีตาม tone | ✅ error = แดง (`oklch` ของ rose-600) |
 
 ## 5. ผลตรวจ (รันจริง)
 
@@ -62,16 +78,17 @@ const applyServer = useCallback((items: unknown[]) => {
 |---|---|
 | `bun run typecheck` | **4/4 ผ่าน** |
 | `bun run i18n:check` | **OK — 2297 × 3** |
-| `bun run build:velshop` | **ผ่าน** |
-| `bun test backend/tests` | **1507 pass** / 431 skip / 2 fail (ของเดิม) |
+| build velShop / velSeller / velCenter | **3/3 ผ่าน** |
+| `bun test backend/tests` | **1522 pass** / 431 skip / 2 fail (ของเดิม) |
 | `git diff --check` | **clean** |
 
-## 6. ข้อจำกัด
+**เทสต์ใหม่ 15 เคส** (`backend/tests/center-flash-toast.test.ts`):
+- shim ส่ง tone/message/description/duration ถูกต้อง
+- option ของ sonner ถูกเมิน / ข้อความว่างไม่แสดง / ไม่มี host ก็ไม่ crash
+- **ไม่มีไฟล์ไหนใน repo import sonner อีก** (ยกเว้นตัว Toaster component เอง)
+- ทั้ง 3 แอป mount host และไม่ mount Toaster
+- add-to-cart ไม่มี flash instance ซ้อน
 
-- ยังไม่ได้ทดสอบด้วยการกดจริงบนตะกร้าในเบราว์เซอร์ (ต้องล็อกอิน + มีสินค้าใน Neon)
-  — ตรวจด้วย typecheck / unit test ของ logic + การอ่านโค้ดเส้นทาง response
-- ตะกร้าของ **guest** ไม่กระทบ (ไม่เรียก API)
+## 6. Git
 
-## 7. Git
-
-- commit `bf1a0d6` · push แล้ว · `HEAD = origin/main = bf1a0d6` · working tree clean
+- commit `228c2ba` · push แล้ว · `HEAD = origin/main = 228c2ba` · working tree clean
