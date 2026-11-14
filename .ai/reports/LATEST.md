@@ -1,86 +1,72 @@
-# LATEST — 2026-11-11 · Neon: สร้างตาราง preauth_nonces (แก้ login ไม่ได้)
+# LATEST — 2026-11-11 · แก้ Google Login (SameSite cookie)
 
-**Branch:** `main` · **Status:** DONE · **Production DB แก้แล้ว**
+**Branch:** `main` · **Status:** DONE · deploy live `9f987fa`
 
 ## 1. อาการ
 
-> "ระบบยืนยันการเข้าสู่ระบบยังไม่พร้อมใช้งาน กรุณาติดต่อผู้ดูแล"
+- ล็อกอินด้วย **อีเมล + รหัสผ่าน → เข้าได้**
+- กด **Continue with Google → ไม่ได้** (เด้งกลับหน้าล็อกอิน)
 
-## 2. Root Cause — พบจาก log จริงของ Render
+## 2. Root Cause — cookie ข้ามโดเมนถูกเบราว์เซอร์ทิ้ง
+
+Google flow ต้องผ่าน proof cookie 1 ใบ:
 
 ```
-message: 'relation "preauth_nonces" does not exist'
-[auth] pre-auth nonce store unavailable — refusing to issue a proof
+POST  /api/auth/preauth   (fetch จาก velxxx.vercel.app → velnox-api.onrender.com)
+      → Set-Cookie velnox_preauth
+GET   /auth/google        (top-level navigation) → อ่าน cookie นี้
 ```
 
-**ตาราง `preauth_nonces` ไม่มีใน production Neon** → `recordNonce()` ล้มเหลว →
-`POST /api/auth/preauth` ตอบ 503 `PREAUTH_STORE_UNAVAILABLE` → frontend แสดง
-`auth.turnstile.notConfigured`
+`preAuthCookieOptions()` ตั้ง **`SameSite=Lax`** → การเรียก `/api/auth/preauth` เป็น
+**third-party request** (คนละ registrable domain: `vercel.app` vs `onrender.com`)
+→ เบราว์เซอร์ **ไม่เก็บ cookie** จาก response ข้ามไซต์ที่มี `Lax`
+→ `/auth/google` ไม่เห็น proof → ตอบกลับ `?error=preauth_required`
 
-### สิ่งที่ log พิสูจน์เพิ่มเติม (สำคัญ)
+**หลักฐานชี้ชัด:** session cookie (`velnox_session`) ใช้ **`SameSite=None`**
+จึงล็อกอินอีเมลได้ตามปกติ — ต่างกันแค่ flag นี้
 
-โค้ดไปถึงบรรทัด `recordNonce()` ได้ แปลว่า **Turnstile verification ผ่านแล้ว**:
+## 3. การแก้
+
+`backend/lib/preauth-proof.ts`
+
+| สภาพแวดล้อม | sameSite | secure | เหตุผล |
+|---|---|---|---|
+| production | **none** | true | จำเป็นคู่กันสำหรับ cookie ข้ามโดเมน |
+| development | lax | false | localhost เป็น same-site และ http ไม่มี Secure |
+
+- `clearPreAuthCookieOptions` **mirror ค่าเดียวกันทุกตัว** (path/secure/sameSite)
+  ไม่งั้นเบราว์เซอร์จะไม่ลบ cookie
+- **OAuth state cookie คงไว้ที่ `Lax`** โดยเจตนา — มันถูก set/อ่านระหว่าง
+  top-level navigation บน origin ของ API เอง (first-party) จึงถูกต้องแล้ว
+
+## 4. เทสต์
+
+เปลี่ยน assertion เดิมที่ **pin บั๊กไว้** (`sameSite === "lax"`) เป็น:
+
+- production → `none` + `secure: true`
+- development → `lax` + `secure: false`
+- clear options ต้องตรงกับ set options ทุกค่า
+
+## 5. ผลตรวจ (รันจริง)
 
 | ตรวจ | ผล |
 |---|---|
-| `TURNSTILE_SECRET_KEY` | ✅ ตั้งแล้ว (ถ้าไม่มีจะ fail ก่อนถึงขั้นนี้) |
-| `TURNSTILE_HOSTNAMES` | ✅ ตรง (hostname check ผ่าน) |
-| `VITE_TURNSTILE_SITE_KEY` | ✅ ตั้งแล้ว (widget แสดงและติ๊กได้) |
-| **ตาราง `preauth_nonces`** | ❌ **ไม่มี** ← ต้นเหตุเดียว |
+| backend `tsc --noEmit` | ผ่าน |
+| `bun test backend/tests` | **1499 pass** / 431 skip / 2 fail (ของเดิม) |
+| `git diff --check` | clean |
+| Render deploy | `9f987fa` **live** (00:02:14Z) |
+| `/api/health` | **200 ok** |
+| `POST /api/auth/preauth` body `{}` | **400 TURNSTILE_REQUIRED** (ไม่ใช่ 503) |
 
-## 3. การแก้ไข (ทำบน production Neon แล้ว)
+## 6. ข้อจำกัด
 
-```sql
-CREATE TABLE IF NOT EXISTS preauth_nonces (
-  nonce_hash TEXT PRIMARY KEY,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  expires_at TIMESTAMPTZ NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_preauth_nonces_expires ON preauth_nonces (expires_at);
-```
-
-### ยืนยันหลังสร้าง
-
-```
-columns: nonce_hash text NOT NULL (PK)
-         created_at timestamptz NOT NULL DEFAULT now()
-         expires_at timestamptz NOT NULL
-indexes: preauth_nonces_pkey, idx_preauth_nonces_expires
-```
-
-### ทดสอบ SQL เส้นทางเดียวกับ backend (บน production)
-
-| ขั้น | คำสั่ง | ผล |
-|---|---|---|
-| 1. record (ตอน mint proof) | `INSERT … ON CONFLICT DO NOTHING RETURNING` | ✅ คืนแถว |
-| 2. consume ครั้งแรก | `DELETE … RETURNING expires_at` | ✅ คืนแถว → ผ่าน |
-| 3. consume ครั้งที่สอง | `DELETE … RETURNING` | ✅ คืน **ว่าง** → ถูกปฏิเสธ (replay block) |
-| 4. ตรวจว่าตารางว่าง | `SELECT count(*)` | ✅ 0 แถว |
-
-## 4. ทดสอบ endpoint จริงบน production
-
-```
-POST https://velnox-api.onrender.com/api/auth/preauth  body {}
-→ HTTP 400 { "code": "TURNSTILE_REQUIRED" }
-```
-
-**ไม่ใช่ 503** → secret ถูกตั้งค่า และ route ทำงาน (ถ้า secret หายจะได้ 503
-`TURNSTILE_NOT_CONFIGURED`) และการส่ง token ว่างถูกปฏิเสธ (ไม่มี bypass)
-
-## 5. Deploy ที่ใช้งานอยู่
-
-- Render `velnox-api` (srv-da5dg76417fc73f3krkg) · live deploy `b27d40b0` · 1 instance
-- ไม่ต้อง redeploy หลังสร้างตาราง — backend query ตอน runtime
-
-## 6. ขั้นตอนถัดไป (owner)
-
-1. ลองล็อกอินอีกครั้ง — ควรผ่านแล้ว
-2. ถ้ายังไม่ผ่าน ให้ดูข้อความใหม่ (ตอนนี้บอกสาเหตุจริงแล้ว) แล้วแจ้งกลับ:
-   - "การยืนยันนี้ทำบนโดเมนอื่น" → hostname ไม่อยู่ใน `TURNSTILE_HOSTNAMES`/Cloudflare
-   - "การยืนยันหมดอายุ" → ติ๊กช้าเกิน 3 นาที หรือ token ถูกใช้แล้ว
-   - "ระบบยืนยันยังไม่พร้อม" → ยังมีปัญหาฝั่ง server (ส่ง log มาให้ดู)
+- **ยังยืนยันด้วยตาไม่ได้** ว่า Google login สำเร็จ — ต้องใช้อีเมล Google จริง +
+  เบราว์เซอร์ของผู้ใช้ ซึ่ง agent ทำไม่ได้ ให้ owner กดทดสอบอีกครั้ง
+- `SameSite=None` เป็น third-party cookie: เบราว์เซอร์ที่บล็อก 3P cookie ทั้งหมด
+  (Safari ITP, Firefox ETP, Chrome incognito) อาจยังปฏิเสธ
+  → ถ้าต้องรองรับ 100% ควรย้าย API มาอยู่ subdomain เดียวกัน (เช่น `api.velnox.com`)
+  ซึ่งเป็นการเปลี่ยน infrastructure ไม่ใช่โค้ด
 
 ## 7. Git
 
-- ไม่มีการเปลี่ยนโค้ดในรอบนี้ — แก้เฉพาะฐานข้อมูล production
-- repo ล่าสุด: `b27d40b` (= deploy ที่ live)
+- commit `9f987fa` · push แล้ว · `HEAD = origin/main = 9f987fa` · working tree clean
