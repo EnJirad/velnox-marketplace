@@ -25,7 +25,7 @@ export interface ProxyConfig {
 }
 
 const DEFAULT_FILTER_PROFILES: Record<string, FilterProfile> = {
-  "deepseek-v4.1-flash": {
+  "boz/deepseek-v4.1-flash-1017": {
     maxTools: 128,
     maxToolsOverflow: "error",
     denyServers: ["vercel", "render", "cloudflare", "stripe-sandbox"],
@@ -40,8 +40,8 @@ export function loadConfig(): ProxyConfig {
   const env = Bun.env;
   return {
     port: Number(env.OPENCODE_PROXY_PORT ?? 8080),
-    upstream: env.OPENCODE_PROXY_UPSTREAM ?? "https://opencode.ai/inference/go/openai/v1",
-    model: env.OPENCODE_PROXY_MODEL ?? "deepseek-v4.1-flash",
+    upstream: env.OPENCODE_PROXY_UPSTREAM ?? "https://cyberapi.carwraman.shop/v1",
+    model: env.OPENCODE_PROXY_MODEL ?? "boz/deepseek-v4.1-flash-1017",
     filterProfiles: DEFAULT_FILTER_PROFILES,
     normalizer: {
       maxAnyOfBranches: Number(env.OPENCODE_PROXY_MAX_ANYOF ?? 16),

@@ -41,8 +41,8 @@ Proxy listens on `http://localhost:8080/v1/chat/completions`.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `OPENCODE_PROXY_PORT` | `8080` | Listen port |
-| `OPENCODE_PROXY_UPSTREAM` | `https://opencode.ai/inference/go/openai/v1` | Upstream endpoint |
-| `OPENCODE_PROXY_MODEL` | `deepseek-v4.1-flash` | Model name passed to upstream |
+| `OPENCODE_PROXY_UPSTREAM` | `https://cyberapi.carwraman.shop/v1` | Upstream endpoint |
+| `OPENCODE_PROXY_MODEL` | `boz/deepseek-v4.1-flash-1017` | Model name passed to upstream |
 | `OPENCODE_PROXY_API_KEY` | *(unset)* | Bearer token for upstream auth |
 | `OPENCODE_PROXY_MAX_ANYOF` | `16` | Upstream anyOf limit |
 | `OPENCODE_PROXY_ANYOF_OVERFLOW` | `chunk` | `chunk` \| `error` |
@@ -167,7 +167,7 @@ Proxy (:8080) ── validates tools
        │                └─ respectHistory (re-adds in-flight tools)
        │
        ▼
-Upstream (OpenCode Go)
+Upstream (cyberapi.carwraman.shop/v1)
 ```
 
 ## Files Changed (this package)
@@ -193,3 +193,7 @@ tools/opencode-go-proxy/
 ## Credits
 
 Built for **Velnox Marketplace** monorepo. No external dependencies beyond Bun stdlib.
+
+---
+
+**Note:** Default upstream is now `https://cyberapi.carwraman.shop/v1` with model `boz/deepseek-v4.1-flash-1017`. Override via env vars if you need a different target.

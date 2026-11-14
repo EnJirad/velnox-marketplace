@@ -87,7 +87,7 @@ async function handleChatCompletions(req: Request): Promise<Response> {
 
   const { model = config.model, messages, tools, stream } = requestBody;
   const isStreaming = stream === true;
-  const effectiveModel = model === "deepseek-v4-flash" ? "deepseek-v4.1-flash" : model;
+  const effectiveModel = model;
 
   log(`${logPrefix} model=${effectiveModel} tools=${tools ? "yes" : "no"} stream=${isStreaming}`);
 
