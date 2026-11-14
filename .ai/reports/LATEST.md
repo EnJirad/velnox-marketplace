@@ -1,72 +1,77 @@
-# LATEST — 2026-11-11 · แก้ Google Login (SameSite cookie)
+# LATEST — 2026-11-11 · ตะกร้า: ไม่ต้องรีโหลดทุกครั้งที่กด +/- จำนวน
 
-**Branch:** `main` · **Status:** DONE · deploy live `9f987fa`
+**Branch:** `main` · **Status:** DONE · commit `bf1a0d6`
 
 ## 1. อาการ
 
-- ล็อกอินด้วย **อีเมล + รหัสผ่าน → เข้าได้**
-- กด **Continue with Google → ไม่ได้** (เด้งกลับหน้าล็อกอิน)
+กดเพิ่ม/ลดจำนวนสินค้าในตะกร้า → ตะกร้า "รีโหลดใหม่" ทุกครั้ง (รายการหายไปแวบ
+แล้วขึ้นใหม่ทั้งหมด) โดยเฉพาะตอนกดรัว ๆ
 
-## 2. Root Cause — cookie ข้ามโดเมนถูกเบราว์เซอร์ทิ้ง
+## 2. Root Cause — response ของ API ถูกอ่านผิดรูป
 
-Google flow ต้องผ่าน proof cookie 1 ใบ:
+ทุก endpoint ของตะกร้าตอบกลับเป็น envelope:
 
-```
-POST  /api/auth/preauth   (fetch จาก velxxx.vercel.app → velnox-api.onrender.com)
-      → Set-Cookie velnox_preauth
-GET   /auth/google        (top-level navigation) → อ่าน cookie นี้
+```json
+{ "success": true, "data": { "items": [ … ] } }
 ```
 
-`preAuthCookieOptions()` ตั้ง **`SameSite=Lax`** → การเรียก `/api/auth/preauth` เป็น
-**third-party request** (คนละ registrable domain: `vercel.app` vs `onrender.com`)
-→ เบราว์เซอร์ **ไม่เก็บ cookie** จาก response ข้ามไซต์ที่มี `Lax`
-→ `/auth/google` ไม่เห็น proof → ตอบกลับ `?error=preauth_required`
+| Route | บรรทัดใน `backend/routes/cart.ts` |
+|---|---|
+| `GET    /api/customer/cart` | 415 |
+| `POST   /api/customer/cart/add` | 572 |
+| `PUT    /api/customer/cart/item/:id` | 676 |
+| `DELETE /api/customer/cart/item/:id` | 699 |
 
-**หลักฐานชี้ชัด:** session cookie (`velnox_session`) ใช้ **`SameSite=None`**
-จึงล็อกอินอีเมลได้ตามปกติ — ต่างกันแค่ flag นี้
+แต่ `apps/velshop/src/lib/cart.tsx` เขียนไว้แบบนี้:
+
+```ts
+const applyServer = useCallback((items: unknown[]) => {
+  setLines(items.map(toLine));   // items จริงคือ { items: [...] }
+}, []);
+```
+
+→ `items.map` **throw TypeError** ทุกครั้ง → ไปตกที่ `.catch(() => reload())`
+→ `reload()` เพิ่ม `version` → effect โหลดตะกร้าใหม่ + `setSyncing(true)`
+→ หน้า `ShopCart` เห็น `syncing` แล้ว **สลับทั้งรายการเป็น skeleton**
+
+นี่คือ "การรีโหลด" ที่ผู้ใช้เห็น
 
 ## 3. การแก้
 
-`backend/lib/preauth-proof.ts`
+| ไฟล์ | การแก้ |
+|---|---|
+| `apps/velshop/src/lib/cart-response.ts` (ใหม่) | `cartItemsFromResponse()` — pure, รับได้ทั้ง `{ items }` และ array, คืน `null` เมื่อไม่มีข้อมูล (ไม่ throw) |
+| `apps/velshop/src/lib/cart.tsx` | `applyServer` ใช้ตัว unwrap นี้ + ถ้าไม่มี cart ในคำตอบ **คง optimistic state** ไม่ refetch |
+| `apps/velshop/src/lib/cart.tsx` | เพิ่ม `lineRequestSeq` — จองลำดับต่อบรรทัด **ก่อน** ยิง request → กดรัว ๆ แล้ว response เก่าที่มาช้าไม่สามารถย้อนค่าที่ใหม่กว่าได้ |
+| `apps/velshop/src/lib/cart.tsx` | `apiCartItemUpdate` / `apiCartItemRemove` **throw เมื่อ response ไม่ ok** (เดิมกลืน 400 เช่น เกินสต็อก ทำให้เลขบนจอไม่ตรงกับ server) |
 
-| สภาพแวดล้อม | sameSite | secure | เหตุผล |
-|---|---|---|---|
-| production | **none** | true | จำเป็นคู่กันสำหรับ cookie ข้ามโดเมน |
-| development | lax | false | localhost เป็น same-site และ http ไม่มี Secure |
+> หมายเหตุ: การ throw นี้สำคัญ เพราะ refetch ที่เคยเกิด "โดยบังเอิญ" จากบั๊ก
+> เป็นตัวกลบข้อผิดพลาดจริงอยู่ → ตอนนี้แยกชัด: สำเร็จ = apply, ล้มเหลว = reload
 
-- `clearPreAuthCookieOptions` **mirror ค่าเดียวกันทุกตัว** (path/secure/sameSite)
-  ไม่งั้นเบราว์เซอร์จะไม่ลบ cookie
-- **OAuth state cookie คงไว้ที่ `Lax`** โดยเจตนา — มันถูก set/อ่านระหว่าง
-  top-level navigation บน origin ของ API เอง (first-party) จึงถูกต้องแล้ว
+## 4. เทสต์ใหม่ 8 เคส (`backend/tests/cart-response-shape.test.ts`)
 
-## 4. เทสต์
-
-เปลี่ยน assertion เดิมที่ **pin บั๊กไว้** (`sameSite === "lax"`) เป็น:
-
-- production → `none` + `secure: true`
-- development → `lax` + `secure: false`
-- clear options ต้องตรงกับ set options ทุกค่า
+- unwrap `{ items }` และ array ได้ / คืน `null` สำหรับรูปอื่น (ไม่ throw)
+- ทั้ง 4 route ของ backend ตอบ envelope จริง
+- `applyServer` **ไม่มี** `reload()` อยู่ข้างใน
+- mutation ทั้งหมด `.then(apply…)` และ reload อยู่บน error path เท่านั้น
+- มี sequence guard กัน response เก่าย้อนค่า
 
 ## 5. ผลตรวจ (รันจริง)
 
-| ตรวจ | ผล |
+| คำสั่ง | ผล |
 |---|---|
-| backend `tsc --noEmit` | ผ่าน |
-| `bun test backend/tests` | **1499 pass** / 431 skip / 2 fail (ของเดิม) |
-| `git diff --check` | clean |
-| Render deploy | `9f987fa` **live** (00:02:14Z) |
-| `/api/health` | **200 ok** |
-| `POST /api/auth/preauth` body `{}` | **400 TURNSTILE_REQUIRED** (ไม่ใช่ 503) |
+| `bun run typecheck` | **4/4 ผ่าน** |
+| `bun run i18n:check` | **OK — 2297 × 3** |
+| `bun run build:velshop` | **ผ่าน** |
+| `bun test backend/tests` | **1507 pass** / 431 skip / 2 fail (ของเดิม) |
+| `git diff --check` | **clean** |
 
 ## 6. ข้อจำกัด
 
-- **ยังยืนยันด้วยตาไม่ได้** ว่า Google login สำเร็จ — ต้องใช้อีเมล Google จริง +
-  เบราว์เซอร์ของผู้ใช้ ซึ่ง agent ทำไม่ได้ ให้ owner กดทดสอบอีกครั้ง
-- `SameSite=None` เป็น third-party cookie: เบราว์เซอร์ที่บล็อก 3P cookie ทั้งหมด
-  (Safari ITP, Firefox ETP, Chrome incognito) อาจยังปฏิเสธ
-  → ถ้าต้องรองรับ 100% ควรย้าย API มาอยู่ subdomain เดียวกัน (เช่น `api.velnox.com`)
-  ซึ่งเป็นการเปลี่ยน infrastructure ไม่ใช่โค้ด
+- ยังไม่ได้ทดสอบด้วยการกดจริงบนตะกร้าในเบราว์เซอร์ (ต้องล็อกอิน + มีสินค้าใน Neon)
+  — ตรวจด้วย typecheck / unit test ของ logic + การอ่านโค้ดเส้นทาง response
+- ตะกร้าของ **guest** ไม่กระทบ (ไม่เรียก API)
 
 ## 7. Git
 
-- commit `9f987fa` · push แล้ว · `HEAD = origin/main = 9f987fa` · working tree clean
+- commit `bf1a0d6` · push แล้ว · `HEAD = origin/main = bf1a0d6` · working tree clean
