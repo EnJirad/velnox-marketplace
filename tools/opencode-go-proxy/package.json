@@ -1,0 +1,17 @@
+{
+  "name": "@velnox/opencode-go-proxy",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "OpenAI-compatible ([OI]) proxy in front of OpenCode Go that normalizes oversized JSON Schema unions, filters tools per model and reports precise diagnostics.",
+  "main": "src/index.ts",
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "dev": "bun --watch run src/index.ts",
+    "test": "bun test",
+    "typecheck": "bunx tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}
