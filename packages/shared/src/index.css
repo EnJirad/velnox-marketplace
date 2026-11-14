@@ -319,19 +319,19 @@ body {
 @keyframes velnox-center-flash {
   0% {
     opacity: 0;
-    transform: translate(-50%, -50%) scale(0.94);
+    transform: translateX(-50%) translateY(-16px) scale(0.94);
   }
   12% {
     opacity: 1;
-    transform: translate(-50%, -50%) scale(1);
+    transform: translateX(-50%) translateY(0) scale(1);
   }
   82% {
     opacity: 1;
-    transform: translate(-50%, -50%) scale(1);
+    transform: translateX(-50%) translateY(0) scale(1);
   }
   100% {
     opacity: 0;
-    transform: translate(-50%, -50%) scale(0.98);
+    transform: translateX(-50%) translateY(-16px) scale(0.98);
   }
 }
 

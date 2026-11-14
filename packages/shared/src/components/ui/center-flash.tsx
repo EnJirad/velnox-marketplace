@@ -92,9 +92,9 @@ function CenterFlashView({
         )}
         style={{
           left: "50%",
-          top: "50%",
+          top: "96px", /* below header (h-16 = 64px) + 32px offset */
           position: "fixed",
-          transform: reduced ? "translate(-50%, -50%)" : undefined,
+          transform: reduced ? "translateX(-50%)" : undefined,
           animation: reduced ? undefined : `velnox-center-flash ${totalMs}ms ease forwards`,
         }}
       >

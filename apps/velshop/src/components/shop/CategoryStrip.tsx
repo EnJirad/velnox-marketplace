@@ -136,7 +136,7 @@ export function CategoryStrip({
   };
 
   return (
-    <div className="bg-white border-b border-slate-100">
+    <div className="bg-white border-b border-slate-100 sticky top-16 z-30">
       <div className="mx-auto w-full max-w-6xl px-4 py-3 sm:px-6">
         <div className="relative">
           {/* Left scroll arrow */}
