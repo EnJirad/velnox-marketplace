@@ -19,6 +19,7 @@ import { join } from "node:path";
 import {
   PREAUTH_COOKIE,
   PREAUTH_TTL_MS,
+  clearPreAuthCookieOptions,
   createPreAuthProof,
   preAuthCookieOptions,
   validatePreAuthProof,
@@ -101,12 +102,33 @@ describe("pre-auth proof — the gate in front of GET /auth/google", () => {
     expect(createPreAuthProof().cookieValue).not.toBe(createPreAuthProof().cookieValue);
   });
 
-  test("the cookie is httpOnly, path-scoped to /auth and Lax", () => {
+  test("the production cookie is httpOnly, /auth-scoped and SameSite=None", () => {
+    // SameSite=None is REQUIRED: the proof is minted by a fetch from
+    // *.vercel.app to *.onrender.com (third-party), and `Lax` made the browser
+    // drop it — which is why Google login could never start while email login
+    // (whose session cookie is already None) worked.
     const options = preAuthCookieOptions(1000, true);
     expect(options.httpOnly).toBe(true);
     expect(options.secure).toBe(true);
-    expect(options.sameSite).toBe("lax");
+    expect(options.sameSite).toBe("none");
     expect(options.path).toBe("/auth");
+  });
+
+  test("development keeps Lax (same-site on localhost, and http has no Secure)", () => {
+    const options = preAuthCookieOptions(1000, false);
+    expect(options.sameSite).toBe("lax");
+    expect(options.secure).toBe(false);
+  });
+
+  test("the clear options mirror the set options exactly", () => {
+    // A mismatch on path/secure/sameSite leaves the original cookie in place.
+    for (const isProd of [true, false]) {
+      const set = preAuthCookieOptions(1000, isProd);
+      const clear = clearPreAuthCookieOptions(isProd);
+      expect(clear.path).toBe(set.path);
+      expect(clear.secure).toBe(set.secure);
+      expect(clear.sameSite).toBe(set.sameSite);
+    }
   });
 
   test("no signing secret means generation throws (fail closed)", () => {

@@ -179,26 +179,47 @@ export function validatePreAuthProof(
 /**
  * Cookie options for SETTING the proof.
  *
- * `SameSite=Lax` (not Strict): the proof is set by a same-site fetch, then read
- * on a top-level navigation the browser follows to Google and back. Lax keeps
- * it off cross-site subresources while surviving that navigation.
+ * ── Why SameSite=None in production ─────────────────────────────────────────
+ *
+ * The proof is minted by `POST /api/auth/preauth` (a `fetch` from the frontend)
+ * and read one moment later by `GET /auth/google`.
+ *
+ * The API lives on `*.onrender.com` and every frontend lives on `*.vercel.app`,
+ * so that fetch is a THIRD-PARTY request. With `SameSite=Lax` the browser
+ * drops the cookie on a cross-site response, so `/auth/google` never sees a
+ * proof and answers `preauth_required` — even though the challenge passed.
+ * That is exactly what happened: email login worked (its session cookie already
+ * uses `SameSite=None`) while Google login could never start.
+ *
+ * `None` requires `Secure`, so this is production-only. In development the app
+ * and the API share `localhost`, where the request is same-site and `Lax` is
+ * both sufficient and compatible with plain http.
+ *
+ * NOTE for operators: `SameSite=None` is a third-party cookie. Browsers that
+ * block third-party cookies outright (Safari ITP, Firefox ETP, Chrome
+ * incognito) can still refuse it. Serving the API from the same registrable
+ * domain as the site (e.g. `api.velnox.com`) removes the restriction entirely;
+ * that is an infrastructure change, not a code one.
  */
 export function preAuthCookieOptions(maxAgeMs: number, isProduction: boolean) {
   return {
     httpOnly: true,
     secure: isProduction,
-    sameSite: "lax" as const,
+    sameSite: (isProduction ? "none" : "lax") as "none" | "lax",
     maxAge: maxAgeMs,
     path: PREAUTH_COOKIE_PATH,
   };
 }
 
-/** Clearing options MUST mirror the set options (path especially). */
+/**
+ * Clearing options MUST mirror the set options exactly — path, secure and
+ * sameSite — or the browser keeps the original cookie instead of clearing it.
+ */
 export function clearPreAuthCookieOptions(isProduction: boolean) {
   return {
     httpOnly: true,
     secure: isProduction,
-    sameSite: "lax" as const,
+    sameSite: (isProduction ? "none" : "lax") as "none" | "lax",
     path: PREAUTH_COOKIE_PATH,
   };
 }
