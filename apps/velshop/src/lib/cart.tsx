@@ -18,6 +18,7 @@ import {
   type GuestCartRecord,
   type StorageLike,
 } from "@velnox/shared/lib/guest-cart";
+import { cartItemsFromResponse } from "@/lib/cart-response";
 
 /**
  * Cart line — the real cart lives in the backend (Neon via API).
@@ -204,6 +205,13 @@ async function apiCartItemUpdate(cartItemId: string, quantity: number): Promise<
     body: JSON.stringify({ quantity }),
   });
   const raw = await res.json();
+  // A rejection must be a REJECTION. The optimistic quantity is already on
+  // screen, so a silently-swallowed 400 (over stock, variant gone) would leave
+  // the customer looking at a number the server does not have. Throwing lets
+  // the caller's `.catch(() => reload())` put the real cart back.
+  if (!res.ok) {
+    throw new Error((raw as any)?.error?.message ?? `cart update failed (${res.status})`);
+  }
   return unwrapJson(raw);
 }
 async function apiCartItemRemove(cartItemId: string): Promise<any> {
@@ -212,6 +220,11 @@ async function apiCartItemRemove(cartItemId: string): Promise<any> {
     credentials: "include",
   });
   const raw = await res.json();
+  // Same rule as the update: a failed removal must resync, or the line stays
+  // hidden locally while it still exists on the server.
+  if (!res.ok) {
+    throw new Error((raw as any)?.error?.message ?? `cart remove failed (${res.status})`);
+  }
   return unwrapJson(raw);
 }
 
@@ -292,10 +305,47 @@ export function CartProvider({ children }: { children: ReactNode }) {
     return () => { alive = false; };
   }, [isAuthenticated, authLoading, version]);
 
-  const applyServer = useCallback((items: unknown[]) => {
+  /**
+   * Latest mutation per cart line.
+   *
+   * The optimistic update lands immediately and the server then answers with
+   * the whole cart. Mashing +/- puts several requests in flight at once, and
+   * applying an EARLIER response last would snap the quantity backwards. Only
+   * the newest request for a line may apply its result.
+   */
+  const lineRequestSeq = useRef(new Map<string, number>());
+
+  /**
+   * Apply a server cart response.
+   *
+   * EVERY cart route (`GET`, `POST /add`, `PUT /item/:id`, `DELETE /item/:id`)
+   * answers `{ items: [...] }`. This used to be typed as a bare array and call
+   * `items.map(...)`, which threw a TypeError on the envelope — and the
+   * caller's `.catch()` turned that into `reload()`. Result: a full cart
+   * refetch on every single +/- press, which is the "it reloads every time"
+   * the owner reported.
+   */
+  const applyServer = useCallback((payload: unknown) => {
     setCartError(null);
+    const items = cartItemsFromResponse(payload);
+    // No usable cart in the response: keep the optimistic state instead of
+    // refetching (a refetch is what makes the list flash).
+    if (items === null) return;
     setLines(items.map(toLine as (i: unknown) => CartLine));
   }, []);
+
+  /** Reserve the next request slot for a line and get its response handler. */
+  const beginLineRequest = useCallback(
+    (key: string) => {
+      const seq = (lineRequestSeq.current.get(key) ?? 0) + 1;
+      lineRequestSeq.current.set(key, seq);
+      return (payload: unknown) => {
+        if (lineRequestSeq.current.get(key) !== seq) return; // superseded
+        applyServer(payload);
+      };
+    },
+    [applyServer],
+  );
 
   /** Guest cart identity key: productId + variantId */
   const lineKey = (p: { productId: string; variantId?: string | null }) =>
@@ -347,11 +397,12 @@ export function CartProvider({ children }: { children: ReactNode }) {
         }];
       });
 
+      const applyAdd = beginLineRequest(lineKey({ productId: product.id, variantId: vid }));
       apiCartAdd(product.id, qty, vid)
-        .then(applyServer)
+        .then(applyAdd)
         .catch((err) => { console.error("[cart] add failed:", err); reload(); });
     },
-    [isAuthenticated, applyServer, reload, track],
+    [isAuthenticated, beginLineRequest, reload, track],
   );
 
   const setQty = useCallback(
@@ -375,7 +426,8 @@ export function CartProvider({ children }: { children: ReactNode }) {
       if (!line) return;
       if (qty <= 0) {
         track("CART_REMOVE", { entityId: line.productId, value: line.name });
-        apiCartItemRemove(line.id).then(applyServer).catch(() => reload());
+        const applyRemove = beginLineRequest(key);
+        apiCartItemRemove(line.id).then(applyRemove).catch(() => reload());
         return;
       }
       setLines((prev) => prev.map((l) =>
@@ -383,9 +435,12 @@ export function CartProvider({ children }: { children: ReactNode }) {
           ? { ...l, qty: Math.max(0, Math.min(l.stock, qty)) }
           : l,
       ));
-      apiCartItemUpdate(line.id, qty).then(applyServer).catch(() => reload());
+      // Reserve the slot BEFORE the request so responses are applied in the
+      // order the customer clicked, not the order the network answered.
+      const applyQty = beginLineRequest(key);
+      apiCartItemUpdate(line.id, qty).then(applyQty).catch(() => reload());
     },
-    [isAuthenticated, lines, applyServer, reload, track],
+    [isAuthenticated, lines, beginLineRequest, reload, track],
   );
 
   const remove = useCallback(
@@ -405,9 +460,10 @@ export function CartProvider({ children }: { children: ReactNode }) {
       if (!line) return;
       track("CART_REMOVE", { entityId: line.productId, value: line.name });
       setLines((prev) => prev.filter((l) => lineKey({ productId: l.productId, variantId: l.variantId }) !== key));
-      apiCartItemRemove(line.id).then(applyServer).catch(() => reload());
+      const applyRemove = beginLineRequest(lineKey({ productId, variantId: vid }));
+      apiCartItemRemove(line.id).then(applyRemove).catch(() => reload());
     },
-    [isAuthenticated, lines, applyServer, reload, track],
+    [isAuthenticated, lines, beginLineRequest, reload, track],
   );
 
   const clear = useCallback(() => setLines([]), []);
