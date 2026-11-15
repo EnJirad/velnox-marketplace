@@ -1,0 +1,203 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Myanmar translations for VelShop -->
+    <string name="app_name">VelShop</string>
+
+    <!-- General -->
+    <string name="loading">လုပ်ဆောင်နေပါသည်…</string>
+    <string name="error">အမှားတရားရှိနေပါသည်</string>
+    <string name="retry">လမ်းပြန်လုပ်ဆောင်</string>
+    <string name="ok">အိုကေ</string>
+    <string name="cancel">ပယ်ဖျက်ရန်</string>
+    <string name="save">သိမ်းဆည်းရန်</string>
+    <string name="delete">ဖျက်ရှင်းရန်</string>
+    <string name="edit">ပြင်ဆင်ရန်</string>
+    <string name="done">ပြီးစီးပြီ</string>
+    <string name="next">နောက်ထပ်</string>
+    <string name="back">နောက်ထပ် ငယ်တယ်</string>
+    <string name="continue">ဆက်လုပ်ပါ</string>
+    <string name="skip">တက်ကြભ peric</string>
+    <string name="search">ရှာဖွေရန်</string>
+    <string name="filter">စစ်ဆေးရန်</string>
+    <string name="sort">စီစဉ်ရန်</string>
+    <string name="no_results">ရလဒ်မရရှိပါ</string>
+    <string name="no_internet">အင်တာနက်မရှိသေးပါ</string>
+    <string name="something_went_wrong">မှားယွင်းပြီး ရှိနေပါသည်</string>
+    <string name="try_again">ကျေးဇူးပြု၍ ပြန်လည်� प्रयاس ပါ</string>
+
+    <!-- Navigation -->
+    <string name="nav_home">မူဝါဒစာမျက်နှာ</string>
+    <string name="nav_products">ကုန်ပစ္စည်းများ</string>
+    <string name="nav_cart">ချမှေးကန်း</string>
+    <string name="nav_orders">สั่งစိုင်များ</string>
+    <string name="nav_profile">ပြိုဖိုလ်း</string>
+    <string name="nav_wishlist">ပျောက်ဆုံးများ</string>
+    <string name="nav_notifications">အသိပေးချက်များ</string>
+    <string name="nav_chat">စကားဝယ်များခြင်း</string>
+    <string name="nav_tracking">စစ်ဆေးမှု</string>
+    <string name="nav_settings">ဆက်တင်စဥ်</string>
+    <string name="nav_help">အကူအညီ</string>
+
+    <!-- Auth -->
+    <string name="sign_in">ဝင်ရောက်ရန်</string>
+    <string name="sign_up">စာရင်းသွင်းရန်</string>
+    <string name="sign_out">ထွက်ထွက်ရန်</string>
+    <string name="sign_in_with_google">Google နဲ့ဝင်ရောက်ရန်</string>
+    <string name="continue_as_guest">ဧည့်ဝတ်နဲ့ဆက်လုပ်ပါ</string>
+    <string name="forgot_password">စကားဝိုင်းမေ့သလား?</string>
+    <string name="reset_password">စကားဝိုင်း ပြန်လည်သတ်မှတ်ရန်</string>
+    <string name="email">အီးမေးလ်</string>
+    <string name="password">စကားဝိုင်း</string>
+    <string name="confirm_password">စကားဝိုင်းအတည်ပြုရန်</string>
+    <string name="name">အမည်</string>
+    <string name="phone">ဖုန်းနံပါတ်</string>
+    <string name="enter_email">အီးမေးလ်ထည့်ပါ</string>
+    <string name="enter_password">စကားဝိုင်းထည့်ပါ</string>
+    <string name="enter_name">အမည်ထည့်ပါ</string>
+    <string name="enter_phone">ဖုန်းနံပါတ်ထည့်ပါ</string>
+    <string name="invalid_email">အီးမေးလ်ရုပ်စမ်းမမှန်ကန်ပါ</string>
+    <string name="invalid_password">စကားဝိုင်းကျ schizophrenic ၈ အထိ ပါဝင်ရမည်</string>
+    <string name="passwords_dont_match">စကားဝိုင်းမတူညီဘူး</string>
+    <string name="account_exists">ဒီ အီးမေးလ်နဲ့အကောင့်ရှိလာပြီ</string>
+    <string name="sign_in_failed">ဝင်ရောက်လို့မရပါ ကျေးဇူးပြု၍ ပြန်လည်ဖ({\C}ry/ႏိုင်)</string>
+    <string name="sign_up_failed">စာရင်းသွင်းလို့မရပါ ကျေးဇူးပြု၍ ပြန်လည်ဖ({\C}ry/ႏိုင်)</string>
+
+    <!-- Product -->
+    <string name="add_to_cart">ချမှေးကန်းထဲထည့်ရန်</string>
+    <string name="buy_now">ယနüss comprar</string>
+    <string name="added_to_cart">ချမှေးကန်းထဲထည့်ပြီးပါပြီ!</string>
+    <string name="out_of_stock">ကုန်ပစ္စည်းတွေကုန်သွားပြီ</string>
+    <string name="low_stock">ရှignons %d ခန�႔ကိုယ်စားလှယ်တွေ</string>
+    <string name="product_details">ကုန်ပစ္စည်းအသေးစိတ်</string>
+    <string name="description">ဖော်ပြချက်</string>
+    <string name="specifications">အသေးစိတ်</string>
+    <string name="reviews">�판န dtype</string>
+    <string name="write_review">ဖော်ပြချက်ရေးရန်</string>
+    <string name="rating">ရက်�тинг</string>
+    <string name="select_options"> opsion ရွေးချယ်ပါ</string>
+    <string name="quantity">အရေအတွက်</string>
+    <string name="stock">ကုန်ကျန်စécu: %d</string>
+
+    <!-- Cart -->
+    <string name="cart">ချမှေးကန်း</string>
+    <string name="cart_empty">ချမှေးကန်းကာလ်ဘာတွေမရှိပါ</string>
+    <string name="cart_subtotal">စခန့်ထမိန်</string>
+    <string name="cart_shipping"> ပို့ချစိတ်ကား</string>
+    <string name="cart_discount">ချက်နébr</string>
+    <string name="cart_total">စုစုပေါင်းစမိန်</string>
+    <string name="proceed_to_checkout">ငွေချပေးရန် ဆက်လုပ်ပါ</string>
+    <string name="continue_shopping">ဆပ်ဆံ ဆက်လုပ်ပါ</string>
+    <string name="remove_item">ကုန်ပစ္စည်း ဖျက်ရှင်းပါ</string>
+    <string name="update_quantity">အရေအတွက် ပြင်ဆင်ပါ</string>
+
+    <!-- Checkout -->
+    <string name="checkout">ငွေချပေးရန်</string>
+    <string name="shipping_address">ပို့ချနေရာ</string>
+    <string name="billing_address">နှုတ်ခွင်ပြုရနေရာ</string>
+    <string name="payment_method">ငွေချပေးနည်းလမ်း</string>
+    <string name="order_summary">မှာယာများ သံသရာ</string>
+    <string name="place_order">စာယာထားရန်</string>
+    <string name="order_placed">စာယာထားပြီးပါပြီ!</string>
+    <string name="order_number">စာယာ #%s</string>
+    <string name="payment_pending">ငွေချဖို့ရန်ပါ</string>
+    <string name="payment_failed">ငွေချပေးမလိုပ်</string>
+
+    <!-- Orders -->
+    <string name="orders">ကျွန်တော်ရဲ့စာယာများ</string>
+    <string name="order_status_pending">စောင့်ဆဲနေပါသည်</string>
+    <string name="order_status_confirmed">အတည်ပြုပြီးပါပြီ</string>
+    <string name="order_status_processing">ဆင်နွှဲနေပါသည်</string>
+    <string name="order_status_shipped">ပို့ထုတ်ပြီးပါပြီ</string>
+    <string name="order_status_delivered">ရောက်လှန်ပြီးပါပြီ</string>
+    <string name="order_status_cancelled">ပယ်ဖျက်ထားပါသည်</string>
+    <string name="order_status_refunded">ငွေတွေလဲပြန်ထားပါသည်</string>
+    <string name="track_order">စစ်ဆေးမှု</string>
+    <string name="view_order">ဖော်ပြချက်ကြည့်ရန်</string>
+    <string name="reorder">ပြန်စာယာထားရန်</string>
+    <string name="buy_again">ပြန်ဝယ်ပါစေ</string>
+
+    <!-- Profile -->
+    <string name="profile">ပြိုဖိုလ်း</string>
+    <string name="my_account">ကျွန်တော့ရဲ့အကောင့်</string>
+    <string name="addresses">နေရာများ</string>
+    <string name="wishlist">ပျောက်ဆုံးများ</string>
+    <string name="notifications">အသိပေးချက်များ</string>
+    <string name="settings">ဆက်တင်စဥ်</string>
+    <string name="help_support">အကူအညီ & ဂရုစိုက်မှု</string>
+    <string name="language">ဘာသာစကား</string>
+    <string name="theme">သံဇာတာ</string>
+    <string name="dark_mode">မီးခိုးမုဒ်း</string>
+    <string name="light_mode">အလင်းမုဒ်း</string>
+    <string name="system_default">စနစ်ရဲ့စောင့်မှန်းချက်</string>
+    <string name="about">ဖေါ်ပြချက်</string>
+    <string name="version">ဗားရှင်း %s</string>
+    <string name="privacy_policy">အနာဂတ်ရေးမှားရေး နည်းလမ်းလေ့လာ</string>
+    <string name="terms_of_service">အသုံးပြုမှု သတ်မှတ်ချက်များ</string>
+    <string name="logout">ထွက်ထွက်ရန်</string>
+
+    <!-- Addresses -->
+    <string name="add_address">နေရာထည့်ရန်</string>
+    <string name="edit_address">နေရာပြင်ဆင်ရန်</string>
+    <string name="delete_address">နေရာဖျက်ရှင်းရန်</string>
+    <string name="set_default">စောင့်မှန်းချက်အဖြစ် သတ်မှတ်ရန်</string>
+    <string name="address_label_home">အိမ်</string>
+    <string name="address_label_work">အလုပ်နေရာ</string>
+    <string name="address_label_other">များများ</string>
+    <string name="recipient_name">ရับချမည်သူအမည်</string>
+    <string name="phone_number">ဖုန်းနံပါတ်</string>
+    <string name="address_line_1">နေရာကြောင်းကြီး ၁</string>
+    <string name="address_line_2">နေရာကြောင်းကြီး ၂ (မထည့်လဲဖြစ်သည်)</string>
+    <string name="subdistrict">ရွာ/ကွဲ</string>
+    <string name="district">မြို့နယ်/ခရိုင်</string>
+    <string name="city">တိုင်း/မြို့</string>
+    <string name="province">တိုင်း/မြို့</string>
+    <string name="postal_code">ရေပို့စာကြောင်းနံပါတ်</string>
+    <string name="country">နိုင်ငံ</string>
+
+    <!-- Wishlist -->
+    <string name="add_to_wishlist">ပျောက်ဆုံးထဲ ထည့်ရန်</string>
+    <string name="remove_from_wishlist">ပျောက်ဆုံးထဲမှ ဖျက်ရှင်းရန်</string>
+    <string name="wishlist_empty">ပျောက်ဆုံးများ ပေါင်းစပ်ရာမရှိပါ</string>
+
+    <!-- Chat -->
+    <string name="chat">စကားဝယ်ရန်</string>
+    <string name="message">စာကြောင်း</string>
+    <string name="send">ပေးပို့ရန်</string>
+    <string name="type_message">စာကြောင်းလေ့လာပါ…</string>
+
+    <!-- Notifications -->
+    <string name="notifications_empty">အသိပေးချက်မရှိပါ</string>
+    <string name="mark_all_read">အားလုံးကို ဖတ်သွားမှု အဖြစ် သတ်မှတ်ရန်</string>
+
+    <!-- Errors -->
+    <string name="error_network">နက်ဝ Objေကာလ်မှားယွင်းပြီး ရှိနေပါသည် ကျေးဇူးပြု၍ ဆက်သွယ်မှု စစ်ဆေးပါ</string>
+    <string name="error_server">ဆာဗာဗာအမှားရှိနေပါသည် ကျေးဇူးပြု၍ နောက်တိုင်းတွင် ပြန်လည်ဖ({\C}ry/ႏိုင်)</string>
+    <string name="error_unauthorized">ဆက်လုပ်ရန် ဝင်ရောက်ပါ</string>
+    <string name="error_forbidden">ဒီ အချက်အလက်ကို ရရင်သွင်းဖိအာ/မုန့် မရှိပါ</string>
+    <string name="error_not_found">ရ้องရخواستထိုးထားသော အချက်အလက် မတွေ့ရှိပါ</string>
+    <string name="error_validation">ထည့်သွင်းထားသော အချက်အလက် စစ်ဆေးပြီး ပြန်လည်ဖ({\C}ry/ႏိုင်)</string>
+
+    <!-- Accessibility -->
+    <string name="image_product">ကုန်ပစ္စည်းအიზ*</string>
+    <string name="image_avatar">အကောင့်အიზ*</string>
+    <string name="image_shop">ဆိုင်အိုဂိုရာ</string>
+    <string name="icon_close">ပိတ်ရန်</string>
+    <string name="icon_menu">မီနီး</string>
+    <string name="icon_search">ရှာဖွေရန်</string>
+    <string name="icon_cart">ချမှေးကန်း</string>
+    <string name="icon_favorite">ပျောက်ဆုံး</string>
+    <string name="icon_favorite_filled">ပျောက်ဆုံးထည့်ထားပြီ</string>
+    <string name="icon_share">အသင်းပြဿဿ</string>
+    <string name="icon_settings">ဆက်တင်စဥ်</string>
+    <string name="icon_arrow_back">နောက်ပြန်ရန်</string>
+    <string name="icon_arrow_forward">ရှေ့အနီး ရန်</string>
+
+    <!-- Splash -->
+    <string name="splash_tagline">ဇိုင်း ငါ့ ရဲ့ ကုန်သွယ်ရာ တိုးတက်သဘောတူထားမှတ်မရန်</string>
+
+    <!-- Tracking -->
+    <string name="tracking">စစ်ဆေးမှု</string>
+    <string name="tracking_number">စစ်ဆေးနံပါတ်</string>
+    <string name="carrier">ပို့ချသူ</string>
+    <string name="estimated_delivery">စောင့်ဆဲရန်စနစ်</string>
+</resources>
