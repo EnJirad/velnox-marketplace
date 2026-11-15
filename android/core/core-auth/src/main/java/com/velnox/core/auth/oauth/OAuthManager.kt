@@ -53,7 +53,7 @@ class OAuthManager(
      * Initiate Google OAuth flow using Chrome Custom Tabs.
      * Returns the authorization URL to open.
      */
-    fun getAuthorizationUrl(): Result<String> {
+    suspend fun getAuthorizationUrl(): Result<String> {
         return try {
             // Generate PKCE code verifier and challenge
             val codeVerifier = generateCodeVerifier()
@@ -92,7 +92,7 @@ class OAuthManager(
     /**
      * Launch OAuth flow in Chrome Custom Tab.
      */
-    fun launchOAuthFlow(activity: Activity): Result<Unit> {
+    suspend fun launchOAuthFlow(activity: Activity): Result<Unit> {
         return getAuthorizationUrl().flatMap { authUrl ->
             try {
                 val customTabsIntent = CustomTabsIntent.Builder()
@@ -114,7 +114,7 @@ class OAuthManager(
      * Handle OAuth redirect from deep link.
      * Call this when app receives the redirect URI.
      */
-    fun handleRedirect(uri: Uri): Result<OAuthResult> {
+    suspend fun handleRedirect(uri: Uri): Result<OAuthResult> {
         return try {
             val code = uri.getQueryParameter("code")
             val state = uri.getQueryParameter("state")
