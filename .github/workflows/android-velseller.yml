@@ -41,7 +41,6 @@ jobs:
         uses: android-actions/setup-android@v3
         with:
           api-level: 35
-          build-tools-version: '34.0.0'
 
       - name: Cache Gradle packages
         uses: actions/cache@v4
