@@ -62,6 +62,7 @@ android {
             testLogging {
                 events = setOf("passed", "failed", "skipped", "standardOut", "standardError")
             }
+            useJUnitPlatform()
         }
     }
     sourceSets {

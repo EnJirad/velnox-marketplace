@@ -62,6 +62,8 @@ android {
             testLogging {
                 events = setOf("passed", "failed", "skipped", "standardOut", "standardError")
             }
+            // Explicitly configure JUnit 4 runner
+            useJUnitPlatform()
         }
     }
     sourceSets {
