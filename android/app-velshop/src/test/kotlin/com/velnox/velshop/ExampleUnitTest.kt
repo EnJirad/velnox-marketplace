@@ -1,6 +1,7 @@
 package com.velnox.velshop
 
-import org.junit.Test
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Assertions.*
 
 /**
  * Example unit test for VelShop app.
