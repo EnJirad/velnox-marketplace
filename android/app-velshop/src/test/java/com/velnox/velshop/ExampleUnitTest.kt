@@ -1,7 +1,6 @@
 package com.velnox.velshop
 
 import org.junit.Test
-import org.junit.Assert.*
 
 /**
  * Example unit test for VelShop app.
@@ -10,12 +9,7 @@ import org.junit.Assert.*
 class ExampleUnitTest {
 
     @Test
-    fun addition_isCorrect() {
-        assertEquals(4, 2 + 2)
-    }
-
-    @Test
-    fun appPackageName_isCorrect() {
-        assertEquals("com.velnox.velshop", "com.velnox.velshop")
+    fun testPasses() {
+        // Empty test that always passes
     }
 }
