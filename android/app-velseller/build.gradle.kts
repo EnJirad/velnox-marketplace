@@ -56,18 +56,6 @@ android {
             matchingFallbacks = ["debug"]
         }
     }
-    signingConfigs {
-        create("release") {
-            storeFile = file(System.getenv("KEYSTORE_PATH") ?: "")
-            storePassword = System.getenv("KEYSTORE_PASSWORD") ?: ""
-            keyAlias = System.getenv("KEY_ALIAS") ?: ""
-            keyPassword = System.getenv("KEY_PASSWORD") ?: ""
-        }
-    }
-    buildTypes.all {
-        buildConfigField("String", "API_BASE_URL", "\"${project.findProperty("apiBaseUrl") ?: "https://your-backend.onrender.com/api/"}\"")
-        buildConfigField("String", "OAUTH_REDIRECT_URI", "\"${project.findProperty("oauthRedirectUri") ?: "com.velnox.velseller:/oauth2redirect"}\"")
-    }
 }
 
 dependencies {

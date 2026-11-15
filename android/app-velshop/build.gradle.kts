@@ -38,7 +38,6 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1,LICENSE,NOTICE}"
         }
     }
-    // Build types
     buildTypes {
         debug {
             isDebuggable = true
@@ -57,20 +56,6 @@ android {
             matchingFallbacks = ["debug"]
         }
     }
-    // Signing configs (configured via environment variables or local.properties)
-    signingConfigs {
-        create("release") {
-            storeFile = file(System.getenv("KEYSTORE_PATH") ?: "")
-            storePassword = System.getenv("KEYSTORE_PASSWORD") ?: ""
-            keyAlias = System.getenv("KEY_ALIAS") ?: ""
-            keyPassword = System.getenv("KEY_PASSWORD") ?: ""
-        }
-    }
-    // Build config fields for API URL
-    buildTypes.all {
-        buildConfigField("String", "API_BASE_URL", "\"${project.findProperty("apiBaseUrl") ?: "https://your-backend.onrender.com/api/"}\"")
-        buildConfigField("String", "OAUTH_REDIRECT_URI", "\"${project.findProperty("oauthRedirectUri") ?: "com.velnox.velshop:/oauth2redirect"}\"")
-    }
 }
 
 dependencies {
@@ -81,7 +66,6 @@ dependencies {
     implementation(project(":core:core-auth"))
     implementation(project(":core:core-navigation"))
 
-    // AndroidX
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.appcompat)
@@ -93,26 +77,18 @@ dependencies {
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.navigation.fragment)
 
-    // Hilt
     implementation(libs.hilt.android)
     implementation(libs.hilt.android.entrypoint)
     kapt(libs.hilt.compiler)
 
-    // Coil for image loading
     implementation(libs.coil)
     implementation(libs.coil.compose)
     implementation(libs.coil.svg)
 
-    // Serialization
     implementation(libs.kotlinx.serialization.json)
-
-    // Coroutines
     implementation(libs.kotlinx.coroutines.android)
-
-    // Timber for logging
     implementation(libs.timber)
 
-    // Testing
     testImplementation(libs.junit)
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.kotlinx.coroutines.test)

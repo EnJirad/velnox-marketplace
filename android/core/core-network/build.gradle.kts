@@ -23,7 +23,7 @@ android {
 
 dependencies {
     implementation(project(":core:core-common"))
-    implementation(project(":core:core-auth"))
+    // Note: core-auth depends on core-network, so we don't depend on core-auth here to avoid cyclic dependency
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.retrofit)
     implementation(libs.retrofit.moshi)

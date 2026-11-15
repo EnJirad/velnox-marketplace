@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.util.Base64
 import android.util.Log
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.browser.customtabs.CustomTabsService
@@ -45,8 +46,8 @@ class OAuthManager(
     private val SCOPES = listOf("openid", "email", "profile")
 
     // State parameter for CSRF protection
-    private const val STATE_KEY = "oauth_state"
-    private const val CODE_VERIFIER_KEY = "oauth_code_verifier"
+    private val STATE_KEY = "oauth_state"
+    private val CODE_VERIFIER_KEY = "oauth_code_verifier"
 
     /**
      * Initiate Google OAuth flow using Chrome Custom Tabs.

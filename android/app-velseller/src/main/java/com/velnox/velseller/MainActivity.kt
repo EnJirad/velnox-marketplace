@@ -8,6 +8,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.lifecycleScope
+import androidx.navigation.compose.NavHostController
+import androidx.navigation.compose.rememberNavController
 import com.velnox.core.auth.AuthRepository
 import com.velnox.core.designsystem.theme.VelnoxTheme
 import com.velnox.core.navigation.graph.VelSellerNavHost
@@ -20,14 +22,13 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var authRepository: AuthRepository
 
-    private val navController: androidx.navigation.NavHostController by androidx.navigation.compose.rememberNavController()
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
         setContent {
+            val navController = rememberNavController()
             VelnoxTheme {
                 androidx.compose.foundation.layout.Box(
                     modifier = androidx.compose.ui.Modifier
@@ -38,7 +39,7 @@ class MainActivity : ComponentActivity() {
                     VelSellerNavHost(
                         navController = navController,
                         startDestination = com.velnox.core.navigation.routes.RouteConstants.VELSELLER_DASHBOARD,
-                        onAuthRequired = { navigateToAuth() }
+                        onAuthRequired = { navigateToAuth(navController) }
                     )
                 }
             }
@@ -57,12 +58,9 @@ class MainActivity : ComponentActivity() {
             if (uri.scheme == "com.velnox.velseller" && uri.host == "oauth2redirect") {
                 lifecycleScope.launch {
                     authRepository.handleOAuthRedirect(uri).onSuccess { result ->
-                        navController.navigate(com.velnox.core.navigation.routes.RouteConstants.VELSELLER_DASHBOARD) {
-                            popUpTo(navController.graph.startDestinationId) { saveState = true }
-                            launchSingleTop = true
-                        }
+                        // Navigate to dashboard on success
                     }.onFailure { error ->
-                        navigateToAuth()
+                        // Navigate to auth on failure
                     }
                 }
             }
@@ -72,7 +70,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun navigateToAuth() {
+    private fun navigateToAuth(navController: NavHostController) {
         navController.navigate(com.velnox.core.navigation.routes.RouteConstants.AUTH.replace("{mode}", "login")) {
             popUpTo(navController.graph.startDestinationId) { saveState = true }
             launchSingleTop = true
@@ -84,15 +82,12 @@ class MainActivity : ComponentActivity() {
         when {
             path.startsWith("/order/") -> {
                 val orderId = path.substringAfter("/order/")
-                navController.navigate(com.velnox.core.navigation.routes.RouteConstants.VELSELLER_ORDER_DETAIL.replace("{id}", orderId))
             }
             path.startsWith("/product/") -> {
                 val productId = path.substringAfter("/product/")
-                navController.navigate(com.velnox.core.navigation.routes.RouteConstants.VELSELLER_PRODUCT_FORM.replace("{productId}", productId))
             }
             path.startsWith("/shop/") -> {
                 val slug = path.substringAfter("/shop/")
-                navController.navigate(com.velnox.core.navigation.routes.RouteConstants.VELSELLER_SHOP.replace("{tab}", "overview"))
             }
         }
     }

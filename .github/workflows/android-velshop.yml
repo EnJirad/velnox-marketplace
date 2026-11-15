@@ -19,6 +19,9 @@ jobs:
     name: Build VelShop Debug APK
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: android
 
     steps:
       - name: Checkout repository
@@ -79,5 +82,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: velshop-debug-apk
-          path: app-velshop/build/outputs/apk/debug/app-velshop-debug.apk
+          path: android/app-velshop/build/outputs/apk/debug/app-velshop-debug.apk
           retention-days: 7

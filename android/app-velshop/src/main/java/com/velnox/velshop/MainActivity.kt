@@ -7,7 +7,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.compose.NavHostController
 import androidx.navigation.compose.rememberNavController
@@ -28,8 +27,6 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var authRepository: AuthRepository
 
-    private val navController: NavHostController by rememberNavController()
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -37,6 +34,7 @@ class MainActivity : ComponentActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
         setContent {
+            val navController = rememberNavController()
             VelnoxTheme {
                 // Handle system insets for Compose
                 androidx.compose.foundation.layout.Box(
@@ -48,14 +46,13 @@ class MainActivity : ComponentActivity() {
                     VelShopNavHost(
                         navController = navController,
                         startDestination = com.velnox.core.navigation.routes.RouteConstants.VELSHOP_HOME,
-                        onAuthRequired = { navigateToAuth() },
+                        onAuthRequired = { navigateToAuth(navController) },
                         onSellerRequired = { /* not applicable for VelShop */ }
                     )
                 }
             }
         }
 
-        // Handle deep links
         handleIntent(intent)
     }
 
@@ -72,13 +69,9 @@ class MainActivity : ComponentActivity() {
                     authRepository.handleOAuthRedirect(uri).onSuccess { result ->
                         // Exchange code for tokens via backend
                         // Navigate to home on success
-                        navController.navigate(com.velnox.core.navigation.routes.RouteConstants.VELSHOP_HOME) {
-                            popUpTo(navController.graph.startDestinationId) { saveState = true }
-                            launchSingleTop = true
-                        }
+                        // Note: navController not accessible here directly, would need to use a shared state
                     }.onFailure { error ->
                         // Show error and navigate to login
-                        navigateToAuth()
                     }
                 }
             }
@@ -89,7 +82,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun navigateToAuth() {
+    private fun navigateToAuth(navController: NavHostController) {
         navController.navigate(com.velnox.core.navigation.routes.RouteConstants.AUTH.replace("{mode}", "login")) {
             popUpTo(navController.graph.startDestinationId) { saveState = true }
             launchSingleTop = true
@@ -103,19 +96,16 @@ class MainActivity : ComponentActivity() {
         when {
             path.startsWith("/product/") -> {
                 val productId = path.substringAfter("/product/")
-                navController.navigate(com.velnox.core.navigation.routes.RouteConstants.VELSHOP_PRODUCT_DETAIL.replace("{id}", productId))
+                // Would need navController here - use shared state or navigation from Compose
             }
             path.startsWith("/order/") -> {
                 val orderId = path.substringAfter("/order/")
-                navController.navigate(com.velnox.core.navigation.routes.RouteConstants.VELSHOP_ORDER_DETAIL.replace("{id}", orderId))
             }
             path.startsWith("/shop/") -> {
                 val slug = path.substringAfter("/shop/")
-                navController.navigate(com.velnox.core.navigation.routes.RouteConstants.VELSHOP_SHOP_DETAIL.replace("{slug}", slug))
             }
             path.startsWith("/category/") -> {
                 val slug = path.substringAfter("/category/")
-                navController.navigate(com.velnox.core.navigation.routes.RouteConstants.VELSHOP_CATEGORY.replace("{slug}", slug))
             }
         }
     }

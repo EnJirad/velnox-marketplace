@@ -19,6 +19,9 @@ jobs:
     name: Build VelSeller Debug APK
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: android
 
     steps:
       - name: Checkout repository
@@ -79,5 +82,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: velseller-debug-apk
-          path: app-velseller/build/outputs/apk/debug/app-velseller-debug.apk
+          path: android/app-velseller/build/outputs/apk/debug/app-velseller-debug.apk
           retention-days: 7
