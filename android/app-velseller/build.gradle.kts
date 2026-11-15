@@ -56,6 +56,14 @@ android {
             matchingFallbacks = ["debug"]
         }
     }
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+            testLogging {
+                events = setOf("passed", "failed", "skipped", "standardOut", "standardError")
+            }
+        }
+    }
 }
 
 dependencies {
