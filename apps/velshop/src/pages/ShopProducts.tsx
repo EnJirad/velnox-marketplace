@@ -1,6 +1,7 @@
 import { ProductCard } from "@/components/shop/ProductCard";
 import { ShopHeader } from "@/components/shop/ShopHeader";
 import { ShopFooter } from "@/components/shop/ShopFooter";
+import { CategoryStrip } from "@/components/shop/CategoryStrip";
 import { Button } from "@velnox/shared/components/ui/button";
 import { Checkbox } from "@velnox/shared/components/ui/checkbox";
 import { Input } from "@velnox/shared/components/ui/input";
@@ -631,6 +632,22 @@ export default function ShopProducts() {
           </div>
         </div>
       </section>
+
+      {/* Category Strip — sticky under header, horizontal scrollable pills */}
+      <CategoryStrip
+        categories={categoryOptions
+          .filter((c) => c.id !== "all")
+          .map((c) => ({ ...c, count: undefined }))}
+        activeCategory={category as StoreProductCategory | "all"}
+        onCategoryChange={(id) => {
+          if (id === "all") {
+            updateParam("category", null);
+          } else {
+            updateParam("category", id);
+          }
+        }}
+        allLabel={t("products.allCategories")}
+      />
 
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6 sm:py-8">
         <div className="grid gap-8 lg:grid-cols-[240px_1fr]">
