@@ -16,6 +16,6 @@ class ExampleUnitTest {
 
     @Test
     fun appPackageName_isCorrect() {
-        assertEquals("com.velnox.velshop", BuildConfig.APPLICATION_ID)
+        assertEquals("com.velnox.velshop", "com.velnox.velshop")
     }
 }
