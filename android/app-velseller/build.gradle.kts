@@ -64,6 +64,13 @@ android {
             }
         }
     }
+    sourceSets {
+        test {
+            kotlin {
+                srcDirs("src/test/kotlin")
+            }
+        }
+    }
 }
 
 dependencies {

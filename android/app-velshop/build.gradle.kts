@@ -59,9 +59,15 @@ android {
     testOptions {
         unitTests {
             isIncludeAndroidResources = true
-            // Explicitly configure JUnit 4 runner
             testLogging {
                 events = setOf("passed", "failed", "skipped", "standardOut", "standardError")
+            }
+        }
+    }
+    sourceSets {
+        test {
+            kotlin {
+                srcDirs("src/test/kotlin")
             }
         }
     }
