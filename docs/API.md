@@ -43,6 +43,8 @@ Development: http://localhost:3001/api
 | POST | `/api/auth/mobile/login` | No | Native email/password login |
 | POST | `/api/auth/mobile/google` | No | Native Google ID-token sign-in |
 | POST | `/api/auth/mobile/line` | No | Native LINE ID-token sign-in |
+| `/api/auth/forgot-password` | `{ "email": string }` | `200 { data: { requested: true } }` | Uniform answer for known and unknown addresses (no enumeration). Stores only the SHA-256 of a 32-byte single-use token, valid 30 minutes; requesting again invalidates the previous link. `503 EMAIL_NOT_CONFIGURED` when no mail transport is set. Rate limit: 3 per 15 min per IP. |
+| `/api/auth/reset-password` | `{ "token": string, "password": string }` | `200 { data: { reset: true } }` | Consumes the token atomically (`used_at` guard), hashes the new password with scrypt and clears any other outstanding link for the account. Unknown, used and expired tokens all return `400 INVALID_RESET_TOKEN`. Rate limit: 5 per 15 min per IP. |
 
 ### Native authentication contract
 

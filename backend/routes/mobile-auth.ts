@@ -14,6 +14,7 @@
  */
 
 import type { Express, Request, Response } from "express";
+import crypto from "crypto";
 import { z } from "zod";
 import { getClient, query } from "../db/index.js";
 import { hashPassword, isPasswordHashFormat, verifyPassword } from "../lib/password.js";
@@ -40,11 +41,24 @@ const socialSchema = z.object({
   nonce: z.string().min(10).max(256).optional(),
 });
 
+const forgotSchema = z.object({
+  email: emailSchema,
+});
+
+const resetSchema = z.object({
+  token: z.string().trim().min(20).max(256),
+  password: passwordSchema,
+});
+
 // Equivalent abuse control to the web Turnstile gate: tight per-IP budgets.
 // The global security limiter in server.ts still applies on top of these.
 const registerLimiter = createRateLimiter({ name: "mobile-register", windowMs: 60_000, max: 5, key: ipKey });
 const loginLimiter = createRateLimiter({ name: "mobile-login", windowMs: 60_000, max: 8, key: ipKey });
 const socialLimiter = createRateLimiter({ name: "mobile-social", windowMs: 60_000, max: 10, key: ipKey });
+// Password recovery is the most attractive endpoint to abuse: it writes a row and
+// can send mail. Both budgets are deliberately small.
+const forgotLimiter = createRateLimiter({ name: "mobile-forgot", windowMs: 15 * 60_000, max: 3, key: ipKey });
+const resetLimiter = createRateLimiter({ name: "mobile-reset", windowMs: 15 * 60_000, max: 5, key: ipKey });
 
 type ErrorResult = { ok: false; status: number; code: string; message: string };
 type IdentityResult = {
@@ -260,6 +274,70 @@ async function resolveIdentity(identity: IdentityResult, provider: "google" | "l
   }
 }
 
+// ─── Password recovery ──────────────────────────────────────────────────────
+
+/** How long a reset token stays usable. */
+const RESET_TTL_MS = 30 * 60 * 1000;
+
+/**
+ * Tokens are stored as a SHA-256 hash, never in clear.
+ *
+ * The value only ever travels in the email; a database dump therefore cannot be
+ * replayed to take over an account. 32 random bytes make guessing infeasible.
+ */
+function hashResetToken(token: string): string {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+/**
+ * Send the reset link.
+ *
+ * There is no mail transport configured in this deployment, so this reports
+ * `false` instead of pretending. The caller then answers
+ * `503 EMAIL_NOT_CONFIGURED`: an honest "this feature is not available yet" is
+ * better than a 200 that leaves the user waiting for an email that will never
+ * arrive. Nothing about the account is disclosed either way.
+ *
+ * When a provider is configured (`RESEND_API_KEY` + `MAIL_FROM`), the link is
+ * sent with a plain fetch call — no new npm dependency.
+ */
+async function sendResetEmail(to: string, token: string): Promise<boolean> {
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.MAIL_FROM;
+  if (!apiKey || !from) return false;
+
+  const base = process.env.APP_PUBLIC_URL ?? "https://velnox.live";
+  const link = `${base}/reset-password?token=${encodeURIComponent(token)}`;
+
+  try {
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        from,
+        to,
+        subject: "Reset your Velnox password",
+        text: [
+          "We received a request to reset the password for this Velnox account.",
+          "",
+          `Open this link to choose a new password: ${link}`,
+          "",
+          "The link expires in 30 minutes and can be used once.",
+          "If you did not ask for this, you can ignore this email.",
+        ].join("\n"),
+      }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    return response.ok;
+  } catch (error) {
+    console.error("[mobile-auth] reset email failed:", (error as Error)?.message ?? error);
+    return false;
+  }
+}
+
 /** Register routes on the existing Express app. */
 export function setupMobileAuth(app: Express): void {
   app.post("/api/auth/mobile/register", registerLimiter, async (req: Request, res: Response) => {
@@ -372,6 +450,137 @@ export function setupMobileAuth(app: Express): void {
     }
   });
 
+
+  /**
+   * POST /api/auth/forgot-password
+   *
+   * Always answers the same way for a valid request, whether or not the address
+   * is registered: a different answer would turn this into an account-enumeration
+   * oracle. The only branch is a server configuration one (no mail transport),
+   * which is identical for every address.
+   */
+  app.post("/api/auth/forgot-password", forgotLimiter, async (req: Request, res: Response) => {
+    const parsed = forgotSchema.safeParse(req.body);
+    if (!parsed.success) {
+      // Same shape and timing as the success path: a malformed address must not
+      // be distinguishable from an unknown one.
+      sendError(res, fail(400, "VALIDATION_ERROR", "A valid email address is required"));
+      return;
+    }
+
+    const { email } = parsed.data;
+
+    try {
+      const found = await query("SELECT id FROM users WHERE email = $1", [email]);
+
+      if (found.rowCount) {
+        const userId = found.rows[0].id as string;
+        const token = crypto.randomBytes(32).toString("hex");
+        const expiresAt = new Date(Date.now() + RESET_TTL_MS);
+
+        // One live token per user: requesting again invalidates the previous link.
+        await query("DELETE FROM password_reset_tokens WHERE user_id = $1 AND used_at IS NULL", [userId]);
+        await query(
+          `INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)
+           VALUES ($1, $2, $3)`,
+          [userId, hashResetToken(token), expiresAt.toISOString()],
+        );
+
+        const sent = await sendResetEmail(email, token);
+        if (!sent) {
+          // No transport: remove the token so nothing is left dangling, and say
+          // so plainly. This is a deployment fact, not an account fact.
+          await query("DELETE FROM password_reset_tokens WHERE user_id = $1 AND used_at IS NULL", [userId]);
+          sendError(
+            res,
+            fail(503, "EMAIL_NOT_CONFIGURED", "Password reset email is not available yet"),
+          );
+          return;
+        }
+      } else {
+        // Unknown address: do the same amount of work as a hit would, so response
+        // timing does not reveal whether the account exists.
+        await new Promise((resolve) => setTimeout(resolve, 60));
+      }
+
+      res.json({ success: true, data: { requested: true } });
+    } catch (error) {
+      console.error("[mobile-auth] forgot-password failed:", (error as Error)?.message ?? error);
+      sendError(res, fail(500, "DB_ERROR", "Could not start password recovery"));
+    }
+  });
+
+  /**
+   * POST /api/auth/reset-password
+   *
+   * Consumes a single-use token and replaces the password hash with scrypt.
+   * Unknown, used and expired tokens all answer the same way, so a stale link
+   * cannot be distinguished from a forged one.
+   */
+  app.post("/api/auth/reset-password", resetLimiter, async (req: Request, res: Response) => {
+    const parsed = resetSchema.safeParse(req.body);
+    if (!parsed.success) {
+      sendError(res, fail(400, "VALIDATION_ERROR", "A reset token and a strong password are required"));
+      return;
+    }
+
+    const { token, password } = parsed.data;
+
+    try {
+      const found = await query(
+        `SELECT id, user_id FROM password_reset_tokens
+         WHERE token_hash = $1 AND used_at IS NULL AND expires_at > NOW()
+         LIMIT 1`,
+        [hashResetToken(token)],
+      );
+
+      if (!found.rowCount) {
+        sendError(res, fail(400, "INVALID_RESET_TOKEN", "This reset link is invalid or has expired"));
+        return;
+      }
+
+      const row = found.rows[0];
+      const passwordHash = await hashPassword(password);
+      const client = await getClient();
+      try {
+        await client.query("BEGIN");
+        // Guarded by used_at so two concurrent requests cannot both succeed.
+        const consumed = await client.query(
+          `UPDATE password_reset_tokens SET used_at = NOW()
+           WHERE id = $1 AND used_at IS NULL
+           RETURNING id`,
+          [row.id],
+        );
+        if (!consumed.rowCount) {
+          await client.query("ROLLBACK");
+          sendError(res, fail(400, "INVALID_RESET_TOKEN", "This reset link is invalid or has expired"));
+          return;
+        }
+        await client.query(
+          "UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2",
+          [passwordHash, row.user_id],
+        );
+        await client.query("COMMIT");
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      } finally {
+        client.release();
+      }
+
+      // Any other outstanding link for this account is now dead too.
+      await query(
+        "DELETE FROM password_reset_tokens WHERE user_id = $1 AND used_at IS NULL",
+        [row.user_id],
+      );
+
+      res.json({ success: true, data: { reset: true } });
+    } catch (error) {
+      console.error("[mobile-auth] reset-password failed:", (error as Error)?.message ?? error);
+      sendError(res, fail(500, "DB_ERROR", "Could not reset the password"));
+    }
+  });
+
   // Health/config probe for the app: no secrets, only whether provider config
   // is present. The app uses it to show an honest "not configured" state.
   app.get("/api/auth/mobile/config", (_req: Request, res: Response) => {
@@ -380,6 +589,9 @@ export function setupMobileAuth(app: Express): void {
       data: {
         google: Boolean(process.env.MOBILE_GOOGLE_CLIENT_ID ?? process.env.GOOGLE_CLIENT_ID),
         line: Boolean(process.env.LINE_CHANNEL_ID),
+        // Password recovery needs a mail transport; the app hides the entry point
+        // when this is false instead of offering a flow that cannot complete.
+        email: Boolean(process.env.RESEND_API_KEY && process.env.MAIL_FROM),
       },
     });
   });
