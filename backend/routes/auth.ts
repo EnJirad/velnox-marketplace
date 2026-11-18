@@ -58,7 +58,7 @@ const googleClientId = (): string => process.env.GOOGLE_CLIENT_ID ?? "";
 const googleClientSecret = (): string => process.env.GOOGLE_CLIENT_SECRET ?? "";
 const googleRedirectUri = (): string => process.env.GOOGLE_REDIRECT_URI ?? "";
 const jwtSecret = (): string => process.env.JWT_SECRET ?? "";
-const SESSION_COOKIE = "velnox_session";
+export const SESSION_COOKIE = "velnox_session";
 
 // ─── Per-user profile cache (5s TTL) ───────────────────────────────────────
 // Prevents the same slow Neon query from being hit multiple times within a
@@ -264,13 +264,13 @@ async function resolveUser(google: {
 }
 
 /** Create a JWT session token with a unique jti for revocation. */
-function createSessionToken(userId: string, email: string): string {
+export function createSessionToken(userId: string, email: string): string {
   const jti = crypto.randomUUID();
   return jwt.sign({ userId, email, jti }, jwtSecret(), { expiresIn: "7d" });
 }
 
 /** Set the session cookie on the response. */
-function setSessionCookie(res: Response, token: string): void {
+export function setSessionCookie(res: Response, token: string): void {
   const isProd = process.env.NODE_ENV === "production";
   res.cookie(SESSION_COOKIE, token, {
     httpOnly: true,

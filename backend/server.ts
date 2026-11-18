@@ -15,6 +15,7 @@ import { setupAdminRoutes } from "./routes/admin.js";
 import { setupCartRoutes } from "./routes/cart.js";
 import { setupShippingRoutes } from "./routes/shipping.js";
 import { setupGoogleAuth } from "./routes/auth.js";
+import { setupMobileAuth } from "./routes/mobile-auth.js";
 import { setupUploadRoutes } from "./routes/upload.js";
 import { setupSellerRoutes } from "./routes/seller.js";
 import { setupProductRoutes } from "./routes/products.js";
@@ -409,6 +410,7 @@ app.get("/api/_diag/schema", async (_req, res) => {
 
 // ─── Google OAuth ─────────────────────────────────────
 setupGoogleAuth(app);
+setupMobileAuth(app);
 
 // ─── Upload (R2 presigned URLs) ────────────────────────
 setupUploadRoutes(app);
