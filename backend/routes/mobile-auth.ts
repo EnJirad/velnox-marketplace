@@ -20,6 +20,7 @@ import { hashPassword, isPasswordHashFormat, verifyPassword } from "../lib/passw
 import { createRateLimiter, ipKey } from "../middleware/rate-limit.js";
 import { createSessionToken, setSessionCookie } from "./auth.js";
 import { requireAuth } from "../middleware/auth.js";
+import { validateGoogleClaims } from "../lib/google-identity.js";
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/;
 const PASSWORD_RE = /^(?=.*[A-Za-z])(?=.*\d).{8,128}$/;
@@ -101,38 +102,10 @@ async function verifyGoogleToken(idToken: string): Promise<IdentityResult | Erro
     return fail(503, "GOOGLE_UNAVAILABLE", "Google verification is temporarily unavailable");
   }
 
-  const audience = String(payload.aud ?? "");
-  const issuer = String(payload.iss ?? "");
-  const expiry = Number(payload.exp);
-  if (
-    audience !== clientId ||
-    (issuer !== "https://accounts.google.com" && issuer !== "accounts.google.com") ||
-    !Number.isFinite(expiry) ||
-    expiry * 1000 <= Date.now()
-  ) {
-    return fail(401, "INVALID_GOOGLE_TOKEN", "Google identity claims are not valid for this app");
-  }
-  const azp = payload.azp == null ? "" : String(payload.azp);
-  if (azp && azp !== clientId) {
-    return fail(401, "INVALID_GOOGLE_TOKEN", "Google identity has a different authorized party");
-  }
-  if (String(payload.email_verified) !== "true") {
-    return fail(401, "EMAIL_NOT_VERIFIED", "Google email is not verified");
-  }
-  const sub = String(payload.sub ?? "");
-  const email = String(payload.email ?? "").trim().toLowerCase();
-  if (!sub || !EMAIL_RE.test(email)) {
-    return fail(401, "INVALID_GOOGLE_TOKEN", "Google identity is missing subject or email");
-  }
-
-  return {
-    ok: true,
-    userId: sub,
-    email,
-    name: String(payload.name ?? email.split("@")[0]).slice(0, 120),
-    role: "customer",
-    verifiedEmail: true,
-  };
+  // Every claim rule lives in lib/google-identity.ts so it can be tested without
+  // a network round trip. Google has already verified the signature and lifetime;
+  // this decides whether the identity is acceptable for THIS application.
+  return validateGoogleClaims(payload, clientId);
 }
 
 /** LINE's official verify endpoint returns the signed ID-token payload. */
