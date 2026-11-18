@@ -1,5 +1,21 @@
 # Velnox AI Handoff — Current State
 
+**Last verified:** 2026-11-18 · **Branch:** `fix/ci-baseline` (base `main` @ `4b6b09d`)
+
+## 0. CI Baseline Repair (2026-11-18)
+
+`bun test backend/tests` บน `main` แดงต่อเนื่องตั้งแต่การถอด V badge (run `44229924213`) ทำให้ PR #15/#16 ถูกตัดสินบน diff ของตัวเองไม่ได้ สาเหตุที่ยืนยันแล้วและแก้ใน branch `fix/ci-baseline`:
+
+1. `backend/middleware/auth.ts` — `sessionToken()` อ่าน `req.headers.authorization` ตรง ๆ ทำให้ request object ที่ไม่มี `headers` โยน `TypeError` แทนการตอบ 401 → ใช้ optional chaining
+2. `backend/tests/preauth-nonce.test.ts` — เคส "production ไม่มี store" สลับแค่ `NODE_ENV` แต่ `pg.Pool` ถูกสร้างตอน import แล้ว (CI ตั้ง `TEST_DATABASE_URL` ตลอด) → สร้างเงื่อนไขจริงใน child process ที่ไม่มี database เลย
+3. `backend/tests/oauth-callback-session.test.ts` — `/auth/google` ถูก gate ด้วย pre-auth proof ตัวใหม่ → mint + record proof จริงก่อนเรียก (ไม่แตะ gate)
+4. `backend/tests/chat-unified.test.ts` — เคส addressed delivery ใช้ 5 socket + 4 รอบ DB เกิน budget 5s ของ Bun → ตั้ง 30s เฉพาะเคสนี้ (frame wait ยัง 5s)
+5. ไฟล์เทสต์ 3 ไฟล์ยังอ่าน `packages/shared/src/components/VBadge.tsx` ที่ถูกลบ → ทั้งไฟล์โหลดไม่ขึ้นและเคสอื่นในไฟล์นั้นไม่เคยรัน จึงแก้ให้ยืนยันสถาปัตยกรรมปัจจุบัน (`VerificationStatusLabel`, ไม่มี filter verification ใน catalog)
+
+หลักฐาน: PR #15 run [`44411870059`](https://github.com/EnJirad/velnox-marketplace/actions/runs/44411870059) = success, PR #16 run [`44411876912`](https://github.com/EnJirad/velnox-marketplace/actions/runs/44411876912) = success
+
+**ยังค้าง:** PR #15 กับ #16 แก้ `backend/routes/mobile-auth.ts` จุดเดียวกัน → merge ทั้งสองจะ conflict 3 hunk (ต้องคง route ทั้ง forgot/reset และ link ไว้ด้วยกัน) และต้อง merge `fix/ci-baseline` ขึ้น `main` ก่อน PR อื่นจึงจะเขียวโดยไม่มี commit ของ baseline ติดไปด้วย
+
 **Last verified:** 2026-11-15 · **Branch:** `main` · **HEAD:** `3d0e734` — Phase 1.2 Android Foundation Stabilization complete
 
 ## 1. Current Project State
