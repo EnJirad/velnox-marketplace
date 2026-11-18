@@ -734,6 +734,19 @@ CREATE TABLE IF NOT EXISTS preauth_nonces (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   expires_at TIMESTAMPTZ NOT NULL
 );
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+  -- Single-use password recovery tokens for the native app.
+  -- Only the SHA-256 of the token is stored: the raw value exists solely in the
+  -- emailed link, so a database dump cannot be replayed to take over an account.
+  -- A row is created on request and marked used on consumption; expired or used
+  -- rows are never accepted.
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL UNIQUE,
+  expires_at TIMESTAMPTZ NOT NULL,
+  used_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 
 CREATE TABLE IF NOT EXISTS product_reviews (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -1204,6 +1217,12 @@ CREATE TABLE IF NOT EXISTS reconciliation_findings (
 ALTER TABLE public.preauth_nonces ADD COLUMN IF NOT EXISTS nonce_hash TEXT;
 ALTER TABLE public.preauth_nonces ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
 ALTER TABLE public.preauth_nonces ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
+ALTER TABLE public.password_reset_tokens ADD COLUMN IF NOT EXISTS id UUID DEFAULT uuid_generate_v4();
+ALTER TABLE public.password_reset_tokens ADD COLUMN IF NOT EXISTS user_id UUID;
+ALTER TABLE public.password_reset_tokens ADD COLUMN IF NOT EXISTS token_hash TEXT;
+ALTER TABLE public.password_reset_tokens ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
+ALTER TABLE public.password_reset_tokens ADD COLUMN IF NOT EXISTS used_at TIMESTAMPTZ;
+ALTER TABLE public.password_reset_tokens ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS id UUID DEFAULT uuid_generate_v4();
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS email TEXT;
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS name TEXT DEFAULT '' NOT NULL;
@@ -3168,6 +3187,8 @@ CREATE INDEX IF NOT EXISTS idx_revoked_tokens_id ON public.revoked_tokens (token
 CREATE INDEX IF NOT EXISTS idx_revoked_tokens_user ON public.revoked_tokens (user_id);
 CREATE INDEX IF NOT EXISTS idx_revoked_tokens_expires ON public.revoked_tokens (expires_at);
 CREATE INDEX IF NOT EXISTS idx_preauth_nonces_expires ON public.preauth_nonces (expires_at);
+CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user ON public.password_reset_tokens (user_id);
+CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_expires ON public.password_reset_tokens (expires_at);
 CREATE INDEX IF NOT EXISTS idx_product_reviews_product ON public.product_reviews (product_id);
 CREATE INDEX IF NOT EXISTS idx_product_reviews_user ON public.product_reviews (user_id);
 CREATE INDEX IF NOT EXISTS idx_product_reviews_status ON public.product_reviews (product_id, status);

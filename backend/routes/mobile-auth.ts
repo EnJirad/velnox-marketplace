@@ -290,6 +290,17 @@ function hashResetToken(token: string): string {
 }
 
 /**
+ * Whether a mail transport is configured at all.
+ *
+ * This is a DEPLOYMENT fact, identical for every address, so it is decided
+ * before the user lookup. Deciding it after the lookup would make the answer
+ * depend on whether the address exists — an account-enumeration oracle.
+ */
+function hasMailTransport(): boolean {
+  return Boolean(process.env.RESEND_API_KEY && process.env.MAIL_FROM);
+}
+
+/**
  * Send the reset link.
  *
  * There is no mail transport configured in this deployment, so this reports
@@ -471,6 +482,17 @@ export function setupMobileAuth(app: Express): void {
     const { email } = parsed.data;
 
     try {
+      // Answer the same way for every address when this deployment cannot send
+      // mail: the check is configuration, not account state, and it happens
+      // BEFORE the lookup so a 503 can never mean "this account exists".
+      if (!hasMailTransport()) {
+        sendError(
+          res,
+          fail(503, "EMAIL_NOT_CONFIGURED", "Password reset email is not available yet"),
+        );
+        return;
+      }
+
       const found = await query("SELECT id FROM users WHERE email = $1", [email]);
 
       if (found.rowCount) {
@@ -591,7 +613,7 @@ export function setupMobileAuth(app: Express): void {
         line: Boolean(process.env.LINE_CHANNEL_ID),
         // Password recovery needs a mail transport; the app hides the entry point
         // when this is false instead of offering a flow that cannot complete.
-        email: Boolean(process.env.RESEND_API_KEY && process.env.MAIL_FROM),
+        email: hasMailTransport(),
       },
     });
   });
