@@ -15,7 +15,8 @@
  * The shared Postgres path is exercised when TEST_DATABASE_URL is configured;
  * without it the in-memory fallback (non-production only) runs the same logic.
  */
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import { join } from "node:path";
 import {
   consumeNonce,
   recordNonce,
@@ -118,24 +119,98 @@ describe("expiry", () => {
 });
 
 describe("store failure is fail-closed in production", () => {
-  test("recording fails when production has no usable store", async () => {
-    process.env.NODE_ENV = "production";
-    // No TEST_DATABASE_URL / DATABASE_URL in this environment, so the Postgres
-    // path throws and the in-memory fallback is forbidden.
-    expect(await recordNonce(SCOPE, "prod-nonce", PREAUTH_TTL_MS)).toBe(false);
+  /**
+   * These cases describe a process whose only database is none at all —
+   * production with no usable store. THIS process is not that process: CI sets
+   * `TEST_DATABASE_URL`, and `backend/db/index.ts` builds its single `pg.Pool`
+   * at import, so flipping `NODE_ENV=production` afterwards leaves a working
+   * pool behind. That is why this block failed in CI while passing on a laptop
+   * with no database configured: it asserted a premise it never constructed.
+   *
+   * The premise is built honestly instead — a child process gets the real
+   * module, production rules, and no database at all. Nothing is mocked and the
+   * code path under test is the shipped one.
+   */
+  interface FailClosedProof {
+    memoryRecorded: boolean;
+    memoryConsumed: string;
+    prodRecord: boolean;
+    prodConsume: string;
+    memoryConsumeInProd: string;
+  }
+
+  let proof: FailClosedProof;
+
+  beforeAll(() => {
+    const root = join(import.meta.dir, "..", "..");
+    const script = `
+      const { recordNonce, consumeNonce } = await import(${JSON.stringify(join(root, "backend/lib/nonce-store.ts"))});
+      const scope = ${JSON.stringify(SCOPE)};
+      const ttl = ${PREAUTH_TTL_MS};
+      process.env.NODE_ENV = "test";
+      const memoryRecorded = await recordNonce(scope, "memory-only", ttl);
+      const memoryConsumed = await consumeNonce(scope, "memory-only");
+      process.env.NODE_ENV = "production";
+      const prodRecord = await recordNonce(scope, "prod-nonce", ttl);
+      const prodConsume = await consumeNonce(scope, "prod-nonce");
+      const memoryConsumeInProd = await consumeNonce(scope, "memory-only");
+      console.log(JSON.stringify({ memoryRecorded, memoryConsumed, prodRecord, prodConsume, memoryConsumeInProd }));
+    `;
+
+    // Inherit the environment EXCEPT every database variable: "no usable store"
+    // has to mean no store, not "a test database happens to be configured".
+    const env: Record<string, string> = {};
+    for (const [key, value] of Object.entries(process.env)) {
+      if (value === undefined) continue;
+      if (/DATABASE_URL$/.test(key) || key === "PGHOST" || key === "PGPORT" || key === "PGDATABASE") continue;
+      env[key] = value;
+    }
+    env.NODE_ENV = "production";
+    env.BUN_TEST = "0";
+
+    // `process.execPath` is the dynamic loader on Android, not a Bun binary, so
+    // resolve the runtime from PATH instead.
+    const runtime = Bun.which("bun") ?? "bun";
+    const child = Bun.spawnSync([runtime, "-e", script], {
+      cwd: root,
+      env,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const line = child.stdout
+      .toString()
+      .trim()
+      .split("\n")
+      .filter((l) => l.startsWith("{"))
+      .at(-1);
+    if (!line) {
+      throw new Error(
+        `fail-closed probe produced no result (exit ${child.exitCode}): ${child.stderr.toString()}`,
+      );
+    }
+    proof = JSON.parse(line) as FailClosedProof;
   });
 
-  test("consuming reports unavailable when production has no usable store", async () => {
-    process.env.NODE_ENV = "production";
-    expect(await consumeNonce(SCOPE, "prod-nonce")).toBe("unavailable");
+  test("memory-only storage works outside production", () => {
+    // The control: the fallback really does work when it is allowed, so the
+    // production assertions below cannot pass for the trivial reason that
+    // nothing was ever written.
+    expect(proof.memoryRecorded).toBe(true);
+    expect(proof.memoryConsumed).toBe("ok");
   });
 
-  test("production never silently falls back to per-process memory", async () => {
-    // Record while non-production so the value exists in the memory store…
-    await recordNonce(SCOPE, "memory-only", PREAUTH_TTL_MS);
-    // …then switch to production. The memory store must not be consulted.
-    process.env.NODE_ENV = "production";
-    expect(await consumeNonce(SCOPE, "memory-only")).toBe("unavailable");
+  test("recording fails when production has no usable store", () => {
+    expect(proof.prodRecord).toBe(false);
+  });
+
+  test("consuming reports unavailable when production has no usable store", () => {
+    expect(proof.prodConsume).toBe("unavailable");
+  });
+
+  test("production never silently falls back to per-process memory", () => {
+    // `memory-only` WAS recorded in this process' memory store above; in
+    // production it must not be consulted.
+    expect(proof.memoryConsumeInProd).toBe("unavailable");
   });
 });
 

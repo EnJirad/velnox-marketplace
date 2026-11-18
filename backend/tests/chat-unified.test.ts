@@ -545,7 +545,12 @@ describeDb("unified chat, end to end (requires TEST_DATABASE_URL)", () => {
       sellerSock.ws.close();
       staffSock2.ws.close();
     }
-  });
+    // This case opens five sockets and drives four DB-seeded round trips. Bun's
+    // default 5s per-test budget is a deadline on the whole scenario, so a loaded
+    // CI runner could fail it while every assertion still holds. The frame waits
+    // below keep their own 5s deadline: a message that never arrives still fails
+    // loudly instead of being given more time to arrive.
+  }, 30_000);
 
   // ── Unread counts ───────────────────────────────────────────────────────
   testFn("unread counts are scoped per role and clear on a bounded read", async () => {
