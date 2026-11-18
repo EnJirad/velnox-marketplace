@@ -79,7 +79,10 @@ function sessionToken(req: Request): string | undefined {
   const cookie = req.cookies?.velnox_session;
   if (typeof cookie === "string" && cookie) return cookie;
 
-  const authorization = req.headers.authorization;
+  // `req.headers` is always present on a real Express request, but this helper is
+  // also reached from unit tests that build a minimal request object. A missing
+  // header bag means "no credential", not a crash: the caller answers 401.
+  const authorization = req.headers?.authorization;
   if (typeof authorization === "string" && authorization.startsWith("Bearer ")) {
     return authorization.slice("Bearer ".length).trim();
   }

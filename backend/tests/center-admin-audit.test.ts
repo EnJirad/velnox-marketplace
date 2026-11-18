@@ -17,7 +17,7 @@
  * They also fail if a SECOND audit / settings / role system is introduced.
  */
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 
 const root = join(import.meta.dir, "..", "..");
@@ -36,7 +36,6 @@ const sqlEditor = read("db/run-sqleditor.sql");
 const centerPage = read("apps/velcenter/src/pages/Center.tsx");
 const auditTab = read("apps/velcenter/src/components/AuditLogTab.tsx");
 const moderationQueue = read("apps/velcenter/src/components/ProductModerationQueue.tsx");
-const vBadge = read("packages/shared/src/components/VBadge.tsx");
 const apiRoutes = read("packages/shared/src/lib/api-routes.ts");
 
 /** Comments describe intent; only executable statements are asserted on. */
@@ -239,20 +238,19 @@ describe("company / system settings", () => {
 });
 
 describe("V mark", () => {
-  test("the verified mark is the letter V and nothing else", () => {
+  test("no V glyph is rendered; verification is a status label", () => {
     expect(moderationQueue).not.toContain("V ✓");
     expect(centerPage).not.toContain("V ✓");
     expect(auditTab).not.toContain("V ✓");
-    // the shared component renders bare "V" inside its badge markup
-    const badge = vBadge.slice(vBadge.indexOf("const badge = ("), vBadge.indexOf("// Mobile: use Sheet"));
-    expect(badge).toContain("\n      V\n    </button>");
-    expect(badge).not.toContain("BadgeCheck");
-    expect(badge).not.toContain("<Check");
+    // The shared V badge was removed (P1-F), so the mark a reviewer sees is the
+    // textual VerificationStatusLabel. The badge module must not come back.
+    expect(moderationQueue).toContain("VerificationStatusLabel");
+    expect(existsSync(join(root, "packages/shared/src/components/VBadge.tsx"))).toBe(false);
   });
 
-  test("VelCenter uses the shared badge instead of its own markup", () => {
-    expect(moderationQueue).toContain("SellerVMark");
-    expect(moderationQueue).toContain("sellerOnly");
+  test("VelCenter uses the shared status label instead of its own markup", () => {
+    expect(moderationQueue).toContain("VerificationStatusLabel");
+    expect(moderationQueue).not.toContain("SellerVMark");
   });
 });
 
