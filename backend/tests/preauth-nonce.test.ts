@@ -167,6 +167,12 @@ describe("store failure is fail-closed in production", () => {
     }
     env.NODE_ENV = "production";
     env.BUN_TEST = "0";
+    // With no DATABASE_URL, node-postgres falls back to its OWN defaults
+    // (localhost:5432). On a CI runner that port is the disposable Postgres
+    // service, so the probe would try to reach it and could block long enough to
+    // blow the hook's deadline. A socket directory that cannot exist makes "no
+    // usable store" fail immediately and identically on every machine.
+    env.PGHOST = "/nonexistent-velnox-ci-socket";
 
     // `process.execPath` is the dynamic loader on Android, not a Bun binary, so
     // resolve the runtime from PATH instead.
@@ -189,7 +195,7 @@ describe("store failure is fail-closed in production", () => {
       );
     }
     proof = JSON.parse(line) as FailClosedProof;
-  });
+  }, 30_000);
 
   test("memory-only storage works outside production", () => {
     // The control: the fallback really does work when it is allowed, so the
