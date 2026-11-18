@@ -264,6 +264,21 @@ async function resolveUser(google: {
 }
 
 /** Create a JWT session token with a unique jti for revocation. */
+/**
+ * Web clients carry the session in an httpOnly cookie; native clients send the
+ * same opaque value as a bearer credential because a cookie set by a fetch
+ * response is not reliably stored by a WebView/native HTTP stack.
+ */
+function bearerOrCookie(req: Request): string | undefined {
+  const cookie = req.cookies?.[SESSION_COOKIE];
+  if (typeof cookie === "string" && cookie) return cookie;
+  const header = req.headers.authorization;
+  if (typeof header === "string" && header.startsWith("Bearer ")) {
+    return header.slice("Bearer ".length).trim() || undefined;
+  }
+  return undefined;
+}
+
 export function createSessionToken(userId: string, email: string): string {
   const jti = crypto.randomUUID();
   return jwt.sign({ userId, email, jti }, jwtSecret(), { expiresIn: "7d" });
@@ -863,7 +878,7 @@ export function setupGoogleAuth(app: Express): void {
 
   // API endpoint: get current user (for frontend to check auth status)
   app.get("/api/auth/me", async (req: Request, res: Response) => {
-    const token = req.cookies?.[SESSION_COOKIE];
+    const token = bearerOrCookie(req);
     if (!token) {
       res.status(401).json({ success: false, error: { code: "UNAUTHORIZED", message: "Not authenticated" } });
       return;
@@ -966,7 +981,7 @@ export function setupGoogleAuth(app: Express): void {
   // Logout — revoke session server-side and clear cookie
   app.post("/api/auth/logout", async (req: Request, res: Response) => {
     try {
-      const token = req.cookies?.[SESSION_COOKIE];
+      const token = bearerOrCookie(req);
       if (token) {
         try {
           const payload = jwt.verify(token, jwtSecret()) as { userId: string; jti?: string; exp?: number };

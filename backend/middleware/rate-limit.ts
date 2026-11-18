@@ -75,8 +75,14 @@ export interface RateLimitOptions {
 
 /** Per-key identity: authenticated userId when a valid session is present, else IP. */
 function defaultKey(req: Request): string {
-  const token = req.cookies?.velnox_session;
-  if (typeof token === "string" && token) {
+  const cookie = req.cookies?.velnox_session;
+    const bearer = req.headers.authorization;
+    const token = typeof cookie === "string" && cookie
+      ? cookie
+      : typeof bearer === "string" && bearer.startsWith("Bearer ")
+        ? bearer.slice("Bearer ".length).trim()
+        : undefined;
+    if (typeof token === "string" && token) {
     try {
       const secret = process.env.JWT_SECRET;
       if (secret) {

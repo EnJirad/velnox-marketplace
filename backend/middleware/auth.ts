@@ -69,8 +69,25 @@ async function isTokenRevoked(jti: string): Promise<boolean> {
  * requireAuth — verifies the JWT session cookie.
  * Checks: (1) token signature, (2) expiration, (3) revocation via jti.
  */
+/**
+ * Native clients receive the same opaque session value in a Set-Cookie response
+ * header but cannot rely on WebView cookie policy. They send it as
+ * `Authorization: Bearer <jwt>`. Only that single opaque value is accepted — no
+ * client-supplied user id or email is ever trusted.
+ */
+function sessionToken(req: Request): string | undefined {
+  const cookie = req.cookies?.velnox_session;
+  if (typeof cookie === "string" && cookie) return cookie;
+
+  const authorization = req.headers.authorization;
+  if (typeof authorization === "string" && authorization.startsWith("Bearer ")) {
+    return authorization.slice("Bearer ".length).trim();
+  }
+  return undefined;
+}
+
 export async function requireAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
-  const token = req.cookies?.velnox_session;
+  const token = sessionToken(req);
 
   if (!token) {
     res.status(401).json({ success: false, error: { code: "UNAUTHORIZED", message: "Not authenticated" } });
@@ -105,7 +122,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
  * Revoked tokens are treated as anonymous (not as authenticated).
  */
 export async function optionalAuth(req: Request, _res: Response, next: NextFunction): Promise<void> {
-  const token = req.cookies?.velnox_session;
+  const token = sessionToken(req);
   if (!token) { next(); return; }
 
   try {
