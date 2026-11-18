@@ -19,6 +19,12 @@ import crypto from "crypto";
 import type { Server } from "http";
 import type { AddressInfo } from "net";
 import { OAUTH_STATE_COOKIE } from "../lib/oauth-state.js";
+import {
+  PREAUTH_COOKIE,
+  PREAUTH_NONCE_SCOPE,
+  createPreAuthProof,
+} from "../lib/preauth-proof.js";
+import { recordNonce } from "../lib/nonce-store.js";
 import { hasTestDatabase } from "./helpers/test-db.js";
 
 // Test-only values, set before the dynamic route import. They stay set for
@@ -69,6 +75,19 @@ async function get(path: string, cookie?: string): Promise<Response> {
     redirect: "manual",
     headers: { ...(cookie ? { cookie } : {}), connection: "close" },
   });
+}
+
+/**
+ * `GET /auth/google` is gated by a one-time pre-authentication proof (a
+ * Turnstile challenge is exchanged for one at POST /api/auth/preauth). These
+ * cases are about the SESSION the callback issues, not the gate, so they present
+ * a valid proof and stay focused. The gate consumes the nonce atomically, so the
+ * proof has to be recorded first — exactly as /preauth does it.
+ */
+async function proofCookie(): Promise<string> {
+  const proof = createPreAuthProof();
+  expect(await recordNonce(PREAUTH_NONCE_SCOPE, proof.nonce, proof.maxAgeMs)).toBe(true);
+  return `${PREAUTH_COOKIE}=${proof.cookieValue}`;
 }
 
 function setCookieHeaders(res: Response): string[] {
@@ -122,7 +141,7 @@ function stubGoogle(claims: { sub: string; email: string; name: string; picture:
 
 describe("oauth callback — valid state creates a session", () => {
   testIfDb("issues a real session and preserves an internal returnTo", async () => {
-    const startRes = await get("/auth/google?returnTo=%2Fseller%2Fgoals");
+    const startRes = await get("/auth/google?returnTo=%2Fseller%2Fgoals", await proofCookie());
     const startLocation = new URL(startRes.headers.get("location") ?? "");
     const state = startLocation.searchParams.get("state") ?? "";
     const stateCookie = findCookie(startRes, OAUTH_STATE_COOKIE);
