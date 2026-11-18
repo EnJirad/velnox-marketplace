@@ -179,6 +179,16 @@ async function openSocket(wsUrl: string, token: string): Promise<{ ws: WebSocket
     ws.once("open", () => resolve());
     ws.once("error", reject);
   });
+  // "open" is the CLIENT observing the handshake; the server's `connection`
+  // handler can still be a tick away. A message dispatched in that window is
+  // delivered to nobody, which made this file intermittently time out at
+  // `waitFor` with no message missing from the database. A subscribe for a
+  // channel this connection may NOT have is still answered by the server's own
+  // handler (`error FORBIDDEN`), so any answer proves the socket is registered.
+  ws.send(JSON.stringify({ type: "subscribe", channel: "__registration_probe__" }));
+  await frames.waitFor((f) => f.type === "subscribed" || f.type === "error");
+  // The probe is harness traffic, not something these cases assert about.
+  frames.frames.length = 0;
   return { ws, frames };
 }
 
