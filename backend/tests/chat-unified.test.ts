@@ -179,6 +179,16 @@ async function openSocket(wsUrl: string, token: string): Promise<{ ws: WebSocket
     ws.once("open", () => resolve());
     ws.once("error", reject);
   });
+  // "open" is the CLIENT observing the handshake; the server's `connection`
+  // handler can still be a tick away. A message dispatched in that window is
+  // delivered to nobody, which made this file intermittently time out at
+  // `waitFor` with no message missing from the database. A subscribe for a
+  // channel this connection may NOT have is still answered by the server's own
+  // handler (`error FORBIDDEN`), so any answer proves the socket is registered.
+  ws.send(JSON.stringify({ type: "subscribe", channel: "__registration_probe__" }));
+  await frames.waitFor((f) => f.type === "subscribed" || f.type === "error");
+  // The probe is harness traffic, not something these cases assert about.
+  frames.frames.length = 0;
   return { ws, frames };
 }
 
@@ -545,7 +555,12 @@ describeDb("unified chat, end to end (requires TEST_DATABASE_URL)", () => {
       sellerSock.ws.close();
       staffSock2.ws.close();
     }
-  });
+    // This case opens five sockets and drives four DB-seeded round trips. Bun's
+    // default 5s per-test budget is a deadline on the whole scenario, so a loaded
+    // CI runner could fail it while every assertion still holds. The frame waits
+    // below keep their own 5s deadline: a message that never arrives still fails
+    // loudly instead of being given more time to arrive.
+  }, 30_000);
 
   // ── Unread counts ───────────────────────────────────────────────────────
   testFn("unread counts are scoped per role and clear on a bounded read", async () => {

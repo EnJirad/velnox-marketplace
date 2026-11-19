@@ -227,23 +227,24 @@ export default function ShopChat() {
   useEffect(() => {
     if (!isAuthenticated || !user?.id) return;
     return onChatReconnect(() => {
-      // Don't reload if we already have messages for this conversation
       const activeId = activeIdRef.current;
+      // The conversation list may have gained a thread while the socket was down.
+      void loadConversations();
       if (!activeId) return;
-      const alreadyHaveMessages = messages.length > 0;
-      if (alreadyHaveMessages) return;
       conversationMessages({ conversationId: activeId })
         .then((res) => {
-          // Dedup against receivedMessageIds to prevent duplicate render on reconnect
-          const items = (res.items ?? []) as ChatMessage[];
-          const newMessages = items.filter((m) => !receivedMessageIds.current.has(m.id));
-          newMessages.forEach((m) => receivedMessageIds.current.add(m.id));
-          setMessages(newMessages);
+          // REPLACE, never append: the server's answer already contains every
+          // message, including the ones published while the socket was down. The
+          // old "skip when we already have messages" guard silently dropped
+          // exactly those, and appending re-created the duplicates this set is
+          // meant to prevent.
+          setMessages((res.items ?? []) as ChatMessage[]);
+          receivedMessageIds.current = new Set(((res.items ?? []) as ChatMessage[]).map((m) => m.id));
           setHasMore(!!res.hasMore);
         })
         .catch((err) => console.error("Reload messages after reconnect failed:", err));
     });
-  }, [isAuthenticated, user?.id, loadConversations, conversationMessages, messages.length]);
+  }, [isAuthenticated, user?.id, loadConversations, conversationMessages]);
 
   // ── Scroll handling ─────────────────────────────────────────────────
   // A new page of OLDER messages must not move the reader: restore the exact

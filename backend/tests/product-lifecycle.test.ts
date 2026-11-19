@@ -17,7 +17,7 @@
  * real INSERT/SELECT path against the database.
  */
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import {
   ADMIN_MODERATION_TRANSITIONS,
@@ -44,7 +44,6 @@ const sellerQueueSrc = readFileSync(join(root, "apps/velcenter/src/components/Se
 const identityUploaderSrc = readFileSync(join(root, "packages/shared/src/components/seller/IdentityDocumentUploader.tsx"), "utf8");
 const reasonsSrc = readFileSync(join(root, "packages/shared/src/lib/verification-reasons.ts"), "utf8");
 const localesSrc = readFileSync(join(root, "packages/shared/src/lib/i18n/locales/index.ts"), "utf8");
-const badgeSrc = readFileSync(join(root, "packages/shared/src/components/VBadge.tsx"), "utf8");
 const schemaSql = readFileSync(join(root, "db/schema.sql"), "utf8");
 const sqlEditor = readFileSync(join(root, "db/run-sqleditor.sql"), "utf8");
 
@@ -149,8 +148,11 @@ describe("catalog visibility", () => {
   });
 
   test("catalog + product detail queries filter on status = 'published'", () => {
-    expect(productsSrc).toContain(`let where = "WHERE p.status = 'published' AND sh.status = 'active'"`);
-    expect(productsSrc).toContain("WHERE p.id = $1 AND p.status = 'published'");
+    // The catalog predicate is named once and reused, and the detail read also
+    // requires an active shop — stricter than the old inline literal.
+    expect(productsSrc).toContain(`const BASE_WHERE = "WHERE p.status = 'published' AND sh.status = 'active'"`);
+    expect(productsSrc).toContain("let where = BASE_WHERE;");
+    expect(productsSrc).toContain("WHERE p.id = $1 AND p.status = 'published' AND sh.status = 'active'");
     expect(productsSrc).toContain("WHERE p.shop_id = $1 AND p.status = 'published'");
   });
 
@@ -186,13 +188,21 @@ describe("V eligibility (seller-only)", () => {
     expect(productsSrc).toContain("computeIsVerifiedProduct(");
   });
 
-  test("the badge component derives V from the seller only and never trusts a boolean prop", () => {
-    expect(badgeSrc).toContain('sellerVerification === "verified"');
-    expect(badgeSrc).not.toContain("isVerifiedProduct: boolean");
+  test("no client renders a V badge; V is derived server-side only", () => {
+    // The decorative badge was removed (P1-F). What still matters is that "V"
+    // never comes from a boolean a client can set: the payload builder derives it
+    // with `computeIsVerifiedProduct` from the seller's status (asserted above),
+    // and no client component decides it.
+    expect(existsSync(join(root, "packages/shared/src/components/VBadge.tsx"))).toBe(false);
   });
 
-  test("the VelShop verified filter requires only seller verification in SQL", () => {
-    expect(productsSrc).toContain("s.verification_status = 'verified'");
+  test("the VelShop verified filter is gone, not half removed", () => {
+    // The "verified sellers only" storefront filter was removed together with the
+    // decorative V badge: verification is a security state, not a merchandising
+    // facet. A half-removed filter would either return nothing to every customer
+    // or start claiming product-level verification again, so neither predicate
+    // may exist in the catalog query.
+    expect(productsSrc).not.toContain("s.verification_status = 'verified'");
     expect(productsSrc).not.toContain("p.verification_status = 'verified'");
   });
 
@@ -363,7 +373,7 @@ describe("variants + cart", () => {
 
   test("only published products are orderable through the catalog", () => {
     // The catalog is the only source the storefront uses to add to cart.
-    expect(productsSrc).toContain(`let where = "WHERE p.status = 'published' AND sh.status = 'active'"`);
+    expect(productsSrc).toContain(`const BASE_WHERE = "WHERE p.status = 'published' AND sh.status = 'active'"`);
   });
 });
 

@@ -7,7 +7,7 @@
  * remain enforced server-side. These contracts pin both halves of that rule.
  */
 import { describe, expect, test } from "bun:test";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, statSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
 const root = join(import.meta.dir, "..", "..");
@@ -57,10 +57,16 @@ describe("no user-facing V badge is rendered", () => {
 });
 
 describe("verification remains a security state, not a decoration", () => {
-  test("the shared module still exports the verification business logic", () => {
-    const badgeModule = read("packages/shared/src/components/VBadge.tsx");
-    expect(badgeModule).toContain("export function isProductVerified");
-    expect(badgeModule).toContain("export function VerificationStatusLabel");
+  test("the shared module labels verification but never decides it", () => {
+    // The decorative VBadge module was removed; the only verification module
+    // left on the client is the status label. It renders text and must not
+    // decide whether a product or seller is verified — that decision lives in
+    // the backend, asserted by the two cases below.
+    const labelModule = read("packages/shared/src/components/VerificationStatusLabel.tsx");
+    expect(labelModule).toContain("export function VerificationStatusLabel");
+    expect(labelModule).toContain("export type VerificationStatus");
+    // The removed badge must not come back: a V glyph is not a trust signal.
+    expect(existsSync(join(root, "packages/shared/src/components/VBadge.tsx"))).toBe(false);
   });
 
   test("selling still requires an approved seller", () => {
