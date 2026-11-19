@@ -19,6 +19,8 @@ import { getClient, query } from "../db/index.js";
 import { hashPassword, isPasswordHashFormat, verifyPassword } from "../lib/password.js";
 import { createRateLimiter, ipKey } from "../middleware/rate-limit.js";
 import { createSessionToken, setSessionCookie } from "./auth.js";
+import { requireAuth } from "../middleware/auth.js";
+import { validateGoogleClaims } from "../lib/google-identity.js";
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/;
 const PASSWORD_RE = /^(?=.*[A-Za-z])(?=.*\d).{8,128}$/;
@@ -100,38 +102,10 @@ async function verifyGoogleToken(idToken: string): Promise<IdentityResult | Erro
     return fail(503, "GOOGLE_UNAVAILABLE", "Google verification is temporarily unavailable");
   }
 
-  const audience = String(payload.aud ?? "");
-  const issuer = String(payload.iss ?? "");
-  const expiry = Number(payload.exp);
-  if (
-    audience !== clientId ||
-    (issuer !== "https://accounts.google.com" && issuer !== "accounts.google.com") ||
-    !Number.isFinite(expiry) ||
-    expiry * 1000 <= Date.now()
-  ) {
-    return fail(401, "INVALID_GOOGLE_TOKEN", "Google identity claims are not valid for this app");
-  }
-  const azp = payload.azp == null ? "" : String(payload.azp);
-  if (azp && azp !== clientId) {
-    return fail(401, "INVALID_GOOGLE_TOKEN", "Google identity has a different authorized party");
-  }
-  if (String(payload.email_verified) !== "true") {
-    return fail(401, "EMAIL_NOT_VERIFIED", "Google email is not verified");
-  }
-  const sub = String(payload.sub ?? "");
-  const email = String(payload.email ?? "").trim().toLowerCase();
-  if (!sub || !EMAIL_RE.test(email)) {
-    return fail(401, "INVALID_GOOGLE_TOKEN", "Google identity is missing subject or email");
-  }
-
-  return {
-    ok: true,
-    userId: sub,
-    email,
-    name: String(payload.name ?? email.split("@")[0]).slice(0, 120),
-    role: "customer",
-    verifiedEmail: true,
-  };
+  // Every claim rule lives in lib/google-identity.ts so it can be tested without
+  // a network round trip. Google has already verified the signature and lifetime;
+  // this decides whether the identity is acceptable for THIS application.
+  return validateGoogleClaims(payload, clientId);
 }
 
 /** LINE's official verify endpoint returns the signed ID-token payload. */
@@ -195,7 +169,14 @@ async function verifyLineToken(idToken: string, nonce?: string): Promise<Identit
 /**
  * Resolve an existing identity or create a user atomically. The unique index
  * on (provider, provider_id) and users.email is the final race-condition guard.
- * Existing password accounts are linked only for a verified email (Google).
+ *
+ * An existing account is NEVER linked automatically. A verified Google email
+ * proves control of the address, but it does not prove that the person signing in
+ * is the same person who created a password account with it: attaching an
+ * identity to an account silently hands over everything in it (orders, addresses,
+ * saved payment state). The caller must first sign in with the existing
+ * credentials and then call /api/auth/mobile/link, which is the proof of
+ * ownership. `link_required` is the answer that asks for exactly that.
  */
 async function resolveIdentity(identity: IdentityResult, provider: "google" | "line") {
   const client = await getClient();
@@ -217,18 +198,10 @@ async function resolveIdentity(identity: IdentityResult, provider: "google" | "l
       identity.email,
     ]);
     if (emailMatch.rowCount) {
-      if (!identity.verifiedEmail) {
-        await client.query("ROLLBACK");
-        return { kind: "conflict" as const };
-      }
-      const row = emailMatch.rows[0];
-      await client.query(
-        `INSERT INTO auth_identities (user_id, provider, provider_id, email, created_at)
-         VALUES ($1, $2, $3, $4, NOW())`,
-        [row.id, provider, identity.userId, identity.email],
-      );
-      await client.query("COMMIT");
-      return { kind: "session" as const, user: { id: row.id, email: row.email, name: row.name, role: row.role } };
+      await client.query("ROLLBACK");
+      return identity.verifiedEmail
+        ? { kind: "link_required" as const }
+        : { kind: "conflict" as const };
     }
 
     const inserted = await client.query(
@@ -254,6 +227,68 @@ async function resolveIdentity(identity: IdentityResult, provider: "google" | "l
     try { await client.query("ROLLBACK"); } catch { /* connection already closed */ }
     const code = (error as { code?: string })?.code;
     if (code === "23505") return { kind: "conflict" as const };
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Attach a verified Google identity to an account the caller is already signed in
+ * to. This is the "prove ownership" half of linking: holding a valid session for
+ * the account is the proof, and the Google token is verified independently.
+ *
+ * Rejects three cases rather than guessing:
+ *   - the Google identity already belongs to a different account (`conflict`)
+ *   - the account already has a Google identity (`already`)
+ *   - the verified Google email is not the account's email (`email_mismatch`)
+ */
+async function linkGoogleIdentity(userId: string, identity: IdentityResult) {
+  const client = await getClient();
+  try {
+    await client.query("BEGIN");
+
+    const existing = await client.query(
+      "SELECT user_id FROM auth_identities WHERE provider = 'google' AND provider_id = $1 FOR UPDATE",
+      [identity.userId],
+    );
+    if (existing.rowCount) {
+      const owner = existing.rows[0].user_id as string;
+      await client.query("ROLLBACK");
+      return owner === userId ? { kind: "already" as const } : { kind: "conflict" as const };
+    }
+
+    const mine = await client.query(
+      "SELECT 1 FROM auth_identities WHERE user_id = $1 AND provider = 'google'",
+      [userId],
+    );
+    if (mine.rowCount) {
+      await client.query("ROLLBACK");
+      return { kind: "already" as const };
+    }
+
+    const me = await client.query("SELECT email FROM users WHERE id = $1", [userId]);
+    if (!me.rowCount) {
+      await client.query("ROLLBACK");
+      return { kind: "conflict" as const };
+    }
+    if (String(me.rows[0].email).trim().toLowerCase() !== identity.email) {
+      await client.query("ROLLBACK");
+      return { kind: "email_mismatch" as const };
+    }
+
+    await client.query(
+      `INSERT INTO auth_identities (user_id, provider, provider_id, email, created_at)
+       VALUES ($1, 'google', $2, $3, NOW())`,
+      [userId, identity.userId, identity.email],
+    );
+    await client.query("COMMIT");
+    return { kind: "linked" as const };
+  } catch (error) {
+    try { await client.query("ROLLBACK"); } catch { /* connection already closed */ }
+    // UNIQUE(provider, provider_id) is the final guard against a duplicate
+    // mapping created by two concurrent requests.
+    if ((error as { code?: string })?.code === "23505") return { kind: "conflict" as const };
     throw error;
   } finally {
     client.release();
@@ -340,8 +375,18 @@ export function setupMobileAuth(app: Express): void {
       const identity = await verifyGoogleToken(parsed.data.idToken);
       if (!identity.ok) { sendError(res, identity); return; }
       const resolved = await resolveIdentity(identity, "google");
-      if (resolved.kind === "conflict") {
-        sendError(res, fail(409, "ACCOUNT_CONFLICT", "Sign in with your existing account before linking Google"));
+      if (resolved.kind !== "session") {
+        if (resolved.kind === "link_required") {
+          sendError(
+            res,
+            fail(409, "LINK_REQUIRED", "Sign in with your existing password, then link Google"),
+          );
+          return;
+        }
+        sendError(
+          res,
+          fail(409, "ACCOUNT_CONFLICT", "Sign in with your existing account before linking Google"),
+        );
         return;
       }
       sendSession(res, 200, resolved.user);
@@ -361,7 +406,7 @@ export function setupMobileAuth(app: Express): void {
       const identity = await verifyLineToken(parsed.data.idToken, parsed.data.nonce);
       if (!identity.ok) { sendError(res, identity); return; }
       const resolved = await resolveIdentity(identity, "line");
-      if (resolved.kind === "conflict") {
+      if (resolved.kind !== "session") {
         sendError(res, fail(409, "ACCOUNT_CONFLICT", "Sign in with your existing account before linking LINE"));
         return;
       }
@@ -369,6 +414,59 @@ export function setupMobileAuth(app: Express): void {
     } catch (error) {
       console.error("[mobile-auth] LINE sign-in failed:", (error as Error)?.message ?? error);
       sendError(res, fail(500, "DB_ERROR", "LINE sign-in failed"));
+    }
+  });
+
+  /**
+   * POST /api/auth/mobile/link
+   *
+   * Requires a valid session. Links a verified Google identity to the signed-in
+   * account, which is what turns a `LINK_REQUIRED` answer into a usable sign-in
+   * method. Holding the session is the proof of ownership; the Google token is
+   * verified separately, and the two emails must match.
+   */
+  app.post("/api/auth/mobile/link", requireAuth, async (req: Request, res: Response) => {
+    const parsed = socialSchema.safeParse(req.body);
+    if (!parsed.success) {
+      sendError(res, fail(400, "VALIDATION_ERROR", "A Google ID token is required"));
+      return;
+    }
+
+    const userId = req.user?.userId;
+    if (!userId) {
+      sendError(res, fail(401, "UNAUTHORIZED", "Not authenticated"));
+      return;
+    }
+
+    try {
+      const identity = await verifyGoogleToken(parsed.data.idToken);
+      if (!identity.ok) { sendError(res, identity); return; }
+
+      const linked = await linkGoogleIdentity(userId, identity);
+      switch (linked.kind) {
+        case "linked":
+          res.json({ success: true, data: { linked: true } });
+          return;
+        case "already":
+          // Idempotent: the caller asked for a state that already holds.
+          res.json({ success: true, data: { linked: true, already: true } });
+          return;
+        case "email_mismatch":
+          sendError(
+            res,
+            fail(409, "EMAIL_MISMATCH", "The Google email does not match this account"),
+          );
+          return;
+        case "conflict":
+          sendError(
+            res,
+            fail(409, "IDENTITY_CONFLICT", "This Google account is already linked elsewhere"),
+          );
+          return;
+      }
+    } catch (error) {
+      console.error("[mobile-auth] link failed:", (error as Error)?.message ?? error);
+      sendError(res, fail(500, "DB_ERROR", "Could not link Google"));
     }
   });
 
@@ -380,6 +478,11 @@ export function setupMobileAuth(app: Express): void {
       data: {
         google: Boolean(process.env.MOBILE_GOOGLE_CLIENT_ID ?? process.env.GOOGLE_CLIENT_ID),
         line: Boolean(process.env.LINE_CHANNEL_ID),
+        // Public OAuth client id (not a secret — it appears in every OAuth URL).
+        // The Android app needs it as `serverClientId` for Google Sign-In, so
+        // publishing it here means a deployment change needs no new APK.
+        googleClientId:
+          process.env.MOBILE_GOOGLE_CLIENT_ID ?? process.env.GOOGLE_CLIENT_ID ?? null,
       },
     });
   });
