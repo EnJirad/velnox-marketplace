@@ -1,5 +1,5 @@
 import type { Express, Request, Response } from "express";
-import { S3Client, PutObjectCommand, DeleteObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, DeleteObjectCommand, ListObjectsV2Command, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { requireAuth } from "../middleware/auth.js";
 import { query } from "../db/index.js";
@@ -38,6 +38,21 @@ function createR2Client() {
 const R2 = createR2Client();
 const BUCKET = getR2Config().bucket;
 const PUBLIC_DOMAIN = getR2Config().publicDomain;
+
+export function getPublicBaseUrl(req?: Request): string {
+  const domain = getR2Config().publicDomain;
+  if (domain && domain.trim().length > 0) {
+    const d = domain.trim().replace(/\/+$/, "");
+    return d.startsWith("http://") || d.startsWith("https://") ? d : `https://${d}`;
+  }
+  if (process.env.PUBLIC_API_URL) {
+    return `${process.env.PUBLIC_API_URL.replace(/\/+$/, "")}/api/media`;
+  }
+  if (req) {
+    return `${req.protocol}://${req.get("host")}/api/media`;
+  }
+  return "https://velnox-api.onrender.com/api/media";
+}
 
 // ─── Allowed MIME types + size limit come from lib/media-config.ts ──────────
 
@@ -566,7 +581,7 @@ export function setupUploadRoutes(app: Express): void {
       });
 
       const uploadUrl = await getSignedUrl(R2, command, { expiresIn: 300 });
-      const cdnUrl = PUBLIC_DOMAIN ? `${PUBLIC_DOMAIN}/${objectKey}` : objectKey;
+      const cdnUrl = `${getPublicBaseUrl(req)}/${objectKey}`;
 
       r2Log("intent", { step: "presign", status: "success" });
 
@@ -611,7 +626,7 @@ export function setupUploadRoutes(app: Express): void {
         return;
       }
 
-      const url = PUBLIC_DOMAIN ? `${PUBLIC_DOMAIN}/${objectKey}` : objectKey;
+      const url = `${getPublicBaseUrl(req)}/${objectKey}`;
 
       r2Log("save", { step: "verify_ownership", userId, kind });
       if (!validateObjectKeyOwnership(objectKey, userId)) {
@@ -781,7 +796,7 @@ export function setupUploadRoutes(app: Express): void {
           Body: buffer,
           ContentType: effectiveMime,
         }));
-        finalUrl = PUBLIC_DOMAIN ? `${PUBLIC_DOMAIN}/${objectKey}` : objectKey;
+        finalUrl = `${getPublicBaseUrl(req)}/${objectKey}`;
 
         // Upsert media record
         await query(
@@ -828,6 +843,38 @@ export function setupUploadRoutes(app: Express): void {
     } catch (err) {
       r2Log("direct_upload", { step: "direct_upload", status: "failed", error: String(err) });
       res.status(500).json({ success: false, error: { code: "DIRECT_UPLOAD_FAILED", message: "Failed to upload profile image" } });
+    }
+  });
+
+  // ─── Public media streaming (serves R2 objects when R2_PUBLIC_DOMAIN is not set or custom) ─
+  app.get("/api/media/*", async (req: Request, res: Response) => {
+    try {
+      const rawPath = req.params[0] || req.path.replace(/^\/api\/media\//, "");
+      const objectKey = decodeURIComponent(rawPath).replace(/^\/+/, "");
+      if (!objectKey) {
+        res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Media not found" } });
+        return;
+      }
+      const command = new GetObjectCommand({
+        Bucket: BUCKET,
+        Key: objectKey,
+      });
+      const r2Res = await R2.send(command);
+      if (r2Res.ContentType) {
+        res.setHeader("Content-Type", r2Res.ContentType);
+      }
+      res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+      if (r2Res.Body) {
+        (r2Res.Body as any).pipe(res);
+      } else {
+        res.status(404).send("Not found");
+      }
+    } catch (err: any) {
+      if (err?.$metadata?.httpStatusCode === 404 || err?.name === "NoSuchKey") {
+        res.status(404).send("Not found");
+      } else {
+        res.status(500).send("Storage error");
+      }
     }
   });
 

@@ -946,12 +946,20 @@ export function setupGoogleAuth(app: Express): void {
       }
       const u = result.rows[0];
 
+      const normalizeMediaUrl = (url: string | null) => {
+        if (!url) return null;
+        if (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("data:")) return url;
+        const base = process.env.R2_PUBLIC_DOMAIN?.replace(/\/+$/, "")
+          || (process.env.PUBLIC_API_URL ? `${process.env.PUBLIC_API_URL.replace(/\/+$/, "")}/api/media` : "https://velnox-api.onrender.com/api/media");
+        return `${base}/${url.replace(/^\/+/, "")}`;
+      };
+
       const userData = {
         id: u.id,
         email: u.email,
         name: u.name,
-        avatar: u.avatar,
-        coverUrl,
+        avatar: normalizeMediaUrl(u.avatar),
+        coverUrl: normalizeMediaUrl(coverUrl),
         role: u.role,
         // Drives `canSeeTab('settings')` (admin + general department).
         department: u.department ?? null,

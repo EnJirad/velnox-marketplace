@@ -181,12 +181,20 @@ export function setupRoutes(app: Express): void {
         } catch { /* ignore */ }
       }
 
+      const normalizeMediaUrl = (url: string | null) => {
+        if (!url) return null;
+        if (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("data:")) return url;
+        const base = process.env.R2_PUBLIC_DOMAIN?.replace(/\/+$/, "")
+          || (process.env.PUBLIC_API_URL ? `${process.env.PUBLIC_API_URL.replace(/\/+$/, "")}/api/media` : "https://velnox-api.onrender.com/api/media");
+        return `${base}/${url.replace(/^\/+/, "")}`;
+      };
+
       const profileData = {
         name: u.name,
         email: u.email,
         phone: u.phone || null,
-        avatarUrl: u.avatar || null,
-        coverUrl,
+        avatarUrl: normalizeMediaUrl(u.avatar),
+        coverUrl: normalizeMediaUrl(coverUrl),
         memberSince: new Date(u.created_at).getTime(),
       };
 
