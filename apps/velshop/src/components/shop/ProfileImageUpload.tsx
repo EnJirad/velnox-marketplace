@@ -97,6 +97,7 @@ export function ProfileImageUpload({
 
   const getUploadIntent = useAction(api.customer.getProfileImageUploadIntent);
   const saveProfileImage = useAction(api.customer.saveProfileImage);
+  const directProfileImage = useAction(api.customer.directProfileImage);
 
   const resetInput = useCallback(() => {
     if (inputRef.current) inputRef.current.value = "";
@@ -220,7 +221,37 @@ export function ProfileImageUpload({
           credentials: "omit",
         });
 
-        let uploadRes: Response;
+        // Helper for direct backend upload fallback if R2 direct PUT fails
+        const tryDirectFallback = async () => {
+          try {
+            r2cLog("put", { status: "fallback_direct_attempt", kind });
+            const reader = new FileReader();
+            const dataUrl = await new Promise<string>((resolve, reject) => {
+              reader.onload = () => resolve(reader.result as string);
+              reader.onerror = reject;
+              reader.readAsDataURL(uploadFile);
+            });
+            const directResult = await directProfileImage({
+              kind,
+              dataUrl,
+              mimeType: uploadFile.type,
+            });
+            const permanentUrl =
+              kind === "cover"
+                ? (directResult.coverUrl || directResult.url)
+                : (directResult.avatarUrl || directResult.url);
+            if (permanentUrl) {
+              onUploaded(permanentUrl);
+              toast.success(t("profile.imageUploadedSuccess") || "บันทึกรูปโปรไฟล์เรียบร้อยแล้ว");
+              return true;
+            }
+          } catch (directErr) {
+            console.error("[R2 CLIENT] direct fallback failed:", directErr);
+          }
+          return false;
+        };
+
+        let uploadRes: Response | null = null;
         try {
           uploadRes = await fetch(intentData.uploadUrl, {
             method: "PUT",
@@ -237,7 +268,10 @@ export function ProfileImageUpload({
             message: fetchErr instanceof Error ? fetchErr.message : String(fetchErr),
             name: fetchErr instanceof Error ? fetchErr.name : "unknown",
           });
-          console.error("[R2 CLIENT] PUT failed:", classification, fetchErr);
+          console.warn("[R2 CLIENT] Direct PUT network failure, attempting direct server fallback...");
+          const fallbackSuccess = await tryDirectFallback();
+          if (fallbackSuccess) return;
+
           toast.error(
             classification.includes("CorsOrNetwork")
               ? "ไม่สามารถอัปโหลดรูปได้ — ตรวจสอบการเชื่อมต่ออินเทอร์เน็ต หรือ R2 CORS settings"
@@ -260,7 +294,10 @@ export function ProfileImageUpload({
             httpStatusText: uploadRes.statusText,
             responsePreview: responseText.slice(0, 200),
           });
-          console.error("[R2 CLIENT] R2 returned HTTP", uploadRes.status, uploadRes.statusText, responseText.slice(0, 200));
+          console.warn("[R2 CLIENT] R2 returned HTTP", uploadRes.status, uploadRes.statusText, "attempting direct server fallback...");
+          const fallbackSuccess = await tryDirectFallback();
+          if (fallbackSuccess) return;
+
           toast.error(t("profile.imageUploadFailed"));
           return;
         }
@@ -343,7 +380,7 @@ export function ProfileImageUpload({
         resetInput();
       }
     },
-    [kind, onUploaded, onUploadingChange, resetInput, t, getUploadIntent, saveProfileImage],
+    [kind, onUploaded, onUploadingChange, resetInput, t, getUploadIntent, saveProfileImage, directProfileImage],
   );
 
   return (

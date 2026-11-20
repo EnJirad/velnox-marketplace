@@ -194,7 +194,7 @@ const RULES: Array<{ match: (req: Request) => boolean; limiter: RequestHandler }
 
   // ── Uploads (user-keyed — presign generation is the abuse surface) ───────
   { match: (req) => req.method === "POST" && (req.path === "/api/upload/presign" || req.path === "/api/customer/profile-image/upload-intent"), limiter: createRateLimiter({ name: "upload-intent", windowMs: 60_000, max: 20 }) },
-  { match: (req) => req.method === "POST" && (req.path === "/api/upload/confirm" || req.path === "/api/customer/profile-image/save"), limiter: createRateLimiter({ name: "upload-confirm", windowMs: 60_000, max: 40 }) },
+  { match: (req) => req.method === "POST" && (req.path === "/api/upload/confirm" || req.path === "/api/customer/profile-image/save" || req.path === "/api/customer/profile-image/direct"), limiter: createRateLimiter({ name: "upload-confirm", windowMs: 60_000, max: 40 }) },
 
   // ── Cart / addresses / wishlist / profile (user-keyed, generous) ─────────
   { match: (req) => (req.method === "POST" || req.method === "PUT" || req.method === "DELETE") && /^\/api\/customer\/(cart|addresses|wishlist)/.test(req.path), limiter: createRateLimiter({ name: "customer-mutations", windowMs: 60_000, max: 60 }) },

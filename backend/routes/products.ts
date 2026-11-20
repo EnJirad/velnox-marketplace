@@ -73,6 +73,7 @@ function getR2(): S3Client {
         accessKeyId: cfg.accessKeyId,
         secretAccessKey: cfg.secretAccessKey,
       },
+      forcePathStyle: true,
     });
   }
   return _r2;

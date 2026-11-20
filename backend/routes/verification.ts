@@ -75,6 +75,7 @@ export function registerVerificationRoutes(app: Express) {
       accessKeyId: process.env.R2_ACCESS_KEY_ID || "",
       secretAccessKey: process.env.R2_SECRET_ACCESS_KEY || "",
     },
+    forcePathStyle: true,
   });
   const evidenceBucket = process.env.R2_BUCKET || "";
   const evidencePublicDomain = (process.env.R2_PUBLIC_DOMAIN || "").replace(/\/+$/, "");

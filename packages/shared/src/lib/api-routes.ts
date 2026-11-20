@@ -182,6 +182,7 @@ const ACTION_MAP: Record<string, (args?: any) => Promise<any>> = {
   "api.customer.updateProfileAction": (a) => apiPut("/api/customer/profile", a),
   "api.customer.getProfileImageUploadIntent": (a) => apiPost("/api/customer/profile-image/upload-intent", a),
   "api.customer.saveProfileImage": (a) => apiPost("/api/customer/profile-image/save", a),
+  "api.customer.directProfileImage": (a) => apiPost("/api/customer/profile-image/direct", a),
   "api.customer.myAddresses": () => apiGet("/api/customer/addresses"),
   "api.customer.saveAddress": (a) => apiPost("/api/customer/addresses", a),
   "api.customer.deleteAddressAction": (a) => apiDelete(`/api/customer/addresses/${a.addressId}`),

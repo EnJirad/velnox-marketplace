@@ -71,6 +71,7 @@ function getR2(): S3Client {
       region: "auto",
       endpoint: `https://${cfg.accountId}.r2.cloudflarestorage.com`,
       credentials: { accessKeyId: cfg.accessKeyId, secretAccessKey: cfg.secretAccessKey },
+      forcePathStyle: true,
     });
   }
   return _r2;

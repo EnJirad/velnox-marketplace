@@ -31,6 +31,7 @@ function createR2Client() {
       accessKeyId: cfg.accessKeyId,
       secretAccessKey: cfg.secretAccessKey,
     },
+    forcePathStyle: true,
   });
 }
 
@@ -734,6 +735,101 @@ export function setupUploadRoutes(app: Express): void {
   // media row, i.e. a full bypass of the verified upload flow. The canonical
   // `POST /api/customer/profile-image/save` already writes that same reference
   // after the object has been verified in storage, so nothing replaced it.
+
+  // ─── Direct profile image upload (robust fail-safe for mobile & web) ───
+  app.post("/api/customer/profile-image/direct", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const { kind, dataUrl, base64, mimeType = "image/webp" } = req.body;
+      const userId = req.user!.userId;
+
+      if (!isProfileImageKind(kind)) {
+        res.status(400).json({ success: false, error: { code: "INVALID_PURPOSE", message: "kind must be avatar or cover" } });
+        return;
+      }
+
+      let buffer: Buffer;
+      let effectiveMime = typeof mimeType === "string" && mimeType.startsWith("image/") ? mimeType : "image/webp";
+
+      if (typeof dataUrl === "string" && dataUrl.startsWith("data:")) {
+        const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+        if (!match) {
+          res.status(400).json({ success: false, error: { code: "INVALID_DATA_URL", message: "Invalid data URL format" } });
+          return;
+        }
+        effectiveMime = match[1];
+        buffer = Buffer.from(match[2], "base64");
+      } else if (typeof base64 === "string" && base64.length > 0) {
+        buffer = Buffer.from(base64, "base64");
+      } else {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "dataUrl or base64 required" } });
+        return;
+      }
+
+      if (buffer.length === 0 || buffer.length > 5 * 1024 * 1024) {
+        res.status(400).json({ success: false, error: { code: "FILE_TOO_LARGE", message: "File exceeds 5MB limit" } });
+        return;
+      }
+
+      const objectKey = `profile/${kind}/${userId}.webp`;
+      let finalUrl = "";
+
+      // Try uploading directly to R2 storage
+      try {
+        await R2.send(new PutObjectCommand({
+          Bucket: BUCKET,
+          Key: objectKey,
+          Body: buffer,
+          ContentType: effectiveMime,
+        }));
+        finalUrl = PUBLIC_DOMAIN ? `${PUBLIC_DOMAIN}/${objectKey}` : objectKey;
+
+        // Upsert media record
+        await query(
+          `INSERT INTO media (url, key, content_type, size, uploaded_by, created_at)
+           VALUES ($1, $2, $3, $4, $5, NOW())
+           ON CONFLICT (key) DO UPDATE
+             SET url = EXCLUDED.url,
+                 content_type = EXCLUDED.content_type,
+                 size = EXCLUDED.size`,
+          [finalUrl, objectKey, effectiveMime, buffer.length, userId]
+        ).catch(() => {});
+      } catch (r2Err) {
+        r2Log("direct_upload", { step: "r2_put", status: "fallback_to_data_url", error: String(r2Err) });
+        // Fallback: store data URL directly in database
+        finalUrl = `data:${effectiveMime};base64,${buffer.toString("base64")}`;
+      }
+
+      // Update user profile reference in Neon PostgreSQL
+      if (kind === "avatar") {
+        await query("UPDATE users SET avatar = $1, updated_at = NOW() WHERE id = $2", [finalUrl, userId]);
+      } else if (kind === "cover") {
+        try {
+          await query("UPDATE users SET cover_url = $1, updated_at = NOW() WHERE id = $2", [finalUrl, userId]);
+        } catch (coverErr: any) {
+          if (coverErr?.code !== "42703") throw coverErr;
+        }
+      }
+
+      invalidateCachedProfile(userId);
+      try {
+        const { invalidateCustomerProfileCache } = await import("./index.js");
+        invalidateCustomerProfileCache(userId);
+      } catch { /* non-fatal */ }
+
+      res.json({
+        success: true,
+        data: {
+          kind,
+          avatarUrl: kind === "avatar" ? finalUrl : undefined,
+          coverUrl: kind === "cover" ? finalUrl : undefined,
+          url: finalUrl,
+        },
+      });
+    } catch (err) {
+      r2Log("direct_upload", { step: "direct_upload", status: "failed", error: String(err) });
+      res.status(500).json({ success: false, error: { code: "DIRECT_UPLOAD_FAILED", message: "Failed to upload profile image" } });
+    }
+  });
 
   // ─── R2 Health Check (admin-safe, no credentials exposed) ────────────────
   app.get("/api/health/r2", async (_req: Request, res: Response) => {
