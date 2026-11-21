@@ -264,7 +264,7 @@ export function ResumePaymentButton({
               {t("common.cancel")}
             </Button>
             <Button
-              className="gap-1.5 bg-brand text-white hover:bg-emerald-600"
+              className="gap-1.5 bg-brand text-white hover:bg-brand-strong"
               disabled={paying || selected === null}
               onClick={() => selected && void startPayment(selected)}
             >

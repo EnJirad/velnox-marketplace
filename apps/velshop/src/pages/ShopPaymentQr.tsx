@@ -123,8 +123,8 @@ export default function ShopPaymentQr() {
 
         <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white">
           <div className="flex items-center gap-2 border-b border-slate-100 px-5 py-4">
-            <span className="flex size-9 items-center justify-center rounded-[10px] bg-[#ECFDF5]">
-              <QrCode className="size-4 text-[#10B981]" />
+            <span className="flex size-9 items-center justify-center rounded-squircle-sm bg-brand/10">
+              <QrCode className="size-4 text-brand" />
             </span>
             <div>
               <h1 className="text-base font-bold text-slate-900">{t("paymentQr.title")}</h1>

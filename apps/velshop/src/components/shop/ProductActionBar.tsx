@@ -158,8 +158,8 @@ export function ProductActionBar({
         disabled={loading === "save"}
         className={`flex items-center gap-1 rounded-squircle-sm transition-colors ${
           saved
-            ? "bg-emerald-50 text-emerald-600"
-            : "text-slate-400 hover:bg-slate-100 hover:text-emerald-600"
+            ? "bg-brand/10 text-brand"
+            : "text-slate-400 hover:bg-slate-100 hover:text-brand"
         }`}
         aria-label={saved ? t("product.unsave") : t("product.save")}
         aria-pressed={saved}

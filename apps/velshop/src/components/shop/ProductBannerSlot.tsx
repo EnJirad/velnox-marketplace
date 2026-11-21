@@ -112,7 +112,7 @@ export function ProductBannerSlot({ placement, label }: ProductBannerSlotProps) 
                   {row.ctaUrl && (
                     <Link
                       to={row.ctaUrl}
-                      className="mt-1.5 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-squircle-sm bg-[#10b981] text-[#ffffff] text-[10px] font-bold hover:bg-[#059669]"
+                      className="mt-1.5 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-squircle-sm bg-brand text-white text-[10px] font-bold hover:bg-brand-strong"
                     >
                       {row.ctaLabel || t("marketing.stripCta")} →
                     </Link>

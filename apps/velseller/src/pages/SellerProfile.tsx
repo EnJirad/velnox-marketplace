@@ -470,10 +470,9 @@ export default function SellerProfile() {
                   <ShieldCheck className="size-5" />
                 </span>
                 <div>
-                  <h2 className="text-sm font-bold text-slate-900">เครื่องหมาย V</h2>
+                  <h2 className="text-sm font-bold text-slate-900">การยืนยันตัวตนร้านค้า</h2>
                   <p className="mt-1.5 text-sm leading-6 text-slate-600">
-                    ร้านค้าที่ผ่านการยืนยันตัวตนจะได้รับเครื่องหมาย <span className="inline-flex items-center gap-0.5 font-bold text-emerald-600"><ShieldCheck className="size-3.5" /> V</span> 
-                    {' '}แสดงบนสินค้าทุกรายการ เพิ่มความเชื่อมั่นให้ลูกค้า
+                    ร้านค้าที่ผ่านการยืนยันตัวตนจะได้รับสถานะยืนยันอย่างเป็นทางการ ช่วยเพิ่มความน่าเชื่อถือและความมั่นใจให้กับลูกค้าในการสั่งซื้อสินค้า
                   </p>
                   <div className="mt-3">
                     <VerificationStatusLabel status={(seller?.verificationStatus ?? "unverified") as VerificationStatus} />

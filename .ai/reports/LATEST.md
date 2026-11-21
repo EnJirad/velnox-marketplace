@@ -39,6 +39,10 @@
    - เพิ่ม `pb-28 md:pb-12` ป้องกัน MobileTabBar บังรายการสินค้า
 5. **`apps/velshop/src/components/shop/CategoryStrip.tsx`**:
    - ปรับสีให้เป็น `bg-brand` และ `hover:border-brand/40 hover:bg-brand/5` ตรงตาม Design Token v2.2
+6. **ทำความสะอาด Hardcoded Color & ข้อความสถาปัตยกรรมเก่า**:
+   - ขจัดสี hardcoded `#10b981`, `#059669` ใน `ProductBannerSlot.tsx` และ `ShopPaymentQr.tsx` ให้ใช้ `bg-brand`, `text-brand`
+   - ปรับ `hover:bg-emerald-600` เป็น `hover:bg-brand-strong` ใน `productActions.ts` และ `ResumePaymentButton.tsx`
+   - อัปเดตข้อความใน `SellerProfile.tsx` จาก "เครื่องหมาย V" (ที่ถูกยกเลิกไปแล้ว) เป็น "การยืนยันตัวตนร้านค้า" เพื่อความถูกต้องของสถาปัตยกรรมปัจจุบัน
 
 ## 3. ไฟล์ที่ได้รับการแก้ไข
 
