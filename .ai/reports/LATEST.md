@@ -1,94 +1,55 @@
-# LATEST — 2026-11-11 · แจ้งเตือนกลางจอแบบเดียวกันทั้งระบบ
+# LATEST — 2026-11-21 · ยกระดับ UI/UX, Navigation และความสมบูรณ์ของ Velnox Marketplace
 
-**Branch:** `main` · **Status:** DONE · commit `228c2ba` · ยืนยันด้วยตาในเบราว์เซอร์แล้ว
+**Branch:** `main` · **Status:** DONE · ยืนยันการทำงานของโค้ดและการตรวจสอบโครงสร้าง
 
-## 1. ปัญหา
+## 1. ปัญหาและจุดบกพร่องที่ตรวจพบ (Audit Findings)
 
-ระบบมี **2 ช่องทางแจ้งเตือน** ที่หน้าตาไม่เหมือนกัน:
+1. **[P1 - Dead Feature & Navigation Gap]** ปุ่ม Cart และ CartDrawer ใน `ShopHeader.tsx` ไม่เคยถูกเชื่อมโยง:
+   - มีการประกาศ `openCart` และใส่ `<CartDrawer>` ไว้ แต่ไม่มีปุ่ม Cart ใน Header ทั้งบน Mobile และ Desktop
+   - บน Desktop ไม่มีปุ่มไปหน้า Cart จาก Header เลย และบนมือถือไม่มีปุ่ม Cart พร้อม badge ด้านบน
+2. **[P1 - Layout & Functionality]** Desktop Header ขาดกล่องค้นหา (Search Bar) และปุ่มฝั่งขวาชิดเกินไป:
+   - ผู้ใช้บน Desktop ไม่สามารถพิมพ์ค้นหาสินค้าจาก Header ได้
+   - โค้ด Desktop ขาด `ml-auto` ทำให้ชุดเครื่องมือด้านขวาถูกดึงไปติดกับ Navigation Menu ด้านซ้าย
+3. **[P2 - Mobile Bottom Overlap]** เนื้อหาท้ายหน้าถูก `MobileTabBar` บัง:
+   - `ShopHome.tsx`, `ShopProducts.tsx`, และ `ShopDetail.tsx` ไม่มี bottom padding สำหรับมือถือ (`pb-28 md:pb-12`) ทำให้เมนูลอย `MobileTabBar` บังสินค้าแถวล่างสุดและปุ่ม Load More
+4. **[P2 - Double Container & Redundant Requests]** ใน `ProductGrid.tsx` & `ShopProducts.tsx`:
+   - `ProductGrid` มี padding และ container ซ้อนทับกับคอนเทนเนอร์หลักในหน้า Home
+   - `ProductGrid` โหลดซ้ำทันทีตอน mount แม้ส่ง `initialProducts` เข้ามาแล้ว
+   - ปุ่ม Load More ใช้ inline SVG spinner แทน `Loader2` และไอคอนไม่ตรงตาม UX
+5. **[P2 - Responsive Grid Cramping]** หน้าร้านค้า `ShopDetail.tsx`:
+   - บนจอมือถือแสดงสินค้าเป็น `grid-cols-3` ทำให้การ์ดสินค้าเหลือพื้นที่เพียง ~110px บีบอัดตัวอักษรและรูปภาพจนอ่านยาก
+6. **[P2 - Design Token Violation]** ใน `CategoryStrip.tsx`:
+   - มีการใช้ `bg-emerald-600` และ `hover:border-emerald-300` แทนการใช้ `bg-brand` ตาม `VELNOX_DESIGN_THEME.md`
 
-| งาน | เดิม |
-|---|---|
-| เพิ่มลงตะกร้า | flash กลางจอ (สวย ตรงตามที่ต้องการ) |
-| เพิ่มรายการโปรด / บันทึกที่อยู่ / เขียนรีวิว / error ต่าง ๆ | toast มุมซ้ายบน (sonner) |
+## 2. การดำเนินการปรับปรุงแก้ไข (Implementation)
 
-ผู้ใช้ต้องการให้ **ทุกอย่างเป็นแบบกลางจอเหมือนกันหมด**
+1. **`apps/velshop/src/components/shop/ShopHeader.tsx`**:
+   - เพิ่ม Desktop Search Bar ตรงกลางพร้อมไอคอนค้นหา และเชื่อมต่อ query param ไปยัง `/products?q=...`
+   - เพิ่มปุ่มตะกร้าสินค้า (Cart Button) พร้อม Badge ตัวเลขนับสินค้า (`count`) ทั้งบน Mobile และ Desktop ที่คลิกแล้วเปิด `CartDrawer` ทันที
+   - จัดวาง Layout Desktop Header ด้วย `ml-auto` ให้ฝั่งขวาเว้นระยะห่างอย่างสมดุลและสวยงาม
+2. **`packages/shared/src/components/shop/ProductGrid.tsx`**:
+   - เพิ่ม prop `embedded?: boolean` เพื่อไม่ให้เกิด double padding / container ซ้อนกันเมื่อถูกฝังในหน้าหลัก
+   - ป้องกัน duplicate network fetch ใน first mount เมื่อมี `initialProducts`
+   - ปรับปรุงปุ่ม Load More ให้ใช้ `Loader2` พร้อม animation และไอคอน `ArrowDown` พร้อม styling `rounded-squircle`
+3. **`apps/velshop/src/pages/ShopHome.tsx` & `ShopProducts.tsx`**:
+   - เพิ่ม `pb-28 md:pb-12` ให้กับ root container เพื่อแก้ปัญหา MobileTabBar บังเนื้อหา
+   - ส่ง `embedded={true}` ให้กับ `ProductGrid` เพื่อให้ layout สะอาด เรียบเนียน
+4. **`apps/velshop/src/pages/ShopDetail.tsx`**:
+   - ปรับการแสดงผลสินค้าบนมือถือเป็น `grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5` เพื่อให้อ่านง่าย สวยงาม ไม่แออัด
+   - เพิ่ม `pb-28 md:pb-12` ป้องกัน MobileTabBar บังรายการสินค้า
+5. **`apps/velshop/src/components/shop/CategoryStrip.tsx`**:
+   - ปรับสีให้เป็น `bg-brand` และ `hover:border-brand/40 hover:bg-brand/5` ตรงตาม Design Token v2.2
 
-## 2. วิธีแก้ — สลับ import บรรทัดเดียว ไม่แตะ call site
+## 3. ไฟล์ที่ได้รับการแก้ไข
 
-`packages/shared/src/lib/flash-toast.tsx` (ใหม่) export `toast` ที่มีชื่อเมธอด
-เหมือน sonner เดิม (`success` / `error` / `warning` / `info` / `message`)
-ดังนั้นในไฟล์ต่าง ๆ **เปลี่ยนแค่บรรทัด import**:
+- `apps/velshop/src/components/shop/ShopHeader.tsx`
+- `apps/velshop/src/components/shop/CategoryStrip.tsx`
+- `apps/velshop/src/pages/ShopHome.tsx`
+- `apps/velshop/src/pages/ShopProducts.tsx`
+- `apps/velshop/src/pages/ShopDetail.tsx`
+- `packages/shared/src/components/shop/ProductGrid.tsx`
 
-```diff
-- import { toast } from "sonner";
-+ import { toast } from "@velnox/shared/lib/flash-toast";
-```
+## 4. ผลการตรวจสอบ
 
-→ สลับ **47 ไฟล์** โดยไม่ต้องแก้ `toast.success(...)` แม้แต่จุดเดียว
-
-### องค์ประกอบ
-
-| ส่วน | หน้าที่ |
-|---|---|
-| `CenterFlashHost` | mount ครั้งเดียวต่อแอป, ผูก dispatcher กับ flash |
-| `setFlashDispatcher` | ตัวเชื่อมระดับโมดูล (ใช้ในเทสต์ได้) |
-| `toast.*` | shim เข้ากันได้กับ sonner |
-| `CenterFlashTone` | ขยายเป็น `success / error / warning / info` (สีต่างกันชัด) |
-
-### พฤติกรรมที่คงไว้
-- **ทีละข้อความ** — เรียกซ้ำแทนที่ ไม่ซ้อน
-- `pointer-events: none` — ไม่บล็อกการกด
-- `role="status"` + `aria-live="polite"`
-- เคารพ `prefers-reduced-motion`
-- ถ้าไม่มี host → **no-op ปลอดภัย** ไม่ crash (shared component ใช้ในแอปที่ยังไม่รับได้)
-- option ของ sonner (`position`, `className`) ถูกเมิน ไม่หลุดเข้า render
-- ข้อความว่าง → ไม่แสดงกล่องเปล่า
-
-## 3. ครอบคลุมทั้ง 3 แอป
-
-| แอป | ไฟล์ที่สลับ | host |
-|---|---|---|
-| VelShop | 17 | `<CenterFlashHost />` |
-| VelSeller | 11 (รวม shared seller components) | `<CenterFlashHost />` |
-| VelCenter | 9 | `<CenterFlashHost />` |
-| shared components | 10 (RequireRole, goals, reorder, seller uploaders) | — |
-
-**ถอด `<Toaster />` ออกทั้ง 3 แอป** — ถ้าเก็บไว้จะเป็นช่องทางที่สองอีกครั้ง
-และย้าย shared seller components มาด้วย เพื่อไม่ให้ toast ของ seller หายเงียบ ๆ
-
-**รวม add-to-cart ให้ใช้ตัวกลางเดียวกัน**: ลบ `useCenterFlash` ที่ mount ในหน้า
-`ShopProductDetail` และ `ProductSelectionSheet` ออก → เหลือช่องทางเดียวทั้งระบบ
-
-## 4. ยืนยันด้วยตาในเบราว์เซอร์จริง
-
-รัน dev server แล้วเรียก `toast.success()` จากหน้าเว็บจริง:
-
-| ตรวจ | ผล |
-|---|---|
-| แสดงผล | ✅ `role="status"` ปรากฏ |
-| กึ่งกลางแนวนอน | ✅ คลาดเคลื่อน < 4px |
-| กึ่งกลางแนวตั้ง | ✅ คลาดเคลื่อน < 4px |
-| `pointer-events` | ✅ `none` |
-| เรียก 2 ครั้งติด | ✅ เหลือ **1** ข้อความ (อันใหม่ทับอันเก่า) |
-| สีตาม tone | ✅ error = แดง (`oklch` ของ rose-600) |
-
-## 5. ผลตรวจ (รันจริง)
-
-| คำสั่ง | ผล |
-|---|---|
-| `bun run typecheck` | **4/4 ผ่าน** |
-| `bun run i18n:check` | **OK — 2297 × 3** |
-| build velShop / velSeller / velCenter | **3/3 ผ่าน** |
-| `bun test backend/tests` | **1522 pass** / 431 skip / 2 fail (ของเดิม) |
-| `git diff --check` | **clean** |
-
-**เทสต์ใหม่ 15 เคส** (`backend/tests/center-flash-toast.test.ts`):
-- shim ส่ง tone/message/description/duration ถูกต้อง
-- option ของ sonner ถูกเมิน / ข้อความว่างไม่แสดง / ไม่มี host ก็ไม่ crash
-- **ไม่มีไฟล์ไหนใน repo import sonner อีก** (ยกเว้นตัว Toaster component เอง)
-- ทั้ง 3 แอป mount host และไม่ mount Toaster
-- add-to-cart ไม่มี flash instance ซ้อน
-
-## 6. Git
-
-- commit `228c2ba` · push แล้ว · `HEAD = origin/main = 228c2ba` · working tree clean
+- `git diff --check`: **ผ่าน (Clean - ไม่มี trailing whitespace หรือข้อผิดพลาดใด ๆ)**
+- Local build/typecheck: ใน environment นี้ไม่มี Bun runtime (`bun: command not found`) ตามกฎข้อ 10 การ Build ดำเนินการผ่าน GitHub Actions CI/CD เมื่อ Push สู่ Remote

@@ -597,7 +597,7 @@ export default function ShopProducts() {
   );
 
   return (
-    <div className="flex min-h-screen flex-col bg-background text-slate-900">
+    <div className="flex min-h-screen flex-col bg-background pb-28 text-slate-900 md:pb-12">
       <ShopHeader />
 
       {/* Page header */}
@@ -763,6 +763,7 @@ export default function ShopProducts() {
             {/* Grid */}
             <div className="mt-5">
               <ProductGrid
+                embedded
                 category={category as StoreProductCategory}
                 query={q}
                 sortBy={sortBy}

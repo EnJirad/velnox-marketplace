@@ -295,7 +295,7 @@ export default function ShopHome() {
   useEffect(() => { setSeo({ title: t("home.seoTitle", { shop: "VelShop" }), description: t("home.seoDesc", { tagline: "ซื้อขายของจริง ปลีกและส่ง ในที่เดียว" }) }); }, [t]);
 
   return (
-    <div className="flex min-h-screen flex-col bg-background text-slate-900">
+    <div className="flex min-h-screen flex-col bg-background pb-28 text-slate-900 md:pb-12">
       <ShopHeader />
 
       {/* Hero — Announcement Carousel (single slot, platform-level messages only) */}
@@ -357,6 +357,7 @@ export default function ShopHome() {
       {/* Product Grid — Server-paginated via ProductGrid component */}
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6 sm:py-8">
         <ProductGrid
+          embedded
           initialProducts={products.slice(0, 8)}
           initialMeta={{ total: products.length, hasMore: products.length > 8 }}
           title={t("home.allProductsTitle") ?? "All products"}

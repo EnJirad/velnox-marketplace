@@ -51,8 +51,8 @@ function CategoryChip({
       className={cn(
         "shrink-0 flex items-center gap-1.5 rounded-squircle-sm px-3 py-1.5 text-sm font-medium transition-all",
         isActive
-          ? "bg-emerald-600 text-white shadow-sm"
-          : "bg-white text-slate-700 border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50"
+          ? "bg-brand text-white shadow-sm"
+          : "bg-white text-slate-700 border border-slate-200 hover:border-brand/40 hover:bg-brand/5"
       )}
       aria-pressed={isActive}
     >
@@ -167,8 +167,8 @@ export function CategoryStrip({
                 className={cn(
                   "shrink-0 flex items-center gap-1.5 rounded-squircle-sm px-3 py-1.5 text-sm font-medium transition-all whitespace-nowrap",
                   activeCategory === "all"
-                    ? "bg-emerald-600 text-white shadow-sm"
-                    : "bg-white text-slate-700 border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50"
+                    ? "bg-brand text-white shadow-sm"
+                    : "bg-white text-slate-700 border border-slate-200 hover:border-brand/40 hover:bg-brand/5"
                 )}
               >
                 {allLabel}
@@ -185,8 +185,8 @@ export function CategoryStrip({
                 className={cn(
                   "shrink-0 flex items-center gap-1.5 rounded-squircle-sm px-3 py-1.5 text-sm font-medium transition-all whitespace-nowrap",
                   activeCategory === cat.id
-                    ? "bg-emerald-600 text-white shadow-sm"
-                    : "bg-white text-slate-700 border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50"
+                    ? "bg-brand text-white shadow-sm"
+                    : "bg-white text-slate-700 border border-slate-200 hover:border-brand/40 hover:bg-brand/5"
                 )}
               >
                 {cat.iconName || cat.imageUrl ? (

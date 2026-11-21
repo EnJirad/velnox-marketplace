@@ -170,7 +170,7 @@ export default function ShopDetail() {
   // ── Loading state ──
   if (loading) {
     return (
-      <div className="min-h-screen bg-background text-slate-900">
+      <div className="min-h-screen bg-background pb-28 text-slate-900 md:pb-12">
         <ShopHeader />
         <main className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6">
           {/* Cover skeleton */}
@@ -185,9 +185,9 @@ export default function ShopDetail() {
             </div>
           </div>
           {/* Product skeletons */}
-          <div className="mt-6 grid grid-cols-3 gap-1.5 sm:grid-cols-4 lg:grid-cols-5">
-            {Array.from({ length: 9 }).map((_, i) => (
-              <Skeleton key={i} className="aspect-square rounded-lg" />
+          <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <Skeleton key={i} className="aspect-square rounded-xl" />
             ))}
           </div>
         </main>
@@ -198,7 +198,7 @@ export default function ShopDetail() {
   // ── Error state ──
   if (error || !shop) {
     return (
-      <div className="min-h-screen bg-background text-slate-900">
+      <div className="min-h-screen bg-background pb-28 text-slate-900 md:pb-12">
         <ShopHeader />
         <main className="mx-auto flex w-full max-w-6xl flex-col items-center px-4 py-24 text-center sm:px-6">
           <Store className="size-10 text-slate-300" />
@@ -220,7 +220,7 @@ export default function ShopDetail() {
   const descriptionLong = (shop.description ?? "").length > 120;
 
   return (
-    <div className="min-h-screen bg-background text-slate-900">
+    <div className="min-h-screen bg-background pb-28 text-slate-900 md:pb-12">
       <ShopHeader />
 
       <main className="mx-auto w-full max-w-[1280px] px-3 py-4 sm:px-6 sm:py-6">
@@ -371,7 +371,7 @@ export default function ShopDetail() {
               )}
             </div>
           ) : (
-            <div className="mt-3 grid grid-cols-3 gap-1.5 sm:grid-cols-4 lg:grid-cols-5">
+            <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
               {filteredProducts.map((product) => (
                 <ProductCard
                   key={product.id}
@@ -381,7 +381,6 @@ export default function ShopDetail() {
                   wishlisted={wishlistIds.has(product.id)}
                   onWishlist={handleWishlist}
                   wishToggling={wishTogglingId === product.id}
-                  compact
                   showShop={false}
                 />
               ))}

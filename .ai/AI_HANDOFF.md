@@ -1,8 +1,13 @@
 # Velnox AI Handoff — Current State
 
-**Last verified:** 2026-11-18 · **Branch:** `fix/ci-baseline` (base `main` @ `4b6b09d`)
+**Last verified:** 2026-11-21 · **Branch:** `main` · **Focus:** Full Website Audit & Autonomous UI/UX Improvement (Completed)
 
-## 0. CI Baseline Repair (2026-11-18)
+## 0. UI/UX & Responsive Optimization (2026-11-21)
+- **Header & Navigation:** เพิ่ม Desktop Search bar, คืนค่าปุ่มตะกร้าสินค้า (Cart Button + Count Badge) ทั้งบน Desktop และ Mobile เชื่อมโยงกับ `CartDrawer` และจัด Layout ฝั่งขวาด้วย `ml-auto`
+- **Mobile Responsive:** แก้ไขปัญหา MobileTabBar บังเนื้อหาด้านล่างในหน้า Home, Products, และ Shop Detail ด้วย `pb-28 md:pb-12`
+- **Shop Detail:** ปรับ Grid บนมือถือจาก 3 คอลัมน์ที่แออัดเกินไปเป็น 2 คอลัมน์ตามมาตรฐาน Design Theme
+- **ProductGrid & Performance:** รองรับ `embedded` prop ป้องกัน double container/padding และป้องกัน duplicate initial request
+- **Design Tokens:** ปรับสี category chip ใน `CategoryStrip` ให้ใช้ `bg-brand` ตาม `VELNOX_DESIGN_THEME.md`
 
 `bun test backend/tests` บน `main` แดงต่อเนื่องตั้งแต่การถอด V badge (run `44229924213`) ทำให้ PR #15/#16 ถูกตัดสินบน diff ของตัวเองไม่ได้ สาเหตุที่ยืนยันแล้วและแก้ใน branch `fix/ci-baseline`:
 

@@ -7,7 +7,7 @@ import { useLanguage } from "@/lib/i18n";
 import { api } from "@velnox/shared/lib/api-routes";
 import { useAction } from "@velnox/shared/lib/api-routes";
 import { type StoreProduct, type StoreProductCategory } from "@velnox/shared/lib/commerce";
-import { Search, ChevronLeft, ChevronRight, type LucideIcon } from "lucide-react";
+import { Search, ChevronLeft, ChevronRight, ArrowDown, Loader2, type LucideIcon } from "lucide-react";
 
 interface ProductGridProps {
   /** Initial products (optional — if provided, skips first fetch) */
@@ -59,6 +59,8 @@ interface ProductGridProps {
   showHeader?: boolean;
   /** Page size */
   pageSize?: number;
+  /** When true, do not wrap in a full section container with duplicate padding */
+  embedded?: boolean;
 }
 
 const DEFAULT_PAGE_SIZE = 24;
@@ -89,6 +91,7 @@ export function ProductGrid({
   gridClassName,
   showHeader = true,
   pageSize = DEFAULT_PAGE_SIZE,
+  embedded = false,
 }: ProductGridProps) {
   const { t } = useLanguage();
   const catalog = useAction(api.commerce.catalogProductsAction);
@@ -98,7 +101,8 @@ export function ProductGrid({
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [meta, setMeta] = useState({ total: initialMeta.total, hasMore: initialMeta.hasMore, cursor: initialMeta.cursor });
-  const offsetRef = useRef(0);
+  const offsetRef = useRef(initialProducts.length > 0 ? initialProducts.length : 0);
+  const isFirstMount = useRef(true);
 
   const buildParams = useCallback(() => {
     const params: Record<string, string> = {
@@ -158,6 +162,10 @@ export function ProductGrid({
 
   // Load on mount and when filters change
   useEffect(() => {
+    if (isFirstMount.current) {
+      isFirstMount.current = false;
+      if (initialProducts.length > 0) return;
+    }
     load(true);
   }, [load]);
 
@@ -179,68 +187,78 @@ export function ProductGrid({
     />
   ), [onProductClick, onAddToCart, wishlistIds, onWishlistToggle, wishTogglingId, badgeLabel]);
 
+  const content = (
+    <>
+      {showHeader && (
+        <SectionHeader
+          icon={icon}
+          title={title}
+          description={description}
+          viewAllHref={viewAllHref}
+          viewAllLabel={viewAllLabel}
+        />
+      )}
+      {loading ? (
+        <ProductGridSkeleton count={8} />
+      ) : error ? (
+        <EmptyState
+          icon={Search}
+          title={t("products.errorTitle") ?? "Failed to load products"}
+          description={error}
+          action={{
+            label: t("common.retry") ?? "Retry",
+            onClick: () => load(true),
+            variant: "outline",
+          }}
+          size="lg"
+        />
+      ) : products.length === 0 ? (
+        <EmptyState
+          icon={Search}
+          title={t("products.noResultsTitle") ?? "No products found"}
+          description={t("products.noResultsDesc") ?? "Try adjusting your filters or search terms"}
+          size="lg"
+        />
+      ) : (
+        <>
+          <div className={gridClassName ?? "grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4"}>
+            {products.map(renderProduct)}
+          </div>
+          {meta.hasMore && (
+            <div className="mt-8 text-center">
+              <button
+                type="button"
+                onClick={handleLoadMore}
+                disabled={loadingMore}
+                className="inline-flex items-center gap-2 rounded-squircle border border-slate-200 bg-white px-6 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 disabled:opacity-50"
+              >
+                {loadingMore ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin text-brand" />
+                    <span>{t("common.loading") ?? "Loading..."}</span>
+                  </>
+                ) : (
+                  <>
+                    <span>{t("common.loadMore") ?? "Load more"}</span>
+                    <ArrowDown className="size-4 text-slate-400" />
+                  </>
+                )}
+              </button>
+            </div>
+          )}
+        </>
+      )}
+    </>
+  );
+
+  if (embedded) {
+    return <div className="w-full">{content}</div>;
+  }
+
   return (
     <section className="border-b border-slate-100 bg-white">
       <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6">
-        {showHeader && (
-          <SectionHeader
-            icon={icon}
-            title={title}
-            description={description}
-            viewAllHref={viewAllHref}
-            viewAllLabel={viewAllLabel}
-          />
-        )}
-        {loading ? (
-          <ProductGridSkeleton count={8} />
-        ) : error ? (
-          <EmptyState
-            icon={Search}
-            title={t("products.errorTitle") ?? "Failed to load products"}
-            description={error}
-            action={{
-              label: t("common.retry") ?? "Retry",
-              onClick: () => load(true),
-              variant: "outline",
-            }}
-            size="lg"
-          />
-        ) : products.length === 0 ? (
-          <EmptyState
-            icon={Search}
-            title={t("products.noResultsTitle") ?? "No products found"}
-            description={t("products.noResultsDesc") ?? "Try adjusting your filters or search terms"}
-            size="lg"
-          />
-        ) : (
-          <>
-            <div className={gridClassName ?? "grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4"}>
-              {products.map(renderProduct)}
-            </div>
-            {meta.hasMore && (
-              <div className="mt-6 text-center">
-                <button
-                  type="button"
-                  onClick={handleLoadMore}
-                  disabled={loadingMore}
-                  className="inline-flex items-center gap-2 px-6 py-3 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 disabled:opacity-50 transition-colors"
-                >
-                  {loadingMore ? (
-                    <>
-                      <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" /></svg>
-                      {t("common.loading") ?? "Loading..."}
-                    </>
-                  ) : (
-                    <>
-                      {t("common.loadMore") ?? "Load more"}
-                      <ChevronRight className="size-4" />
-                    </>
-                  )}
-                </button>
-              </div>
-            )}
-          </>
-        )}
+        {content}
       </div>
     </section>
   );

@@ -8,7 +8,7 @@ import { useChatUnread } from "@velnox/shared/hooks/use-chat-unread";
 import { useTracking } from "@velnox/shared/lib/track";
 import { useCart } from "@/lib/cart";
 import { useLanguage } from "@/lib/i18n";
-import { MessageCircle, Search, User } from "lucide-react";
+import { MessageCircle, Search, ShoppingCart, User } from "lucide-react";
 import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 
@@ -96,8 +96,21 @@ export function ShopHeader() {
               <Logo tone="light" wordmarkClassName="max-w-[120px] overflow-hidden truncate" />
             </Link>
           )}
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
             <LanguageSwitcher variant="mobile" tone="brand" />
+            <button
+              type="button"
+              onClick={openCart}
+              aria-label={t("header.ariaCart") ?? "Cart"}
+              className="relative flex size-10 items-center justify-center rounded-squircle text-white transition-colors hover:bg-white/15"
+            >
+              <ShoppingCart className="size-5" />
+              {count > 0 && (
+                <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-white px-1 text-2xs font-bold leading-none text-brand">
+                  {count > 99 ? "99+" : count}
+                </span>
+              )}
+            </button>
             <NotificationBell tone="brand" />
             {isLoading ? null : isAuthenticated && user ? (
               <Link
@@ -125,20 +138,52 @@ export function ShopHeader() {
 
       {/* Desktop bar */}
       <div className="hidden border-b border-white/15 bg-brand md:block">
-        <div className="mx-auto flex h-16 w-full max-w-6xl items-center gap-1.5 px-4 sm:gap-2 sm:px-6">
+        <div className="mx-auto flex h-16 w-full max-w-6xl items-center gap-3 px-4 sm:px-6">
           <Link to="/" aria-label={t("header.ariaHome", { name: "VelShop" })} className="shrink-0">
-            {showSearch || onProducts ? (
-              <Logo tone="light" markOnly />
-            ) : (
-              <Logo tone="light" wordmarkClassName="max-w-[140px] overflow-hidden truncate" />
-            )}
+            <Logo tone="light" wordmarkClassName="max-w-[140px] overflow-hidden truncate" />
           </Link>
-          <nav className="ml-3 hidden items-center gap-1 md:flex" aria-label={t("nav.home")}>
+          <nav className="ml-2 flex items-center gap-1" aria-label={t("nav.home")}>
             {navItem("/", t("nav.home"), true)}
             {navItem("/products", t("nav.market"))}
             {navItem("/categories", t("nav.categories"))}
           </nav>
-          <div className="flex items-center gap-2">
+
+          {/* Desktop Search */}
+          <form role="search" onSubmit={handleSearch} className="mx-4 flex max-w-md flex-1 items-center">
+            <div className="relative flex min-w-0 flex-1 items-center">
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={t("header.searchPlaceholder")}
+                aria-label={t("header.ariaSearch")}
+                enterKeyHint="search"
+                className="h-10 w-full min-w-0 appearance-none rounded-squircle bg-white pl-4 pr-10 text-[13px] text-slate-900 outline-none placeholder:text-slate-400 focus-visible:ring-2 focus-visible:ring-white/70 [&::-webkit-search-cancel-button]:hidden"
+              />
+              <button
+                type="submit"
+                aria-label={t("header.ariaSearch")}
+                className="absolute right-1 flex size-8 cursor-pointer items-center justify-center rounded-squircle-sm text-slate-500 transition-colors hover:text-brand"
+              >
+                <Search className="size-[18px]" />
+              </button>
+            </div>
+          </form>
+
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              type="button"
+              onClick={openCart}
+              aria-label={t("header.ariaCart") ?? "Cart"}
+              className="relative flex size-10 items-center justify-center rounded-squircle text-white transition-colors hover:bg-white/15"
+            >
+              <ShoppingCart className="size-5" />
+              {count > 0 && (
+                <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-white px-1 text-2xs font-bold leading-none text-brand">
+                  {count > 99 ? "99+" : count}
+                </span>
+              )}
+            </button>
             <LanguageSwitcher variant="desktop" tone="brand" />
             <NotificationBell tone="brand" />
             {isLoading ? null : isAuthenticated && user ? (
