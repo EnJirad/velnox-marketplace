@@ -39,7 +39,11 @@ const app = express();
 const server = createServer(app);
 
 // ─── Middleware ──────────────────────────────────────────
-app.use(helmet());
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+  })
+);
 // Render sits behind a single proxy hop — required for correct req.ip
 // (used by IP-keyed rate limits). trust proxy = 1 trusts only the
 // immediate peer's X-Forwarded-For value, not arbitrary spoofing.
@@ -53,11 +57,8 @@ app.use(cookieParser());
 // cannot silently drift. MUST stay BEFORE express.json.
 app.use(stripeWebhookRawBody);
 
-// JSON payload cap. All bodies here are small (chat ≤4k chars, reviews ≤2k,
-// checkout/address metadata) — R2 file bytes go straight to Cloudflare via
-// presigned URLs and never transit the API. 10mb was more than any legit
-// request needs and invited oversized-body abuse.
-app.use(express.json({ limit: "1mb" }));
+// JSON payload cap for image base64 & metadata.
+app.use(express.json({ limit: "10mb" }));
 
 const corsOrigins = process.env.CORS_ORIGINS?.split(",").map((s) => s.trim()).filter(Boolean) || [];
 

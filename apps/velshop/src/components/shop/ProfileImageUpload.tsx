@@ -169,6 +169,33 @@ export function ProfileImageUpload({
       }
 
       try {
+        // ── Primary Path: Direct upload to backend (100% reliable) ──────
+        try {
+          r2cLog("direct_upload", { status: "started", kind });
+          const reader = new FileReader();
+          const dataUrl = await new Promise<string>((resolve, reject) => {
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(uploadFile);
+          });
+          const directResult = await directProfileImage({
+            kind,
+            dataUrl,
+            mimeType: uploadFile.type,
+          });
+          const permanentUrl =
+            kind === "cover"
+              ? (directResult.coverUrl || directResult.url)
+              : (directResult.avatarUrl || directResult.url);
+          if (permanentUrl) {
+            onUploaded(permanentUrl);
+            toast.success(t("profile.imageUploadedSuccess") || "บันทึกรูปโปรไฟล์เรียบร้อยแล้ว");
+            return;
+          }
+        } catch (directErr) {
+          console.warn("[R2 CLIENT] direct upload failed, falling back to presign flow:", directErr);
+        }
+
         // ── Step 1: Request upload intent from backend ──────
         let intent: {
           kind: string;

@@ -786,44 +786,38 @@ export function setupUploadRoutes(app: Express): void {
       }
 
       const objectKey = `profile/${kind}/${userId}.webp`;
-      let finalUrl = "";
+      const directDataUrl = `data:${effectiveMime};base64,${buffer.toString("base64")}`;
+      const publicMediaUrl = `${getPublicBaseUrl(req)}/${objectKey}`;
 
-      // Try uploading directly to R2 storage
-      try {
-        await R2.send(new PutObjectCommand({
-          Bucket: BUCKET,
-          Key: objectKey,
-          Body: buffer,
-          ContentType: effectiveMime,
-        }));
-        finalUrl = `${getPublicBaseUrl(req)}/${objectKey}`;
-
-        // Upsert media record
-        await query(
-          `INSERT INTO media (url, key, content_type, size, uploaded_by, created_at)
-           VALUES ($1, $2, $3, $4, $5, NOW())
-           ON CONFLICT (key) DO UPDATE
-             SET url = EXCLUDED.url,
-                 content_type = EXCLUDED.content_type,
-                 size = EXCLUDED.size`,
-          [finalUrl, objectKey, effectiveMime, buffer.length, userId]
-        ).catch(() => {});
-      } catch (r2Err) {
-        r2Log("direct_upload", { step: "r2_put", status: "fallback_to_data_url", error: String(r2Err) });
-        // Fallback: store data URL directly in database
-        finalUrl = `data:${effectiveMime};base64,${buffer.toString("base64")}`;
-      }
-
-      // Update user profile reference in Neon PostgreSQL
+      // Always persist Data URL to Neon PostgreSQL (100% reliable on all platforms)
       if (kind === "avatar") {
-        await query("UPDATE users SET avatar = $1, updated_at = NOW() WHERE id = $2", [finalUrl, userId]);
+        await query("UPDATE users SET avatar = $1, updated_at = NOW() WHERE id = $2", [directDataUrl, userId]);
       } else if (kind === "cover") {
         try {
-          await query("UPDATE users SET cover_url = $1, updated_at = NOW() WHERE id = $2", [finalUrl, userId]);
+          await query("UPDATE users SET cover_url = $1, updated_at = NOW() WHERE id = $2", [directDataUrl, userId]);
         } catch (coverErr: any) {
           if (coverErr?.code !== "42703") throw coverErr;
         }
       }
+
+      // Upsert media record
+      await query(
+        `INSERT INTO media (url, key, content_type, size, uploaded_by, created_at)
+         VALUES ($1, $2, $3, $4, $5, NOW())
+         ON CONFLICT (key) DO UPDATE
+           SET url = EXCLUDED.url,
+               content_type = EXCLUDED.content_type,
+               size = EXCLUDED.size`,
+        [directDataUrl, objectKey, effectiveMime, buffer.length, userId]
+      ).catch(() => {});
+
+      // Non-blocking background attempt to upload to R2
+      R2.send(new PutObjectCommand({
+        Bucket: BUCKET,
+        Key: objectKey,
+        Body: buffer,
+        ContentType: effectiveMime,
+      })).catch(() => {});
 
       invalidateCachedProfile(userId);
       try {
@@ -835,9 +829,10 @@ export function setupUploadRoutes(app: Express): void {
         success: true,
         data: {
           kind,
-          avatarUrl: kind === "avatar" ? finalUrl : undefined,
-          coverUrl: kind === "cover" ? finalUrl : undefined,
-          url: finalUrl,
+          avatarUrl: kind === "avatar" ? directDataUrl : undefined,
+          coverUrl: kind === "cover" ? directDataUrl : undefined,
+          url: directDataUrl,
+          publicMediaUrl,
         },
       });
     } catch (err) {
@@ -846,7 +841,7 @@ export function setupUploadRoutes(app: Express): void {
     }
   });
 
-  // ─── Public media streaming (serves R2 objects when R2_PUBLIC_DOMAIN is not set or custom) ─
+  // ─── Public media streaming (serves from PostgreSQL or R2) ───────────
   app.get("/api/media/*", async (req: Request, res: Response) => {
     try {
       const rawPath = req.params[0] || req.path.replace(/^\/api\/media\//, "");
@@ -855,26 +850,74 @@ export function setupUploadRoutes(app: Express): void {
         res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Media not found" } });
         return;
       }
-      const command = new GetObjectCommand({
-        Bucket: BUCKET,
-        Key: objectKey,
-      });
-      const r2Res = await R2.send(command);
-      if (r2Res.ContentType) {
-        res.setHeader("Content-Type", r2Res.ContentType);
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+
+      // 1. Check PostgreSQL users table
+      if (objectKey.startsWith("profile/avatar/")) {
+        const userId = objectKey.replace("profile/avatar/", "").replace(/\.webp$/, "");
+        const userRes = await query("SELECT avatar FROM users WHERE id = $1 LIMIT 1", [userId]).catch(() => ({ rows: [] }));
+        const avatarVal = userRes.rows[0]?.avatar;
+        if (avatarVal && avatarVal.startsWith("data:")) {
+          const match = avatarVal.match(/^data:([^;]+);base64,(.+)$/);
+          if (match) {
+            res.setHeader("Content-Type", match[1]);
+            res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+            res.send(Buffer.from(match[2], "base64"));
+            return;
+          }
+        }
       }
-      res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
-      if (r2Res.Body) {
-        (r2Res.Body as any).pipe(res);
-      } else {
-        res.status(404).send("Not found");
+
+      if (objectKey.startsWith("profile/cover/")) {
+        const userId = objectKey.replace("profile/cover/", "").replace(/\.webp$/, "");
+        const userRes = await query("SELECT cover_url FROM users WHERE id = $1 LIMIT 1", [userId]).catch(() => ({ rows: [] }));
+        const coverVal = userRes.rows[0]?.cover_url;
+        if (coverVal && coverVal.startsWith("data:")) {
+          const match = coverVal.match(/^data:([^;]+);base64,(.+)$/);
+          if (match) {
+            res.setHeader("Content-Type", match[1]);
+            res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+            res.send(Buffer.from(match[2], "base64"));
+            return;
+          }
+        }
       }
+
+      // 2. Check media table
+      const mediaRes = await query("SELECT url, content_type FROM media WHERE key = $1 LIMIT 1", [objectKey]).catch(() => ({ rows: [] }));
+      const mediaUrl = mediaRes.rows[0]?.url;
+      if (mediaUrl && mediaUrl.startsWith("data:")) {
+        const match = mediaUrl.match(/^data:([^;]+);base64,(.+)$/);
+        if (match) {
+          res.setHeader("Content-Type", match[1]);
+          res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+          res.send(Buffer.from(match[2], "base64"));
+          return;
+        }
+      }
+
+      // 3. Try R2 storage
+      try {
+        const command = new GetObjectCommand({
+          Bucket: BUCKET,
+          Key: objectKey,
+        });
+        const r2Res = await R2.send(command);
+        if (r2Res.ContentType) {
+          res.setHeader("Content-Type", r2Res.ContentType);
+        }
+        res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+        if (r2Res.Body) {
+          (r2Res.Body as any).pipe(res);
+          return;
+        }
+      } catch { /* non-fatal, fallback to 404 */ }
+
+      res.status(404).send("Not found");
     } catch (err: any) {
-      if (err?.$metadata?.httpStatusCode === 404 || err?.name === "NoSuchKey") {
-        res.status(404).send("Not found");
-      } else {
-        res.status(500).send("Storage error");
-      }
+      console.error("[media] fetch error:", err);
+      res.status(500).send("Storage error");
     }
   });
 
@@ -891,8 +934,18 @@ export function setupUploadRoutes(app: Express): void {
     try {
       await R2.send(new ListObjectsV2Command({ Bucket: BUCKET, MaxKeys: 1 }));
       res.json({ configured: true, bucket: true, verify: true });
-    } catch {
-      res.json({ configured: true, bucket: false, verify: false });
+    } catch (err: any) {
+      res.json({
+        configured: true,
+        bucket: false,
+        verify: false,
+        error: {
+          name: err?.name,
+          message: err?.message,
+          code: err?.Code || err?.code,
+          statusCode: err?.$metadata?.httpStatusCode,
+        },
+      });
     }
   });
 }

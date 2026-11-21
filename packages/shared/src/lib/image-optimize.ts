@@ -34,6 +34,7 @@ export function optimizedUrl(
   opts: { width?: number; format?: "webp" | "avif" | "auto"; quality?: number } = {},
 ): string {
   if (!originalUrl) return originalUrl;
+  if (originalUrl.startsWith("data:") || originalUrl.startsWith("blob:")) return originalUrl;
 
   // r2.dev subdomains cannot be proxied through Cloudflare Image Resizing.
   // Only append transform params when a custom domain is in use.
@@ -62,7 +63,7 @@ export function optimizedUrl(
  * Cover sizes:   640w (mobile), 1280w (tablet), 1920w (desktop)
  */
 export function avatarSrcSet(originalUrl: string): string {
-  if (!originalUrl) return "";
+  if (!originalUrl || originalUrl.startsWith("data:") || originalUrl.startsWith("blob:")) return "";
   const sizes: Array<{ w: number; desc: string }> = [
     { w: 96, desc: "96w" },
     { w: 128, desc: "128w" },
@@ -75,7 +76,7 @@ export function avatarSrcSet(originalUrl: string): string {
 }
 
 export function coverSrcSet(originalUrl: string): string {
-  if (!originalUrl) return "";
+  if (!originalUrl || originalUrl.startsWith("data:") || originalUrl.startsWith("blob:")) return "";
   const sizes: Array<{ w: number; desc: string }> = [
     { w: 640, desc: "640w" },
     { w: 1280, desc: "1280w" },
