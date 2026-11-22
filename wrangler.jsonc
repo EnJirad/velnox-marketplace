@@ -1,0 +1,36 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "velnox-api",
+  "main": "workers/api/src/index.ts",
+  "compatibility_date": "2024-11-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "ENVIRONMENT": "development",
+    "APP_NAME": "Velnox Marketplace API",
+    "APP_VERSION": "3.0.0",
+    "R2_PUBLIC_URL_PREFIX": "https://pub-75f6f26e59df431b854fe53caedb49b6.r2.dev"
+  },
+  "r2_buckets": [
+    {
+      "binding": "R2_BUCKET",
+      "bucket_name": "velnox-media"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "REALTIME_HUB",
+        "class_name": "RealtimeHubDO"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_classes": ["RealtimeHubDO"]
+    }
+  ],
+  "observability": {
+    "enabled": true
+  }
+}
