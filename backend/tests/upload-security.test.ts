@@ -53,12 +53,15 @@ describe("isUploadTooLarge — the server-side size boundary", () => {
     expect(isUploadTooLarge(-1)).toBe(false);
   });
 
-  test("the MIME allowlist is exactly the four documented image types", () => {
+  test("the MIME allowlist contains documented image and video types", () => {
     expect([...ALLOWED_UPLOAD_TYPES]).toEqual([
       "image/jpeg",
       "image/png",
       "image/webp",
       "image/avif",
+      "video/mp4",
+      "video/webm",
+      "video/quicktime",
     ]);
   });
 });

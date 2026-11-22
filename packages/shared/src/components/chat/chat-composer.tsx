@@ -28,7 +28,7 @@ import { ComposerImagePreview } from "./chat-image";
 import { EmojiPicker } from "./emoji-picker";
 
 /** Must stay a subset of `CHAT_IMAGE_TYPES` — the server re-validates anyway. */
-const ACCEPT = "image/jpeg,image/png,image/webp,image/avif";
+const ACCEPT = "image/jpeg,image/png,image/webp,image/avif,video/mp4,video/webm,video/quicktime";
 
 /** When the mobile keyboard opens, scroll the nearest scrollable chat container
  *  to the bottom so the user can see what they are typing (like Messenger). */

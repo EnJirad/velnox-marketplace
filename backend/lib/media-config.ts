@@ -7,16 +7,27 @@
  * drift apart.
  */
 
-/** Allowed image MIME types (must match the frontend upload components). */
-export const ALLOWED_UPLOAD_TYPES = [
+/** Allowed image and video MIME types (must match the frontend upload components). */
+export const ALLOWED_IMAGE_TYPES = [
   "image/jpeg",
   "image/png",
   "image/webp",
   "image/avif",
 ] as const;
 
-/** Maximum accepted upload size (10 MB). */
-export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+export const ALLOWED_VIDEO_TYPES = [
+  "video/mp4",
+  "video/webm",
+  "video/quicktime",
+] as const;
+
+export const ALLOWED_UPLOAD_TYPES = [
+  ...ALLOWED_IMAGE_TYPES,
+  ...ALLOWED_VIDEO_TYPES,
+] as const;
+
+/** Maximum accepted upload size (50 MB to accommodate videos). */
+export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 
 /**
  * Server-side size boundary for a stored object.

@@ -315,7 +315,7 @@ export function setupUploadRoutes(app: Express): void {
       }
 
       if (!ALLOWED_TYPES.includes(contentType) && !(purpose === "category-icon" && contentType === "image/svg+xml")) {
-        res.status(400).json({ success: false, error: { code: "INVALID_FILE_TYPE", message: "File type not allowed. Allowed: jpeg, png, webp, avif (+ svg for category icons)" } });
+        res.status(400).json({ success: false, error: { code: "INVALID_FILE_TYPE", message: "File type not allowed. Allowed: jpeg, png, webp, avif, mp4, webm, mov (+ svg for category icons)" } });
         return;
       }
 
@@ -364,7 +364,9 @@ export function setupUploadRoutes(app: Express): void {
           res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not a participant in this conversation" } });
           return;
         }
-        objectKey = `chat/${conversationId}/${userId}/${randomUUID()}.webp`;
+        const isVideo = typeof contentType === "string" && contentType.startsWith("video/");
+        const ext = isVideo ? (contentType === "video/webm" ? "webm" : "mp4") : "webp";
+        objectKey = `chat/${conversationId}/${userId}/${randomUUID()}.${ext}`;
       } else if (purpose === "announcement") {
         // Storefront announcement artwork is owner/company content: only an
         // account holding settings.manage may mint this namespace.
@@ -838,6 +840,86 @@ export function setupUploadRoutes(app: Express): void {
     } catch (err) {
       r2Log("direct_upload", { step: "direct_upload", status: "failed", error: String(err) });
       res.status(500).json({ success: false, error: { code: "DIRECT_UPLOAD_FAILED", message: "Failed to upload profile image" } });
+    }
+  });
+
+  // ─── Direct chat attachment upload (robust fail-safe for images & videos) ─
+  app.post("/api/upload/direct", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const { conversationId, filename, contentType = "image/webp", dataUrl, base64 } = req.body;
+      const userId = req.user!.userId;
+
+      if (!isConversationId(conversationId)) {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "conversationId required" } });
+        return;
+      }
+
+      const audience = await loadChatAudience(conversationId);
+      const roleRow = await query(`SELECT role FROM users WHERE id = $1`, [userId]);
+      const role = (roleRow.rows[0]?.role as string | undefined) ?? null;
+      if (!audience || !isChatParticipant(audience, userId, role)) {
+        res.status(403).json({ success: false, error: { code: "FORBIDDEN", message: "Not a participant in this conversation" } });
+        return;
+      }
+
+      let buffer: Buffer;
+      let effectiveMime = typeof contentType === "string" ? contentType : "image/webp";
+
+      if (typeof dataUrl === "string" && dataUrl.startsWith("data:")) {
+        const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+        if (!match) {
+          res.status(400).json({ success: false, error: { code: "INVALID_DATA_URL", message: "Invalid data URL format" } });
+          return;
+        }
+        effectiveMime = match[1];
+        buffer = Buffer.from(match[2], "base64");
+      } else if (typeof base64 === "string" && base64.length > 0) {
+        buffer = Buffer.from(base64, "base64");
+      } else {
+        res.status(400).json({ success: false, error: { code: "VALIDATION_ERROR", message: "dataUrl or base64 required" } });
+        return;
+      }
+
+      if (buffer.length === 0 || buffer.length > MAX_UPLOAD_BYTES) {
+        res.status(400).json({ success: false, error: { code: "FILE_TOO_LARGE", message: `File exceeds limit of ${MAX_UPLOAD_BYTES / (1024 * 1024)}MB` } });
+        return;
+      }
+
+      const isVideo = effectiveMime.startsWith("video/");
+      const ext = isVideo ? (effectiveMime === "video/webm" ? "webm" : "mp4") : "webp";
+      const objectKey = `chat/${conversationId}/${userId}/${randomUUID()}.${ext}`;
+      const directDataUrl = `data:${effectiveMime};base64,${buffer.toString("base64")}`;
+      const publicUrl = `${getPublicBaseUrl(req)}/${objectKey}`;
+
+      // Persist in PostgreSQL media table
+      await query(
+        `INSERT INTO media (url, key, content_type, size, uploaded_by, created_at)
+         VALUES ($1, $2, $3, $4, $5, NOW())
+         ON CONFLICT (key) DO UPDATE
+           SET url = EXCLUDED.url,
+               content_type = EXCLUDED.content_type,
+               size = EXCLUDED.size`,
+        [directDataUrl, objectKey, effectiveMime, buffer.length, userId]
+      ).catch(() => {});
+
+      // Non-blocking attempt to replicate to R2
+      R2.send(new PutObjectCommand({
+        Bucket: BUCKET,
+        Key: objectKey,
+        Body: buffer,
+        ContentType: effectiveMime,
+      })).catch(() => {});
+
+      res.json({
+        success: true,
+        data: {
+          objectKey,
+          publicUrl,
+        },
+      });
+    } catch (err) {
+      r2Log("direct_chat_upload", { step: "direct_upload", status: "failed", error: String(err) });
+      res.status(500).json({ success: false, error: { code: "DIRECT_UPLOAD_FAILED", message: "Failed to upload attachment" } });
     }
   });
 

@@ -91,11 +91,19 @@ export function ChatBubble({
       >
         {message.attachmentUrl && (
           <div className={cn(message.body ? "mb-1.5" : "")}>
-            <ChatImageMessage
-              url={message.attachmentUrl}
-              alt={labels.imageAlt}
-              label={labels.viewImage}
-            />
+            {message.attachmentUrl.endsWith(".mp4") || message.attachmentUrl.endsWith(".webm") || message.attachmentUrl.endsWith(".mov") ? (
+              <video
+                src={message.attachmentUrl}
+                controls
+                className="max-h-60 max-w-full rounded-lg object-contain bg-black/90"
+              />
+            ) : (
+              <ChatImageMessage
+                url={message.attachmentUrl}
+                alt={labels.imageAlt}
+                label={labels.viewImage}
+              />
+            )}
           </div>
         )}
         {message.body && (

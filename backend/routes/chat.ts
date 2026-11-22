@@ -228,12 +228,32 @@ export async function resolveChatAttachment(
   if (!key.startsWith(prefix)) {
     return { ok: false, code: "INVALID_ATTACHMENT", message: "Attachment does not belong to this conversation" };
   }
+
+  // 1. Try R2 inspection
+  let found = false;
+  let cType: string | null = null;
+  let size: number | null = null;
+
   const meta = await headR2Object(key);
-  if (!meta.found) return { ok: false, code: "INVALID_ATTACHMENT", message: "Attachment was not uploaded" };
-  if (!meta.contentType || !meta.contentType.startsWith("image/")) {
-    return { ok: false, code: "INVALID_ATTACHMENT", message: "Attachment must be an image" };
+  if (meta.found) {
+    found = true;
+    cType = meta.contentType;
+    size = meta.size;
+  } else {
+    // 2. Check fallback media table (for direct uploads or when R2 storage is unavailable)
+    const mediaRes = await query("SELECT content_type, size FROM media WHERE key = $1 LIMIT 1", [key]).catch(() => ({ rows: [] }));
+    if (mediaRes.rows.length > 0) {
+      found = true;
+      cType = mediaRes.rows[0].content_type;
+      size = Number(mediaRes.rows[0].size) || null;
+    }
   }
-  if (meta.size !== null && meta.size > MAX_UPLOAD_BYTES) {
+
+  if (!found) return { ok: false, code: "INVALID_ATTACHMENT", message: "Attachment was not uploaded" };
+  if (!cType || (!cType.startsWith("image/") && !cType.startsWith("video/"))) {
+    return { ok: false, code: "INVALID_ATTACHMENT", message: "Attachment must be an image or video" };
+  }
+  if (size !== null && size > MAX_UPLOAD_BYTES) {
     return { ok: false, code: "INVALID_ATTACHMENT", message: "Attachment is too large" };
   }
   return { ok: true, key };

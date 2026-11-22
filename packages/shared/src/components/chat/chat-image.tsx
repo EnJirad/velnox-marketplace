@@ -103,7 +103,11 @@ export function ComposerImagePreview({
 }) {
   return (
     <div className="mb-2 flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-2">
-      <img src={previewUrl} alt="" className="size-14 rounded-lg object-cover" />
+      {previewUrl.startsWith("data:video") || previewUrl.includes("video") || previewUrl.endsWith(".mp4") ? (
+        <video src={previewUrl} className="size-14 rounded-lg object-cover bg-black" />
+      ) : (
+        <img src={previewUrl} alt="" className="size-14 rounded-lg object-cover" />
+      )}
       <div className="min-w-0 flex-1">
         {error ? (
           <p className="truncate text-xs text-red-600">{error}</p>
