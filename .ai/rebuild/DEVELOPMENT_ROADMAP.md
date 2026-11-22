@@ -92,15 +92,18 @@
 - **Acceptance Criteria:** แยกหมวดหมู่สินค้าชัดเจน สต็อกสินค้าแยกมิติป้องกัน Race Condition ทดสอบ Concurrency และ Idempotency ผ่าน 100%
 - **Risk:** Low (Completed)
 
-### Milestone 5: Payment, Webhooks & Automated Settlement Engine
+### Milestone 5: Payment, Webhooks & Automated Settlement Engine (COMPLETED)
+- **Status:** COMPLETED (2026-11-22)
 - **Objective:** ปรับปรุงโมดูล `stripe.ts` (3,122 บรรทัด) และระบบการเงินให้มี Idempotency และตรวจสอบความถูกต้องย้อนหลังได้ 100%
 - **Key Modules/Files:**
-  - `backend/src/modules/payment/`
-  - `backend/src/modules/ledger/`
-  - Webhook processing with raw body validation & replay protection
+  - `backend/src/modules/payment/` (Domain, Repository, Services, Routes)
+  - `backend/src/modules/ledger/` (Double-entry Ledger integration, account balance & integrity audit)
+  - Webhook processing with raw body HMAC-SHA256 signature validation & replay protection
+  - Automated Settlement Engine & Inventory Commit/Release coordination
+  - Automated tests (9 tests passed, total 66 tests passed)
 - **Dependencies:** Milestone 4
 - **Acceptance Criteria:** คำสั่งซื้อซ้ำหรือ Webhook ซ้ำต้องไม่หักเงินซ้ำ ยอดเงินและคอมมิชชันใน Ledger ตรงกับ Statement จริง
-- **Risk:** Critical (ความถูกต้องทางการเงิน)
+- **Risk:** Low (Completed)
 
 ### Milestone 6: Frontends Rebuild & Cloudflare Pages Deployment
 - **Objective:** ปรับปรุง Frontend Applications (VelShop, VelSeller, VelCenter) ให้เชื่อมต่อกับ API Contract ใหม่, แยกโมดูล `Center.tsx` (2,384 บรรทัด) ออกเป็นโมดูลย่อย, และจัดเตรียมการ Deploy สู่ **Cloudflare Pages Static Hosting** พร้อมระบบ SPA Routing (`/* /index.html 200`)
