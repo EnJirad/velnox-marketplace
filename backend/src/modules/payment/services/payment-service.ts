@@ -22,6 +22,7 @@ import {
   NotFoundError,
   ValidationError,
   ConflictError,
+  ForbiddenError,
 } from "../../../core/errors/app-error.ts";
 
 export interface WebhookProcessResult {
@@ -89,7 +90,7 @@ export class PaymentService {
     if (input.method === "COD") {
       const codEnabled = process.env.COD_ENABLED === "true" || process.env.COD_ENABLED === "1";
       if (!codEnabled) {
-        throw new AppError("Cash on Delivery is currently disabled", 403, "PAYMENT_METHOD_DISABLED");
+        throw new ForbiddenError("Cash on Delivery is currently disabled", "PAYMENT_METHOD_DISABLED");
       }
     }
 

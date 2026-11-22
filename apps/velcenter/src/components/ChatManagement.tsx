@@ -27,6 +27,7 @@ import { notifyChatUnreadChanged } from "@velnox/shared/hooks/use-chat-unread";
 import { api, useAction } from "@velnox/shared/lib/api-routes";
 import { formatLocaleTime, formatRelativeTime } from "@velnox/shared/lib/commerce";
 import {
+  connectChatSocket,
   onChatEvent,
   onChatReconnect,
   sendChatCommand,

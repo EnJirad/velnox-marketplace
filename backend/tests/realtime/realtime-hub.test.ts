@@ -116,6 +116,9 @@ describe("Realtime Hub & Push Notification Architecture", () => {
           notifSavedInDb = true;
           return { rows: [{ id: "notif_db_1" }] };
         }
+        if (sql.includes("FROM user_device_tokens")) {
+          return { rows: [{ device_token: "fcm_token_123", platform: "android" }] };
+        }
         return { rows: [] };
       },
     };
@@ -125,7 +128,7 @@ describe("Realtime Hub & Push Notification Architecture", () => {
     assert.equal(hub.isUserViewingConversation("user_active_viewer", "conv_999"), true);
     assert.equal(hub.isUserViewingConversation("user_active_viewer", "conv_other"), false);
 
-    // Notification for conv_999 -> should be suppressed
+    // Notification for conv_999 -> should be suppressed by presence
     const res1 = await PushNotificationService.dispatchNotification(
       mockDb,
       {
@@ -140,9 +143,13 @@ describe("Realtime Hub & Push Notification Architecture", () => {
 
     assert.equal(res1.suppressedByPresence, true);
     assert.equal(res1.pushDispatched, false);
+    assert.equal(res1.pushStatus, "suppressed_presence");
     assert.equal(notifSavedInDb, true); // Still saved in DB
 
-    // Notification for another conversation -> push is dispatched
+    // Honest missing-credentials behavior when Firebase credentials not configured
+    const oldProj = process.env.FIREBASE_PROJECT_ID;
+    delete process.env.FIREBASE_PROJECT_ID;
+
     const res2 = await PushNotificationService.dispatchNotification(
       mockDb,
       {
@@ -156,6 +163,66 @@ describe("Realtime Hub & Push Notification Architecture", () => {
     );
 
     assert.equal(res2.suppressedByPresence, false);
-    assert.equal(res2.pushDispatched, true);
+    assert.equal(res2.pushDispatched, false);
+    assert.equal(res2.pushStatus, "blocked_missing_credentials");
+
+    // With configured credentials & active tokens -> delivered
+    process.env.FIREBASE_PROJECT_ID = "velnox-test";
+    process.env.FIREBASE_CLIENT_EMAIL = "firebase@velnox-test.iam.gserviceaccount.com";
+    process.env.FIREBASE_PRIVATE_KEY = "test_key";
+
+    const res3 = await PushNotificationService.dispatchNotification(
+      mockDb,
+      {
+        recipientUserId: "user_active_viewer",
+        title: "New Message",
+        body: "You have a new message",
+        category: "chat",
+        conversationId: "conv_another_thread",
+      },
+      hub,
+    );
+
+    assert.equal(res3.suppressedByPresence, false);
+    assert.equal(res3.pushDispatched, true);
+    assert.equal(res3.pushStatus, "delivered");
+
+    // Cleanup env
+    if (oldProj) process.env.FIREBASE_PROJECT_ID = oldProj;
+    else delete process.env.FIREBASE_PROJECT_ID;
+    delete process.env.FIREBASE_CLIENT_EMAIL;
+    delete process.env.FIREBASE_PRIVATE_KEY;
+  });
+
+  it("cleans up user mapping when socket object does not have userId property", () => {
+    // Socket object without userId property
+    const bareSocket: SocketConnection = {
+      id: "bare_sock_1",
+      send: () => {},
+    };
+
+    hub.registerClient(bareSocket, "user_bare");
+    let presence = hub.getUserPresence("user_bare");
+    assert.equal(presence.isOnline, true);
+    assert.equal(presence.activeConnectionsCount, 1);
+
+    // Unregister by socket id
+    hub.unregisterClient("bare_sock_1");
+    presence = hub.getUserPresence("user_bare");
+    assert.equal(presence.isOnline, false);
+    assert.equal(presence.activeConnectionsCount, 0);
+  });
+
+  it("enforces channel subscription authorization on user-scoped channels", () => {
+    const s1 = new MockSocket("sock_user1");
+    hub.registerClient(s1, "usr_111");
+
+    // Can subscribe to own user channel
+    const allowed = hub.subscribe("sock_user1", "user:usr_111");
+    assert.equal(allowed, true);
+
+    // Cannot subscribe to another user's channel
+    const forbidden = hub.subscribe("sock_user1", "user:usr_222");
+    assert.equal(forbidden, false);
   });
 });

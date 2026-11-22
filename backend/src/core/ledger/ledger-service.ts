@@ -41,7 +41,8 @@ export class LedgerService {
       await db.query("BEGIN");
 
       for (let i = 0; i < transaction.postings.length; i++) {
-        const posting: LedgerPosting = transaction.postings[i];
+        const posting = transaction.postings[i];
+        if (!posting) continue;
         // Unique key per leg of the transaction
         const entryKey =
           transaction.postings.length === 1

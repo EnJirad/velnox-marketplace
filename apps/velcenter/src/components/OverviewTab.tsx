@@ -23,7 +23,7 @@ export interface OverviewTabProps {
   readonly pendingSellers: number;
   readonly pendingVerifications: number;
   readonly marketKpi: MarketKpi | null;
-  readonly onSelectTab: (tab: string) => void;
+  readonly onSelectTab: (tab: any) => void;
 }
 
 export const OverviewTab: React.FC<OverviewTabProps> = ({

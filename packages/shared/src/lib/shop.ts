@@ -108,22 +108,30 @@ export function formatBaht(value: number): string {
   })}`;
 }
 
-export function formatThaiDateTime(timestamp: number): string {
+export function formatThaiDateTime(timestamp: number | string | Date): string {
+  const d =
+    typeof timestamp === "number" || timestamp instanceof Date
+      ? new Date(timestamp)
+      : new Date(String(timestamp));
   return new Intl.DateTimeFormat("th-TH", {
     day: "numeric",
     month: "short",
     year: "numeric",
     hour: "numeric",
     minute: "2-digit",
-  }).format(new Date(timestamp));
+  }).format(isNaN(d.getTime()) ? new Date() : d);
 }
 
-export function formatThaiDate(timestamp: number): string {
+export function formatThaiDate(timestamp: number | string | Date): string {
+  const d =
+    typeof timestamp === "number" || timestamp instanceof Date
+      ? new Date(timestamp)
+      : new Date(String(timestamp));
   return new Intl.DateTimeFormat("th-TH", {
     day: "numeric",
     month: "short",
     year: "numeric",
-  }).format(new Date(timestamp));
+  }).format(isNaN(d.getTime()) ? new Date() : d);
 }
 
 /** Short, human-friendly order number (last 6 chars of the order id). */

@@ -10,6 +10,8 @@ import { randomUUID } from "node:crypto";
 import { isChatParticipant, isConversationId, loadChatAudience } from "../lib/chat-access.js";
 import { userHasPermission } from "../lib/permissions.js";
 
+const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
+
 // ─── R2 Client ──────────────────────────────────────────────────────────────
 
 function getR2Config() {
@@ -769,7 +771,7 @@ export function setupUploadRoutes(app: Express): void {
 
       if (typeof dataUrl === "string" && dataUrl.startsWith("data:")) {
         const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
-        if (!match) {
+        if (!match || !match[1] || !match[2]) {
           res.status(400).json({ success: false, error: { code: "INVALID_DATA_URL", message: "Invalid data URL format" } });
           return;
         }
@@ -867,7 +869,7 @@ export function setupUploadRoutes(app: Express): void {
 
       if (typeof dataUrl === "string" && dataUrl.startsWith("data:")) {
         const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
-        if (!match) {
+        if (!match || !match[1] || !match[2]) {
           res.status(400).json({ success: false, error: { code: "INVALID_DATA_URL", message: "Invalid data URL format" } });
           return;
         }

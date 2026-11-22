@@ -1,7 +1,7 @@
 import type { DbQueryable } from "../../../../database/src/types.ts";
 import { realtimeHub } from "../services/realtime-hub.ts";
 import { PushNotificationService } from "../services/push-notification-service.ts";
-import { authenticateRequest } from "../../../core/middleware/auth-middleware.ts";
+import { authenticateRequest, assertUserRole } from "../../../core/middleware/auth-middleware.ts";
 import { AppError } from "../../../core/errors/app-error.ts";
 import type { HttpResponse } from "../../identity/routes/auth-routes.ts";
 import type { PushNotificationRequest } from "../domain/realtime.ts";
@@ -40,7 +40,8 @@ export class RealtimeController {
   ): Promise<HttpResponse> {
     try {
       // Must be authenticated staff or system caller
-      await authenticateRequest(db, headers, jwtSecret, ["admin", "staff", "owner"]);
+      const user = await authenticateRequest(db, headers, jwtSecret);
+      assertUserRole(user, ["admin"]);
 
       const req: PushNotificationRequest = {
         recipientUserId: String(body?.recipientUserId ?? ""),

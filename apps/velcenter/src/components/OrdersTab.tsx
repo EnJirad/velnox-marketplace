@@ -38,7 +38,7 @@ export interface CenterOrder {
   readonly shopName?: string | null;
   readonly customerName: string;
   readonly customerPhone: string;
-  readonly createdAt: string | Date;
+  readonly createdAt: number | string | Date;
   readonly itemCount: number;
   readonly items: readonly CenterOrderItem[];
   readonly total: number;

@@ -164,10 +164,14 @@ export function formatNumber(value: number): string {
   return value.toLocaleString("th-TH", { maximumFractionDigits: 0 });
 }
 
-export function formatThaiDate(timestamp: number): string {
+export function formatThaiDate(timestamp: number | string | Date): string {
+  const d =
+    typeof timestamp === "number" || timestamp instanceof Date
+      ? new Date(timestamp)
+      : new Date(String(timestamp));
   return new Intl.DateTimeFormat("th-TH", {
     day: "numeric",
     month: "short",
     year: "numeric",
-  }).format(new Date(timestamp));
+  }).format(isNaN(d.getTime()) ? new Date() : d);
 }

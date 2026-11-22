@@ -1,6 +1,6 @@
 import type { DbQueryable } from "../../../../database/src/types.ts";
 import { PaymentService } from "../services/payment-service.ts";
-import { authenticateRequest } from "../../../core/middleware/auth-middleware.ts";
+import { authenticateRequest, assertUserRole } from "../../../core/middleware/auth-middleware.ts";
 import { AppError } from "../../../core/errors/app-error.ts";
 import type { HttpResponse } from "../../identity/routes/auth-routes.ts";
 import type { CreatePaymentInput } from "../domain/payment.ts";
@@ -87,7 +87,8 @@ export class PaymentController {
     body: any,
   ): Promise<HttpResponse> {
     try {
-      const user = await authenticateRequest(db, headers, jwtSecret, ["admin"]);
+      const user = await authenticateRequest(db, headers, jwtSecret);
+      assertUserRole(user, ["admin"]);
       const sellerId = String(body?.sellerId ?? "");
       const amountMinor = BigInt(String(body?.amountMinor ?? "0"));
 

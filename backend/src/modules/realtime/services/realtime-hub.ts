@@ -22,6 +22,7 @@ export interface SocketConnection {
 export class RealtimeHub {
   private readonly connections = new Map<string, SocketConnection>();
   private readonly userConnections = new Map<string, Set<string>>();
+  private readonly socketToUser = new Map<string, string>();
   private readonly channelSubscriptions = new Map<string, Set<string>>();
   private readonly connectionSubscriptions = new Map<string, Set<string>>();
   private readonly viewingConversations = new Map<string, string>(); // userId -> conversationId
@@ -34,11 +35,13 @@ export class RealtimeHub {
     this.connections.set(socket.id, socket);
     this.connectionSubscriptions.set(socket.id, new Set<string>());
 
-    if (userId) {
-      let userSockets = this.userConnections.get(userId);
+    const effectiveUserId = userId || socket.userId;
+    if (effectiveUserId) {
+      this.socketToUser.set(socket.id, effectiveUserId);
+      let userSockets = this.userConnections.get(effectiveUserId);
       if (!userSockets) {
         userSockets = new Set<string>();
-        this.userConnections.set(userId, userSockets);
+        this.userConnections.set(effectiveUserId, userSockets);
       }
       userSockets.add(socket.id);
     }
@@ -69,14 +72,16 @@ export class RealtimeHub {
     }
 
     // Clean up user connection mapping
-    if (socket.userId) {
-      const userSockets = this.userConnections.get(socket.userId);
+    const resolvedUserId = this.socketToUser.get(socketId) || socket.userId;
+    this.socketToUser.delete(socketId);
+    if (resolvedUserId) {
+      const userSockets = this.userConnections.get(resolvedUserId);
       if (userSockets) {
         userSockets.delete(socketId);
         if (userSockets.size === 0) {
-          this.userConnections.delete(socket.userId);
-          this.viewingConversations.delete(socket.userId);
-          this.lastSeen.set(socket.userId, Date.now());
+          this.userConnections.delete(resolvedUserId);
+          this.viewingConversations.delete(resolvedUserId);
+          this.lastSeen.set(resolvedUserId, Date.now());
         }
       }
     }
@@ -87,6 +92,16 @@ export class RealtimeHub {
    */
   public subscribe(socketId: string, channel: string): boolean {
     if (!this.connections.has(socketId)) return false;
+
+    // Security check: if channel is user-scoped (e.g. "user:usr_123"),
+    // verify the connection belongs to that user
+    const socketUserId = this.socketToUser.get(socketId);
+    if (channel.startsWith("user:")) {
+      const targetUserId = channel.slice("user:".length);
+      if (socketUserId && socketUserId !== targetUserId) {
+        return false;
+      }
+    }
 
     let channelSubs = this.channelSubscriptions.get(channel);
     if (!channelSubs) {

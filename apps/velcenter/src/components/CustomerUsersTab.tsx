@@ -19,11 +19,11 @@ export interface CustomerUser {
   readonly name?: string | null;
   readonly email?: string | null;
   readonly status: string;
-  readonly createdAt: string | Date;
+  readonly createdAt: number | string | Date;
 }
 
 export interface CustomerUsersTabProps {
-  readonly peopleCounts: { readonly customer: number; readonly seller: number };
+  readonly peopleCounts: { readonly customer: number | string; readonly seller: number | string; [key: string]: any };
   readonly customerUsers: readonly CustomerUser[] | null;
   readonly customerSearch: string;
   readonly onCustomerSearchChange: (value: string) => void;

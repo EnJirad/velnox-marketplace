@@ -44,10 +44,10 @@ export interface SettingsTabProps {
   readonly settingsError: string | null;
   readonly onLoadSettings: () => void;
   readonly settingsSection: string;
-  readonly onSelectSection: (sectionId: string) => void;
+  readonly onSelectSection: (sectionId: any) => void;
   readonly form: SettingsFormState;
   readonly onFormChange: React.Dispatch<React.SetStateAction<SettingsFormState>>;
-  readonly onSaveSettings: (e: React.FormEvent) => void;
+  readonly onSaveSettings: (e: React.FormEvent<any>) => void | Promise<void>;
   readonly savingSettings: boolean;
   readonly settings: any;
   readonly approvalMode: string;

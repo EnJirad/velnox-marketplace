@@ -553,9 +553,16 @@ describe("E2E Integration — Velnox Master Rebuild Architecture", () => {
           if (sql.includes("INSERT INTO notifications")) {
             return { rows: [{ id: "notif_db_1" }] };
           }
+          if (sql.includes("FROM user_device_tokens")) {
+            return { rows: [{ device_token: "fcm_token_alice_123", platform: "android" }] };
+          }
           return { rows: [] };
         },
       };
+
+      process.env.FIREBASE_PROJECT_ID = "velnox-test";
+      process.env.FIREBASE_CLIENT_EMAIL = "firebase@velnox-test.iam.gserviceaccount.com";
+      process.env.FIREBASE_PRIVATE_KEY = "test_key";
 
       // Dispatch chat message notification while viewing -> Push should be SUPPRESSED
       const suppressedResult = await PushNotificationService.dispatchNotification(
@@ -592,6 +599,11 @@ describe("E2E Integration — Velnox Master Rebuild Architecture", () => {
 
       assert.equal(dispatchedResult.suppressedByPresence, false);
       assert.equal(dispatchedResult.pushDispatched, true);
+      assert.equal(dispatchedResult.pushStatus, "delivered");
+
+      delete process.env.FIREBASE_PROJECT_ID;
+      delete process.env.FIREBASE_CLIENT_EMAIL;
+      delete process.env.FIREBASE_PRIVATE_KEY;
 
       // 4. Disconnect Tab 1 -> Alice remains online via Tab 2
       hub.unregisterClient("sock_alice_tab1");

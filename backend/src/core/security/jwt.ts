@@ -79,11 +79,13 @@ export function verifyJwt<T extends JwtPayload = JwtPayload>(
   }
 
   const parts = token.split(".");
-  if (parts.length !== 3) {
+  const encodedHeader = parts[0];
+  const encodedPayload = parts[1];
+  const encodedSignature = parts[2];
+  if (parts.length !== 3 || !encodedHeader || !encodedPayload || !encodedSignature) {
     return { valid: false, error: "MALFORMED" };
   }
 
-  const [encodedHeader, encodedPayload, encodedSignature] = parts;
   const signingInput = `${encodedHeader}.${encodedPayload}`;
 
   // 1. Verify signature with timing-safe comparison

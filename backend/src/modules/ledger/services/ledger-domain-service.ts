@@ -1,5 +1,5 @@
 import type { DbQueryable } from "../../../../database/src/types.ts";
-import type { LedgerAccount } from "./ledger.ts";
+import type { LedgerAccount } from "../domain/ledger.ts";
 
 export interface AccountBalanceSummary {
   readonly account: LedgerAccount;
