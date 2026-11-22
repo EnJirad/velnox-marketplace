@@ -1,16 +1,17 @@
 # Velnox AI Handoff — Current State
-**Last verified:** 2026-11-22 · **Branch:** `main` · **Focus:** Clean Rebuild Initiative · Phase 0 Complete
+**Last verified:** 2026-11-22 · **Branch:** `main` · **Focus:** Clean Rebuild Initiative · Phase 1 Complete
 
 ---
 
-## 0. Current Project State: CLEAN REBUILD INITIATIVE (PHASE 0 COMPLETE)
+## 0. Current Project State: CLEAN REBUILD INITIATIVE (PHASE 1 COMPLETE)
 - **Active Initiative:** Velnox Clean Rebuild Initiative (Cloudflare-First · Clean Database)
-- **Last Completed Milestone:** **Phase 0 (Rebuild Strategy & Legacy Audit)**
-- **Next Active Milestone:** **Phase 1 (New Foundation — Monorepo, TypeScript, Hono Workers Skeleton, /health)**
+- **Last Completed Milestone:** **Phase 1 (New Foundation — Monorepo, TS Config, Hono Workers Skeleton, /health)**
+- **Next Active Milestone:** **Phase 2 (Database & Identity — Clean Neon Schema, Migrations, Web Crypto Auth, RBAC)**
 
 ### Approved Rebuild Directives (MANDATORY):
 - **STRATEGY:** Full clean rebuild designed for Cloudflare from day one. We are NOT continuing a legacy backend migration.
 - **TARGET BACKEND:** **Cloudflare Workers** (`workers/api`) running **Hono Framework** in TypeScript, Modular Monolith at `api.velnox.live`.
+- **HEALTH ENDPOINTS VERIFIED:** Working `GET /health` and `GET /api/v1/health` conforming 100% to `@velnox/api-contract`.
 - **PRIMARY DATABASE:** **Neon PostgreSQL** (Permanent Single Source of Truth). Clean database schema designed from actual business requirements. Zero legacy data migration.
 - **DATABASE PROVISIONING STATUS:** **BLOCKED** for production/cloud until owner creates a new dedicated Neon project. Local isolated PostgreSQL instance is used for local development and testing. Never touch or delete existing Neon databases.
 - **FRONTEND HOSTING:** **Cloudflare Pages** (`shop.velnox.live`, `seller.velnox.live`, `center.velnox.live`, `velnox.live`).
@@ -29,8 +30,8 @@
 
 ## 1. Master Rebuild Sequence (Phases 0–8)
 - [x] **Phase 0: Rebuild Strategy & Legacy Audit** (COMPLETED 2026-11-22)
-- [ ] **Phase 1: New Foundation (Monorepo, TS Config, Hono Workers Skeleton, /health)** (NEXT ACTIVE)
-- [ ] **Phase 2: Database & Identity (Clean Neon Schema, Migrations, Web Crypto Auth, RBAC)**
+- [x] **Phase 1: New Foundation (Monorepo, TS Config, Hono Workers Skeleton, /health)** (COMPLETED 2026-11-22)
+- [ ] **Phase 2: Database & Identity (Clean Neon Schema, Migrations, Web Crypto Auth, RBAC)** (NEXT ACTIVE)
 - [ ] **Phase 3: Marketplace Core (Sellers, Shops, Categories, Products, R2 Media)**
 - [ ] **Phase 4: Commerce Core (Cart, Checkout, Guarded Inventory Reservations, Orders)**
 - [ ] **Phase 5: Payment & Finance (Stripe Webhook, Double-Entry Ledger, Settlements)**

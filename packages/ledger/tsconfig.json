@@ -10,7 +10,9 @@
     "forceConsistentCasingInFileNames": true,
     "declaration": true,
     "noEmit": true,
-    "baseUrl": "."
+    "baseUrl": ".",
+    "types": ["bun-types"],
+    "allowImportingTsExtensions": true
   },
   "include": ["src", "tests"]
 }

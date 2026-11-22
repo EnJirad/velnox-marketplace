@@ -69,7 +69,10 @@ export class VelnoxApiClient {
       const json = await response.json().catch(() => null);
 
       if (!response.ok) {
-        const errorPayload = json?.error;
+        const errorPayload =
+          json && typeof json === "object" && "error" in json
+            ? (json as { error?: { code?: string; message?: string; details?: unknown } }).error
+            : null;
         throw new ApiClientError(
           response.status,
           errorPayload?.code ?? "UNKNOWN_ERROR",

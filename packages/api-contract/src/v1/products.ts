@@ -50,6 +50,6 @@ export const productDetailSchema = productSummarySchema.extend({
 export const productListResponseSchema = createSuccessEnvelope(z.array(productSummarySchema));
 export const productDetailResponseSchema = createSuccessEnvelope(productDetailSchema);
 
-export type ProductListQuery = z.infer<typeof productListQuerySchema>;
+export type ProductListQuery = z.input<typeof productListQuerySchema>;
 export type ProductSummary = z.infer<typeof productSummarySchema>;
 export type ProductDetail = z.infer<typeof productDetailSchema>;

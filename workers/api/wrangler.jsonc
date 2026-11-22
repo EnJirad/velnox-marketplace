@@ -1,0 +1,15 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "velnox-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2024-11-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "ENVIRONMENT": "development",
+    "APP_NAME": "Velnox Marketplace API",
+    "APP_VERSION": "3.0.0"
+  },
+  "observability": {
+    "enabled": true
+  }
+}

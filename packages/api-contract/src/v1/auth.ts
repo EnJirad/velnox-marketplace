@@ -47,3 +47,7 @@ export {
 export type AuthUser = z.infer<typeof authUserSchema>;
 export type AuthTokens = z.infer<typeof authTokensSchema>;
 export type AuthSessionData = z.infer<typeof authSessionDataSchema>;
+export type LoginInput = z.infer<typeof loginInputSchema>;
+export type RegisterInput = z.infer<typeof registerInputSchema>;
+export type TokenRefreshInput = z.infer<typeof tokenRefreshInputSchema>;
+export type TokenExchangeInput = z.infer<typeof tokenExchangeInputSchema>;

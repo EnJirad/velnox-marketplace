@@ -1,0 +1,24 @@
+{
+  "name": "@velnox/api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "build": "wrangler deploy --dry-run --outdir dist",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test tests"
+  },
+  "dependencies": {
+    "@velnox/api-contract": "workspace:*",
+    "@velnox/config": "workspace:*",
+    "@velnox/validation": "workspace:*",
+    "hono": "^4.7.4",
+    "zod": "^4.1.13"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250224.0",
+    "typescript": "~5.9.3",
+    "wrangler": "^3.114.0"
+  }
+}

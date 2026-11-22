@@ -11,6 +11,7 @@
     "declaration": true,
     "noEmit": true,
     "baseUrl": ".",
+    "types": ["bun-types"],
     "paths": {
       "@velnox/api-contract": ["../api-contract/src/index.ts"]
     }

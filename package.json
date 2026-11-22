@@ -6,6 +6,7 @@
   "workspaces": [
     "apps/*",
     "packages/*",
+    "workers/*",
     "backend"
   ],
   "scripts": {
@@ -20,6 +21,9 @@
     "build:apps": "bun --filter '@velnox/velshop' build && bun --filter '@velnox/velseller' build && bun --filter '@velnox/velcenter' build && bun --filter '@velnox/velnox' build",
     "api:dev": "bun --filter @velnox/backend dev",
     "api:start": "bun --filter @velnox/backend start",
+    "worker:dev": "bun --filter @velnox/api dev",
+    "worker:build": "bun --filter @velnox/api build",
+    "worker:test": "bun --filter @velnox/api test",
     "db:migrate": "node --experimental-strip-types database/migrate.ts up",
     "db:status": "node --experimental-strip-types database/migrate.ts status",
     "db:check": "node --experimental-strip-types database/migrate.ts check-files",
@@ -28,7 +32,9 @@
     "db:consistency": "echo 'DB consistency check placeholder'",
     "typecheck": "bun --filter '@velnox/velshop' typecheck && bun --filter '@velnox/velseller' typecheck && bun --filter '@velnox/velcenter' typecheck && bun --filter '@velnox/velnox' typecheck",
     "typecheck:packages": "bun --filter '@velnox/validation' typecheck && bun --filter '@velnox/api-contract' typecheck && bun --filter '@velnox/api-client' typecheck && bun --filter '@velnox/ledger' typecheck",
-    "test:contracts": "bun test packages/*/tests",
+    "typecheck:worker": "bun --filter @velnox/api typecheck",
+    "typecheck:all": "bun run typecheck && bun run typecheck:packages && bun run typecheck:worker",
+    "test:contracts": "TEST_DATABASE_URL=\"${TEST_DATABASE_URL:-postgres://localhost:5432/velnox_test}\" bun test packages/*/tests",
     "test:ledger": "node --experimental-strip-types --test packages/ledger/tests/*.test.ts backend/tests/ledger-service.test.ts",
     "test:migrations": "node --experimental-strip-types --test database/tests/*.test.ts",
     "test:identity": "node --experimental-strip-types --test backend/tests/identity/*.test.ts",
@@ -51,6 +57,7 @@
     "@iconify-json/mdi": "^1.2.3",
     "@iconify-json/ph": "^1.2.2",
     "@iconify-json/tabler": "^1.2.43",
+    "bun-types": "^1.4.5",
     "eslint": "^10.14.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-react-hooks": "^7.1.1",
