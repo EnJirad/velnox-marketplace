@@ -1,38 +1,28 @@
-# Task Report: Milestone 6 — Frontends Rebuild & Cloudflare Pages Deployment
+# Task Report: Milestone 7 — Realtime Hub & Push Notifications
 
 ## สรุปงาน
-เสร็จสิ้นการดำเนินงาน **Milestone 6: Frontends Rebuild & Cloudflare Pages Deployment**:
-1. กำหนดค่า SPA Client-Side Routing สำหรับ **Cloudflare Pages Static Hosting** (`/* /index.html 200`) ใน `public/_redirects` ครบทั้ง 4 Frontend Applications (`apps/velshop`, `apps/velseller`, `apps/velcenter`, `apps/velnox`) โดยคง `vercel.json` ไว้ขนานกันเพื่อความปลอดภัย
-2. สลาย Monolithic Component `Center.tsx` (2,384 บรรทัด) ออกเป็น Modular Subcomponents 4 ไฟล์:
-   - `OverviewTab.tsx`
-   - `OrdersTab.tsx`
-   - `CustomerUsersTab.tsx`
-   - `SettingsTab.tsx`
-   ทำให้โค้ดของ `Center.tsx` มีความกระชับ สะอาด และดูแลรักษาง่าย
-3. นำคีย์ Stripe Test API ที่ได้รับมอบหมายไปทดสอบกับเซิร์ฟเวอร์ Stripe สด:
-   - ตรวจสอบยอดเงินใน Balance สำเร็จ (17,380.45 THB)
-   - สร้าง Stripe Checkout Session สำเร็จ รองรับทั้งบัตรเครดิตและ PromptPay QR
-   - ตรวจสอบลายเซ็น HMAC-SHA256 ของ Webhook Secret สำเร็จ 100%
-   - บันทึกคีย์ลงใน `.env` ภายในเครื่อง โดย Git ปลอดภัยไม่นำขึ้นรีโมต
+เสร็จสิ้นการดำเนินงาน **Milestone 7: Realtime Hub & Push Notifications**:
+1. พัฒนาระบบ **Realtime Hub** (`backend/src/modules/realtime/services/realtime-hub.ts`) สำหรับ Pub/Sub แบบ Edge/Durable Objects Compatible รองรับทั้ง Broadcast ตาม Channel และ Direct User Delivery แบบ Multi-Connection
+2. พัฒนาระบบติดตามสถานะออนไลน์ (Presence Tracking): ผู้ใช้จะคงสถานะ Online ตราบใดที่มี Tab เชื่อมต่ออยู่ และบันทึก `lastSeenAt` เมื่อทุกการเชื่อมต่อถูกตัด
+3. พัฒนาระบบ **Push Notification Service** (`backend/src/modules/realtime/services/push-notification-service.ts`): บันทึกข้อมูลลงตาราง `notifications`, ยิง Realtime Socket Alert, และส่ง Push Notification (FCM) สู่ Mobile Application
+4. ระบบตรวจจับการเปิดดูห้องสนทนา (Active Viewing Detection): ระงับการแจ้งเตือน Push Notification อัตโนมัติเมื่อผู้ใช้กำลังเปิดดูห้องสนทนานั้นอยู่ เพื่อป้องกันการแจ้งเตือนซ้ำซ้อน
+5. เชื่อมโยง Environment Variables ล่าสุดที่ได้รับมอบหมายลงใน `.env` ภายในเครื่อง โดย Git ปลอดภัยไม่นำขึ้นรีโมต
 
 ## ไฟล์ที่สร้างและเปลี่ยนแปลง
-- `apps/velshop/public/_redirects`
-- `apps/velseller/public/_redirects`
-- `apps/velcenter/public/_redirects`
-- `apps/velnox/public/_redirects`
-- `apps/velcenter/src/components/OverviewTab.tsx`
-- `apps/velcenter/src/components/OrdersTab.tsx`
-- `apps/velcenter/src/components/CustomerUsersTab.tsx`
-- `apps/velcenter/src/components/SettingsTab.tsx`
-- `apps/velcenter/src/pages/Center.tsx`
-- `.ai/rebuild/MILESTONE_6_IMPLEMENTATION_REPORT.md`
+- `backend/src/modules/realtime/domain/realtime.ts`
+- `backend/src/modules/realtime/services/realtime-hub.ts`
+- `backend/src/modules/realtime/services/push-notification-service.ts`
+- `backend/src/modules/realtime/routes/realtime-routes.ts`
+- `backend/tests/realtime/realtime-hub.test.ts`
+- `package.json` (เพิ่ม `test:realtime` และอัปเดต `test:rebuild`)
+- `.ai/rebuild/MILESTONE_7_IMPLEMENTATION_REPORT.md`
 - `.ai/rebuild/DEVELOPMENT_ROADMAP.md`
 - `.ai/AI_HANDOFF.md`
 - `.ai/reports/LATEST.md`
 
 ## ผลการทดสอบ
-- `npm run test:rebuild`: **66 passed, 0 failed (100% PASS)**
+- `npm run test:rebuild`: **70 passed, 0 failed (100% PASS across 16 suites)**
 - `git diff --check`: ผ่าน ไม่มี whitespace error
 
 ## สถานะขั้นตอนถัดไป
-พร้อมดำเนินงานต่อใน **Milestone 7: Realtime Hub & Push Notifications**
+พร้อมเข้าสู่ **Milestone 8: Full E2E Integration, Production Cutover & Vercel Retirement**

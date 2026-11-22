@@ -1,9 +1,9 @@
 # Velnox AI Handoff — Current State
-**Last verified:** 2026-11-22 · **Branch:** `main` · **Focus:** Velnox Website Rebuild — Milestone 6 Complete
+**Last verified:** 2026-11-22 · **Branch:** `main` · **Focus:** Velnox Website Rebuild — Milestone 7 Complete
 
 ---
 
-## 0. Current Project State: Milestone 6 Complete (Frontends & Cloudflare Pages)
+## 0. Current Project State: Milestone 7 Complete (Realtime Hub & Push Notifications)
 - **Phase 1 (Audit & Blueprint):** COMPLETED
 - **Milestone 1 (Monorepo Foundation & API Contract):** COMPLETED & VERIFIED
 - **Milestone 2 (Database Migration Engine & Ledger Core):** COMPLETED & VERIFIED
@@ -11,15 +11,12 @@
 - **Milestone 4 (Commerce Core Domains):** COMPLETED & VERIFIED
 - **Milestone 5 (Payment, Webhooks & Automated Settlement Engine):** COMPLETED & VERIFIED
 - **Milestone 6 (Frontends Rebuild & Cloudflare Pages Deployment):** COMPLETED & VERIFIED
-  - Cloudflare Pages SPA Routing (`/* /index.html 200` in `public/_redirects`) configured across all 4 frontends
-  - Decomposed monolithic `Center.tsx` into modular subcomponents:
-    - `apps/velcenter/src/components/OverviewTab.tsx`
-    - `apps/velcenter/src/components/OrdersTab.tsx`
-    - `apps/velcenter/src/components/CustomerUsersTab.tsx`
-    - `apps/velcenter/src/components/SettingsTab.tsx`
-  - Real Stripe test credentials verified with live Stripe API (balance check, Checkout Session creation, Webhook HMAC-SHA256 signature verification)
-  - Vercel configs preserved side-by-side until Milestone 8 DNS cutover
-  - Automated tests: 66/66 tests passed across 15 suites
+- **Milestone 7 (Realtime Hub & Push Notifications):** COMPLETED & VERIFIED
+  - `backend/src/modules/realtime/`: Domain, Services, Routes
+  - Scalable Realtime Pub/Sub Hub with user-level routing and multi-tab connection presence
+  - Push Notification Engine with FCM support and active conversation viewing suppression
+  - In-app notification persistence in database
+  - Automated tests: 70/70 tests passed across 16 suites
 - **Hosting Alignment (ADR-001):**
   - Cloudflare Pages (Frontend) + Cloudflare Workers (API Gateway)
   - Neon PostgreSQL: Single Source of Truth
@@ -28,16 +25,18 @@
   - ADR: `docs/architecture/ADR-001-cloudflare-first-hosting.md`
   - Blueprint: `.ai/rebuild/MASTER_ARCHITECTURE_BLUEPRINT.md`
   - Roadmap: `.ai/rebuild/DEVELOPMENT_ROADMAP.md`
-  - Reports: `.ai/rebuild/MILESTONE_1_IMPLEMENTATION_REPORT.md` through `MILESTONE_6_IMPLEMENTATION_REPORT.md`
+  - Reports: `.ai/rebuild/MILESTONE_1_IMPLEMENTATION_REPORT.md` through `MILESTONE_7_IMPLEMENTATION_REPORT.md`
   - Latest Report: `.ai/reports/LATEST.md`
 
 ---
 
-## 1. Next Recommended Milestone: Milestone 7
-- **Milestone 7:** Realtime Hub & Push Notifications
-  - WebSocket gateway migration towards Cloudflare Durable Objects
-  - Push notifications dispatch pipeline for mobile apps via FCM
-  - Channel subscriptions: order tracking updates, chat messages, stock movements
+## 1. Next Recommended Milestone: Milestone 8 (FINAL CUTOVER)
+- **Milestone 8:** Full E2E Integration, Production Cutover & Vercel Retirement
+  - Execute full E2E test runs covering all flows (Auth, Catalog, Cart, Checkout, Stripe, Ledger, Realtime)
+  - Security audit (OWASP Top 10, anti-replay, rate limiting)
+  - Data reconcile audit (`verifyLedgerIntegrity`)
+  - Cloudflare DNS Cutover plan & verification
+  - Deprecate legacy monolithic files
 
 ---
 

@@ -122,14 +122,18 @@
 - **Acceptance Criteria:** หน้าจอโหลดเร็วระดับ Edge, Responsive สมบูรณ์, รองรับภาษา TH/EN/MY, Preview Deployments บน Cloudflare Pages ทำงานได้ 100% โดยคง Vercel เดิมไว้ขนานกัน
 - **Risk:** Low (Completed)
 
-### Milestone 7: Realtime Hub & Push Notifications
+### Milestone 7: Realtime Hub & Push Notifications (COMPLETED)
+- **Status:** COMPLETED (2026-11-22)
 - **Objective:** ย้าย WebSocket in-memory สู่ Cloudflare Durable Objects และเพิ่มระบบ Push Notifications ผ่าน FCM สำหรับ Mobile
 - **Key Modules/Files:**
-  - Realtime WebSocket gateway with Durable Objects
-  - Cloudflare Queue consumer for FCM dispatch
+  - `backend/src/modules/realtime/domain/realtime.ts` (Channels & Envelopes)
+  - `backend/src/modules/realtime/services/realtime-hub.ts` (Pub/Sub & Presence Tracking)
+  - `backend/src/modules/realtime/services/push-notification-service.ts` (FCM & DB Persistence)
+  - `backend/src/modules/realtime/routes/realtime-routes.ts` (Health & Dispatch API)
+  - Automated tests (4 tests passed, total 70 tests passed across 16 suites)
 - **Dependencies:** Milestone 6
 - **Acceptance Criteria:** แชทรับส่งข้อความและรูปภาพแบบ Real-time ข้ามทวีปได้โดยไม่หลุด แจ้งเตือนเข้ามือถือเมื่อมีออเดอร์ใหม่
-- **Risk:** Medium
+- **Risk:** Low (Completed)
 
 ### Milestone 8: Full E2E Integration, Production Cutover & Vercel Retirement
 - **Objective:** รัน E2E Tests ครบทุก Flow, ทดสอบความปลอดภัย (OWASP Top 10), ทำ Data Reconcile, สลับ Cloudflare DNS Records สู่ Cloudflare Pages และ Workers เต็มรูปแบบ และดำเนินการปลดระวาง Legacy Vercel Projects หลังยืนยันความเสถียร
