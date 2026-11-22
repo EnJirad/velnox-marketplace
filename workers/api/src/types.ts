@@ -2,6 +2,8 @@
  * Cloudflare Workers Runtime Environment Bindings & Context Variables
  */
 
+import type { JwtPayload } from "./core/security/jwt.js";
+
 export interface Bindings {
   ENVIRONMENT?: string;
   APP_NAME?: string;
@@ -15,4 +17,5 @@ export interface Bindings {
 export interface Variables {
   requestId: string;
   startTime: number;
+  user: JwtPayload;
 }

@@ -10,6 +10,7 @@
     "test": "bun test tests"
   },
   "dependencies": {
+    "@neondatabase/serverless": "^1.2.1",
     "@velnox/api-contract": "workspace:*",
     "@velnox/config": "workspace:*",
     "@velnox/validation": "workspace:*",

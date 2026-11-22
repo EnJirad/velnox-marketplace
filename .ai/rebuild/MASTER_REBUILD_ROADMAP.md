@@ -13,10 +13,10 @@ PHASE 0: Rebuild Strategy & Legacy Audit ─────────────
 PHASE 1: New Foundation (Workers, Monorepo, /health) ──► [COMPLETED]
           │
           ▼
-PHASE 2: Database & Identity (Clean Neon Schema, Auth) ──► [NEXT ACTIVE]
+PHASE 2: Database & Identity (Clean Schema, Auth) ─────► [COMPLETED]
           │
           ▼
-PHASE 3: Marketplace Core (Sellers, Shops, Products, R2)
+PHASE 3: Marketplace Core (Sellers, Shops, Products) ──► [NEXT ACTIVE]
           │
           ▼
 PHASE 4: Commerce Core (Cart, Checkout, Guarded Inventory)
@@ -37,4 +37,5 @@ PHASE 8: Quality, Security & Release (E2E, Cutover)
 ### Active Phase Status
 - **Phase 0 (Rebuild Strategy & Legacy Audit):** **COMPLETED** (2026-11-22)
 - **Phase 1 (New Foundation):** **COMPLETED** (2026-11-22)
-- **Phase 2 (Database & Identity):** **NEXT ACTIVE** (Database provisioning BLOCKED for Cloud until owner creates clean Neon project; local PostgreSQL for development)
+- **Phase 2 (Database & Identity):** **COMPLETED** (2026-11-22)
+- **Phase 3 (Marketplace Core):** **NEXT ACTIVE**

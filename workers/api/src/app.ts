@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { errorHandler, notFoundHandler } from "./middleware/error.js";
 import { healthRoutes } from "./routes/health.js";
+import { authRoutes } from "./routes/auth.js";
 import type { Bindings, Variables } from "./types.js";
 
 export function createApplication() {
@@ -19,7 +20,6 @@ export function createApplication() {
 
   // CORS configuration
   app.use("*", async (c, next) => {
-    const originHeader = c.req.header("origin");
     const allowed = cors({
       origin: (origin) => {
         if (!origin) return "*";
@@ -48,6 +48,9 @@ export function createApplication() {
 
   // Mount Health Routes
   app.route("/", healthRoutes);
+
+  // Mount Auth Routes under /api/v1/auth
+  app.route("/api/v1/auth", authRoutes);
 
   // Default root index endpoint
   app.get("/", (c) => {
