@@ -14,6 +14,7 @@ import {
   createErrorResponse,
   healthCheckResponseSchema,
   loginResponseSchema,
+  authSessionDataSchema,
   productListResponseSchema,
   cartResponseSchema,
   velnoxOpenApiSpec,
@@ -211,6 +212,33 @@ describe("Milestone 1 — Monorepo Foundation & Contract Quality Gate", () => {
         refundAmountMinor: 5000n,
       });
       expect(validateTransaction(refund).isValid).toBe(true);
+    });
+  });
+
+  describe("Milestone 3 — Unified Dual-Token & Identity Contract", () => {
+    it("validates session data payload matches authSessionDataSchema", () => {
+      const sessionData = {
+        user: {
+          id: "00000000-0000-0000-0000-000000000001",
+          email: "customer@velnox.live",
+          name: "Somchai Jaidee",
+          role: "customer" as const,
+          createdAt: Date.now(),
+        },
+        tokens: {
+          accessToken: "jwt-access-token-15m",
+          tokenType: "Bearer" as const,
+          expiresIn: 900,
+          refreshToken: "jwt-refresh-token-30d",
+        },
+      };
+
+      const parsed = authSessionDataSchema.safeParse(sessionData);
+      expect(parsed.success).toBe(true);
+      if (parsed.success) {
+        expect(parsed.data.tokens.tokenType).toBe("Bearer");
+        expect(parsed.data.tokens.expiresIn).toBe(900);
+      }
     });
   });
 });

@@ -67,14 +67,17 @@
 - **Acceptance Criteria:** Checksum verification, transaction atomicity, double-entry mathematical invariants passed 100%
 - **Risk:** Low (Completed without modifying production DB)
 
-### Milestone 3: Modular Backend Core & Unified Dual-Token Auth
+### Milestone 3: Modular Backend Core & Unified Dual-Token Auth (COMPLETED)
+- **Status:** COMPLETED (2026-11-22)
 - **Objective:** สร้างโครงสร้าง Modular Monolith Backend พร้อมระบบ Authentication ใหม่ที่รองรับทั้ง Web (Cookie) และ Mobile (Bearer Token + Refresh Token Rotation)
 - **Key Modules/Files:**
-  - `backend/src/core/` (DB connection pool, error handling, security middleware)
-  - `backend/src/modules/identity/` (Auth routes, Google OAuth, Refresh tokens, Turnstile gate)
+  - `backend/src/core/errors/` & `backend/src/core/security/` (Pure HS256 JWT, scrypt password hashing, Turnstile bot gate)
+  - `backend/src/core/middleware/auth-middleware.ts` (Dual Bearer / Cookie extractor, role guard)
+  - `backend/src/modules/identity/` (UserRepository, TokenRepository, IdentityService, AuthController)
+  - Automated tests (29 tests passed)
 - **Dependencies:** Milestone 1, Milestone 2
-- **Acceptance Criteria:** Web และ Mobile สามารถล็อกอินและรีเฟรชโทเคนได้ ป้องกัน CSRF และ Brute force
-- **Risk:** Medium
+- **Acceptance Criteria:** Dual Tokens (Access 15m + Refresh 30d), Refresh Token Rotation, Dual Response (Cookie for Web, Body for Mobile) ผ่านการทดสอบ 100%
+- **Risk:** Low (Completed)
 
 ### Milestone 4: Commerce Core Domains (Catalog, Cart, Checkout, Inventory)
 - **Objective:** สลาย Route ยักษ์ `products.ts` (4,009 บรรทัด) และ `cart.ts` (2,152 บรรทัด) ออกเป็น Modular Domains
