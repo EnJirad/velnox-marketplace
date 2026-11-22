@@ -6,12 +6,12 @@
  */
 
 // Utilities
-export { cn } from "./lib/utils.js";
-export * from "./lib/sites.js";
-export * from "./lib/features.js";
-export * from "./lib/app-shell.js";
-export * from "./lib/flash-toast.js";
-export * from "./lib/image-optimize.js";
+export { cn } from "./lib/utils";
+export * from "./lib/sites";
+export * from "./lib/features";
+export * from "./lib/app-shell";
+export * from "./lib/flash-toast";
+export * from "./lib/image-optimize";
 
 // i18n
 export {
@@ -21,16 +21,16 @@ export {
   isLanguage,
   languageLabel,
   type Language,
-} from "./lib/i18n/config.js";
+} from "./lib/i18n/config";
 
 // Components
-export { AppHeader } from "./components/AppHeader.js";
-export { LanguageSwitcher } from "./components/LanguageSwitcher.js";
-export { Logo } from "./components/Logo.js";
-export { LogoDropdown } from "./components/LogoDropdown.js";
-export { MobileTabBar, type MobileTabItem } from "./components/MobileTabBar.js";
-export { RequireAuth } from "./components/RequireAuth.js";
-export { RequireRole } from "./components/RequireRole.js";
-export { UserMenu } from "./components/UserMenu.js";
-export { VerificationStatusLabel } from "./components/VerificationStatusLabel.js";
-export { RealtimeProvider } from "./components/RealtimeProvider.js";
+export { AppHeader } from "./components/AppHeader";
+export { LanguageSwitcher } from "./components/LanguageSwitcher";
+export { Logo } from "./components/Logo";
+export { LogoDropdown } from "./components/LogoDropdown";
+export { MobileTabBar, type MobileTabItem } from "./components/MobileTabBar";
+export { RequireAuth } from "./components/RequireAuth";
+export { RequireRole } from "./components/RequireRole";
+export { UserMenu } from "./components/UserMenu";
+export { VerificationStatusLabel } from "./components/VerificationStatusLabel";
+export { RealtimeProvider } from "./components/RealtimeProvider";
