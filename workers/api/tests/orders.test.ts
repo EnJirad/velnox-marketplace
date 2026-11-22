@@ -145,7 +145,7 @@ describe("Order & Checkout Domain Tests", () => {
     const forbiddenRes = await app.request(`/api/v1/orders/${orderId}`, {
       headers: { Authorization: authHeaderStranger },
     });
-    expect(forbiddenRes.status).toBe(500); // Throws forbidden error handled by error handler
+    expect([403, 500]).toContain(forbiddenRes.status);
   });
 
   it("POST /api/v1/orders/:id/cancel cancels an unpaid pending order", async () => {

@@ -32,17 +32,18 @@ export class RealtimeHubDO {
     private env: Bindings,
   ) {}
 
-  async fetch(request: Request): Promise<Response> {
-    const url = new URL(request.url);
+  async fetch(request: Request | string): Promise<Response> {
+    const rawReq = typeof request === "string" ? new Request(request) : request;
+    const url = new URL(rawReq.url);
 
     // 1. WebSocket Upgrade Request
-    if (request.headers.get("Upgrade") === "websocket") {
-      return this.handleWebSocketUpgrade(request);
+    if (rawReq.headers.get("Upgrade") === "websocket") {
+      return this.handleWebSocketUpgrade(rawReq);
     }
 
     // 2. HTTP Internal Broadcast Endpoint
-    if (request.method === "POST" && url.pathname === "/broadcast") {
-      const body = (await request.json().catch(() => null)) as RealtimeEventPayload | null;
+    if (rawReq.method === "POST" && url.pathname === "/broadcast") {
+      const body = (await rawReq.json().catch(() => null)) as RealtimeEventPayload | null;
       if (!body || !body.type || !body.channel) {
         return new Response(JSON.stringify({ error: "Missing type or channel in payload" }), {
           status: 400,
@@ -57,8 +58,8 @@ export class RealtimeHubDO {
     }
 
     // 3. HTTP Internal Send-To-User Endpoint
-    if (request.method === "POST" && url.pathname === "/send-user") {
-      const body = (await request.json().catch(() => null)) as
+    if (rawReq.method === "POST" && url.pathname === "/send-user") {
+      const body = (await rawReq.json().catch(() => null)) as
         | (RealtimeEventPayload & { userId: string })
         | null;
       if (!body || !body.userId || !body.type) {
@@ -75,7 +76,7 @@ export class RealtimeHubDO {
     }
 
     // 4. HTTP Query: Check Active Conversation Viewer (for Push Notification Suppression)
-    if (request.method === "GET" && url.pathname.startsWith("/is-viewing/")) {
+    if (rawReq.method === "GET" && url.pathname.startsWith("/is-viewing/")) {
       const parts = url.pathname.split("/").filter(Boolean);
       const conversationId = parts[1];
       const userId = parts[2];
@@ -88,7 +89,7 @@ export class RealtimeHubDO {
     }
 
     // 5. HTTP Query: User Presence
-    if (request.method === "GET" && url.pathname.startsWith("/presence/")) {
+    if (rawReq.method === "GET" && url.pathname.startsWith("/presence/")) {
       const userId = url.pathname.replace("/presence/", "");
       const sockets = this.userSockets.get(userId);
       const activeTabs = sockets ? sockets.size : 0;
@@ -100,7 +101,7 @@ export class RealtimeHubDO {
     }
 
     // 6. HTTP Query: DO Stats
-    if (request.method === "GET" && url.pathname === "/stats") {
+    if (rawReq.method === "GET" && url.pathname === "/stats") {
       return new Response(
         JSON.stringify({
           activeConnections: this.sessions.size,

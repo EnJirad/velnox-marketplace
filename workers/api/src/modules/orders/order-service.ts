@@ -92,7 +92,10 @@ export class OrderService {
     const isPrivileged = ["center_staff", "center_admin", "center_superadmin"].includes(userRole);
 
     if (!isOwner && !isPrivileged) {
-      throw new Error("Forbidden: You do not have permission to view this order");
+      const err = new Error("Forbidden: You do not have permission to view this order");
+      (err as any).status = 403;
+      (err as any).code = "FORBIDDEN";
+      throw err;
     }
 
     return this.mapOrderDetail(record);
@@ -153,7 +156,10 @@ export class OrderService {
     if (!record) throw new Error("Order not found");
 
     if (record.userId !== userId) {
-      throw new Error("Forbidden: You do not own this order");
+      const err = new Error("Forbidden: You do not own this order");
+      (err as any).status = 403;
+      (err as any).code = "FORBIDDEN";
+      throw err;
     }
 
     if (record.status !== "pending_payment") {

@@ -93,7 +93,7 @@ sellerRoutes.get("/profile", async (c) => {
  * PATCH /api/v1/seller/shop
  * Update shop profile
  */
-sellerRoutes.patch("/shop", async (c) => {
+sellerRoutes.patch("/shop", requireRole("seller", "admin"), async (c) => {
   const user = c.get("user");
   const body = await c.req.json().catch(() => null);
 
@@ -117,7 +117,7 @@ sellerRoutes.patch("/shop", async (c) => {
  * POST /api/v1/seller/products
  * Create new product
  */
-sellerRoutes.post("/products", async (c) => {
+sellerRoutes.post("/products", requireRole("seller", "admin"), async (c) => {
   const user = c.get("user");
   const body = await c.req.json().catch(() => null);
 
