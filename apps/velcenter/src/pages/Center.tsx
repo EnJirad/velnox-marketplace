@@ -4,6 +4,10 @@ import { LanguageSwitcher } from "@velnox/shared/components/LanguageSwitcher";
 import { UserMenu } from "@velnox/shared/components/UserMenu";
 import AuditLogTab from "../components/AuditLogTab";
 import PaymentIncidentTab from "../components/PaymentIncidentTab";
+import OverviewTab from "../components/OverviewTab";
+import OrdersTab from "../components/OrdersTab";
+import CustomerUsersTab from "../components/CustomerUsersTab";
+import SettingsTab from "../components/SettingsTab";
 import { openOrderShipDialog } from "../components/OrderShipDialog";
 import { emitCenterEvent, onCenterEvent } from "../lib/center-events";
 // VerificationReviewDialog is now used inside SellerVerificationQueue component
@@ -1326,304 +1330,31 @@ export default function Center() {
 
           {/* ============ Overview ============ */}
           <TabsContent value="overview" className="mt-6">
-            <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-              {stats.map((s) => (
-                <div key={s.label} className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
-                  <div className="flex items-center gap-2">
-                    <s.icon className={`size-4 ${s.accent}`} />
-                    <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
-                      {s.label}
-                    </p>
-                  </div>
-                  <p className="mt-2 text-2xl font-bold tabular-nums tracking-tight text-slate-900 sm:text-3xl">
-                    {s.value}
-                  </p>
-                  <p className="mt-1 text-xs text-slate-400">{s.sub}</p>
-                </div>
-              ))}
-            </div>
-
-            {/* Action Required */}
-            {(pendingProducts > 0 || pendingSellers > 0 || pendingVerifications > 0) && (
-              <Card className="mt-6 border-amber-200 bg-amber-50/50 shadow-none">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    <AlertTriangle className="size-4 text-amber-500" />
-                    ต้องดำเนินการ
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2">
-                    {pendingProducts > 0 && (
-                      <button type="button" onClick={() => setTab("products")} className="flex w-full items-center justify-between rounded-xl bg-white p-3 text-left transition-colors hover:border-amber-300 border border-amber-200">
-                        <span className="text-sm text-slate-700">สินค้ารอตรวจสอบ</span>
-                        <span className="rounded-full bg-amber-500 px-2 py-0.5 text-xs font-bold text-white">{pendingProducts}</span>
-                      </button>
-                    )}
-                    {pendingSellers > 0 && (
-                      <button type="button" onClick={() => setTab("sellers")} className="flex w-full items-center justify-between rounded-xl bg-white p-3 text-left transition-colors hover:border-amber-300 border border-amber-200">
-                        <span className="text-sm text-slate-700">ใบสมัครพ่อค้ารอตรวจสอบ</span>
-                        <span className="rounded-full bg-amber-500 px-2 py-0.5 text-xs font-bold text-white">{pendingSellers}</span>
-                      </button>
-                    )}
-                    {pendingVerifications > 0 && (
-                      <button type="button" onClick={() => setTab("products")} className="flex w-full items-center justify-between rounded-xl bg-white p-3 text-left transition-colors hover:border-amber-300 border border-amber-200">
-                        <span className="text-sm text-slate-700">การยืนยันรอตรวจสอบ</span>
-                        <span className="rounded-full bg-amber-500 px-2 py-0.5 text-xs font-bold text-white">{pendingVerifications}</span>
-                      </button>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {/* The "Velnox Intelligence" summary card is gone with the tab: it
-                led with a restock counter nobody used. What is left is the real
-                marketplace picture — sales that actually completed, and orders
-                still waiting on a decision. */}
-            <Card className="mt-6 border-slate-200 shadow-none">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Sparkles className="size-4 text-brand" />
-                  สรุปภาพรวมร้านค้า
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-xl bg-emerald-50 p-4">
-                    <p className="text-xs font-medium text-emerald-600">ยอดขายจาก velshop</p>
-                    <p className="mt-1 text-2xl font-bold tabular-nums text-emerald-700">
-                      {marketKpi ? formatBaht(marketKpi.revenue) : "—"}
-                    </p>
-                    <p className="mt-0.5 text-xs text-emerald-600/70">
-                      จากออเดอร์ที่เสร็จสิ้น {marketKpi?.completedOrders ?? 0} ออเดอร์
-                    </p>
-                  </div>
-                  <div className="rounded-xl bg-sky-50 p-4">
-                    <p className="text-xs font-medium text-sky-600">ออเดอร์รอจัดการ</p>
-                    <p className="mt-1 text-2xl font-bold tabular-nums text-sky-700">
-                      {marketKpi?.pendingOrders ?? 0} ออเดอร์
-                    </p>
-                    <p className="mt-0.5 text-xs text-sky-600/70">จัดการได้ที่แท็บ ออเดอร์</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
+            <OverviewTab
+              stats={stats}
+              pendingProducts={pendingProducts}
+              pendingSellers={pendingSellers}
+              pendingVerifications={pendingVerifications}
+              marketKpi={marketKpi}
+              onSelectTab={setTab}
+            />
           </TabsContent>
 
           {/* ============ Orders ============ */}
           <TabsContent value="orders" className="mt-6">
-            {ordersError ? (
-              <div className="flex flex-col items-center gap-3 rounded-2xl border border-rose-200 bg-rose-50/60 px-6 py-12 text-center">
-                <AlertTriangle className="size-6 text-rose-400" />
-                <p className="text-sm text-rose-600">{ordersError}</p>
-                <Button variant="outline" size="sm" className="gap-1.5" onClick={() => void loadOrders()}>
-                  <Loader2 className="size-3.5" /> ลองใหม่
-                </Button>
-              </div>
-            ) : ordersLoading || ordersData === null ? (
-              <div className="space-y-4">
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <div
-                    key={i}
-                    className="h-16 animate-pulse rounded-xl border border-slate-200 bg-white"
-                  />
-                ))}
-              </div>
-            ) : ordersData.length === 0 ? (
-              <div className="flex flex-col items-center rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center">
-                <span className="flex size-14 items-center justify-center rounded-2xl bg-accent">
-                  <ShoppingBag className="size-7 text-brand" />
-                </span>
-                <h2 className="mt-5 text-lg font-semibold text-slate-900">ยังไม่มีออเดอร์</h2>
-                <p className="mt-1.5 max-w-sm text-sm leading-6 text-slate-500">
-                  เมื่อลูกค้าสั่งซื้อจาก velshop ออเดอร์ทั้งหมดจะถูกรวมอยู่ที่นี่
-                </p>
-              </div>
-            ) : (
-              <>
-              {/* Desktop: table */}
-              <div className="hidden overflow-x-auto rounded-xl border border-slate-200 bg-white md:block">
-                <Table className="min-w-[760px]">
-                  <TableHeader>
-                    <TableRow className="hover:bg-transparent">
-                      <TableHead className="pl-5 text-slate-400">ออเดอร์ / ลูกค้า</TableHead>
-                      <TableHead className="text-slate-400">วันที่</TableHead>
-                      <TableHead className="text-slate-400">รายการ</TableHead>
-                      <TableHead className="text-right text-slate-400">ยอดรวม</TableHead>
-                      <TableHead className="pr-5 text-right text-slate-400">สถานะ</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {ordersData.map((order) => {
-                      const meta =
-                        ORDER_STATUS_META[order.status as CenterOrderStatus] ?? {
-                          label: order.status,
-                          badge: "bg-slate-100 text-slate-500 ring-slate-600/10 hover:bg-slate-100",
-                          dot: "bg-slate-400",
-                        };
-                      return (
-                        <TableRow key={order.id} className="hover:bg-slate-50/60">
-                          <TableCell className="pl-5">
-                            <p className="font-medium text-slate-900">
-                              {order.orderNumber ?? shortOrderId(order.id)}
-                            </p>
-                            <p className="text-xs text-slate-400">
-                              {order.shopName && <span className="font-medium text-slate-500">{order.shopName} · </span>}
-                              {order.customerName} · {order.customerPhone}
-                            </p>
-                          </TableCell>
-                          <TableCell>
-                            <p className="text-sm text-slate-600">{formatThaiDate(order.createdAt)}</p>
-                            <p className="text-xs text-slate-400">{order.itemCount} ชิ้น</p>
-                          </TableCell>
-                          <TableCell>
-                            <div className="max-w-56 space-y-0.5">
-                              {order.items.slice(0, 2).map((item) => (
-                                <p key={item.id} className="truncate text-sm text-slate-600">
-                                  {item.productName} × {item.quantity} {item.unit}
-                                </p>
-                              ))}
-                              {order.items.length > 2 && (
-                                <p className="text-xs text-slate-400">+{order.items.length - 2} รายการ</p>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <p className="font-semibold tabular-nums text-slate-900">
-                              {formatBaht(order.total)}
-                            </p>
-                          </TableCell>
-                          <TableCell className="pr-5 text-right">
-                            {canManageOrders ? (
-                              <Select
-                                value={order.status}
-                                onValueChange={(v) => handleOrderStatus(order.id, v)}
-                                disabled={busyOrderId === order.id}
-                              >
-                                <SelectTrigger className="ml-auto h-9 w-36 rounded-md border-slate-200 text-sm">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {statusOptions(order.status).map((s) => (
-                                    <SelectItem key={s} value={s}>
-                                      {(ORDER_STATUS_META[s as CenterOrderStatus] ?? { label: s }).label}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            ) : (
-                              <Badge className={`gap-1.5 rounded-full ring-1 ring-inset ${meta.badge}`}>
-                                <span className={`size-1.5 rounded-full ${meta.dot}`} />
-                                {meta.label}
-                              </Badge>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
-
-              {/* Mobile: app-like order cards */}
-              <div className="space-y-3 md:hidden">
-                {ordersData.map((order) => {
-                  const meta =
-                    ORDER_STATUS_META[order.status as CenterOrderStatus] ?? {
-                      label: order.status,
-                      badge: "bg-slate-100 text-slate-500 ring-slate-600/10 hover:bg-slate-100",
-                      dot: "bg-slate-400",
-                    };
-                  return (
-                    <div
-                      key={order.id}
-                      className="rounded-xl border border-slate-200 bg-white p-4 transition-[transform,border-color,box-shadow,background-color] duration-200 active:scale-[0.99]"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="truncate font-semibold text-slate-900">
-                            {order.orderNumber ?? shortOrderId(order.id)}
-                          </p>
-                          <p className="mt-0.5 truncate text-xs text-slate-400">
-                            {order.shopName && <span className="font-medium text-slate-500">{order.shopName} · </span>}
-                            {order.customerName} · {order.customerPhone}
-                          </p>
-                        </div>
-                        {canManageOrders ? (
-                          <Select
-                            value={order.status}
-                            onValueChange={(v) => handleOrderStatus(order.id, v)}
-                            disabled={busyOrderId === order.id}
-                          >
-                            <SelectTrigger className="h-8 w-32 shrink-0 rounded-md border-slate-200 text-xs">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {statusOptions(order.status).map((s) => (
-                                <SelectItem key={s} value={s}>
-                                  {(ORDER_STATUS_META[s as CenterOrderStatus] ?? { label: s }).label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        ) : (
-                          <Badge className={`shrink-0 gap-1.5 rounded-full ring-1 ring-inset ${meta.badge}`}>
-                            <span className={`size-1.5 rounded-full ${meta.dot}`} />
-                            {meta.label}
-                          </Badge>
-                        )}
-                      </div>
-
-                      <div className="mt-3 rounded-md bg-slate-50 px-3 py-2.5">
-                        {order.items.slice(0, 2).map((item) => (
-                          <p key={item.id} className="truncate text-sm text-slate-600">
-                            {item.productName}{" "}
-                            <span className="text-slate-400">× {item.quantity} {item.unit}</span>
-                          </p>
-                        ))}
-                        {order.items.length > 2 && (
-                          <p className="text-xs text-slate-400">+{order.items.length - 2} รายการ</p>
-                        )}
-                      </div>
-
-                      <div className="mt-3 flex items-center justify-between">
-                        <p className="text-xs text-slate-400">
-                          {formatThaiDate(order.createdAt)} · {order.itemCount} ชิ้น
-                        </p>
-                        <p className="font-bold tabular-nums text-slate-900">{formatBaht(order.total)}</p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Next page of the platform order list. */}
-              {ordersHasMore && (
-                <div className="mt-6 flex justify-center">
-                  <Button
-                    variant="outline"
-                    className="min-w-44 gap-1.5 rounded-md border-slate-200 text-slate-700"
-                    onClick={() => void loadMoreOrders()}
-                    disabled={ordersLoadingMore}
-                  >
-                    {ordersLoadingMore ? (
-                      <Loader2 className="size-4 animate-spin" />
-                    ) : (
-                      <RefreshCw className="size-4" />
-                    )}
-                    {ordersLoadingMore ? "กำลังโหลดเพิ่มเติม..." : "โหลดออเดอร์เพิ่มเติม"}
-                  </Button>
-                </div>
-              )}
-              </>
-            )}
-            {!canManageOrders && (
-              <p className="mt-4 text-xs text-slate-400">
-                โหมดพนักงาน: ดูข้อมูลได้ แต่เปลี่ยนสถานะออเดอร์ได้เฉพาะผู้ดูแลและเจ้าของบริษัท
-              </p>
-            )}
+            <OrdersTab
+              ordersData={ordersData}
+              ordersLoading={ordersLoading}
+              ordersLoadingMore={ordersLoadingMore}
+              ordersError={ordersError}
+              ordersHasMore={ordersHasMore}
+              canManageOrders={canManageOrders}
+              busyOrderId={busyOrderId}
+              onLoadOrders={loadOrders}
+              onLoadMoreOrders={loadMoreOrders}
+              onOrderStatusChange={handleOrderStatus}
+              getStatusOptions={statusOptions}
+            />
           </TabsContent>
 
           {/* Intelligence (restock prediction) was removed 2026-11-09 — the
@@ -1904,108 +1635,13 @@ export default function Center() {
 
                 {/* ---------- Customers ---------- */}
                 <TabsContent value="customer" className="mt-4">
-                  <Card className="gap-0 border-slate-200 shadow-none">
-                    <CardHeader className="flex-col items-start gap-3 space-y-0 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="min-w-0">
-                        <CardTitle className="flex items-center gap-2 text-base">
-                          <ShoppingBag className="size-4 text-brand" />
-                          บัญชีลูกค้า
-                        </CardTitle>
-                        <p className="mt-1 text-xs leading-5 text-slate-400">
-                          ลูกค้า {peopleCounts.customer} บัญชี · ผู้ขาย {peopleCounts.seller} บัญชี — แยกตามบทบาทจริงในฐานข้อมูล
-                        </p>
-                      </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="shrink-0 gap-1.5 rounded-md border-slate-200 text-slate-600"
-                        onClick={() => void loadPeople()}
-                      >
-                        <RefreshCw className={`size-3.5 ${customerUsers === null ? "animate-spin" : ""}`} />
-                        รีเฟรช
-                      </Button>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      <div className="relative">
-                        <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
-                        <Input
-                          value={customerSearch}
-                          onChange={(e) => setCustomerSearch(e.target.value)}
-                          placeholder="ค้นหาชื่อหรืออีเมลลูกค้า..."
-                          className="rounded-md pl-9"
-                        />
-                      </div>
-
-                      {customerUsers === null ? (
-                        <div className="space-y-2">
-                          {Array.from({ length: 3 }).map((_, i) => (
-                            <div key={i} className="h-14 animate-pulse rounded-xl border border-slate-200 bg-white" />
-                          ))}
-                        </div>
-                      ) : filteredCustomers.length === 0 ? (
-                        <div className="flex flex-col items-center rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center">
-                          <span className="flex size-12 items-center justify-center rounded-2xl bg-accent">
-                            <ShoppingBag className="size-6 text-brand" />
-                          </span>
-                          <p className="mt-4 text-sm font-semibold text-slate-900">
-                            {customerSearch ? "ไม่พบลูกค้าที่ค้นหา" : "ยังไม่มีบัญชีลูกค้า"}
-                          </p>
-                          <p className="mt-1 text-xs text-slate-500">
-                            {customerSearch ? "ลองใช้คำค้นอื่น" : "บัญชีลูกค้าจะปรากฏที่นี่เมื่อมีผู้สมัครใช้งาน velshop"}
-                          </p>
-                        </div>
-                      ) : (
-                        <>
-                          <div className="hidden overflow-x-auto rounded-xl border border-slate-200 bg-white md:block">
-                            <Table className="min-w-[620px]">
-                              <TableHeader>
-                                <TableRow className="hover:bg-transparent">
-                                  <TableHead className="pl-4 text-slate-400">ลูกค้า</TableHead>
-                                  <TableHead className="text-slate-400">อีเมล</TableHead>
-                                  <TableHead className="text-slate-400">สมัครเมื่อ</TableHead>
-                                  <TableHead className="pr-4 text-right text-slate-400">สถานะ</TableHead>
-                                </TableRow>
-                              </TableHeader>
-                              <TableBody>
-                                {filteredCustomers.map((c) => (
-                                  <TableRow key={c._id} className="hover:bg-slate-50/60">
-                                    <TableCell className="pl-4">
-                                      <p className="font-medium text-slate-900">{c.name || "ลูกค้าที่ยังไม่ตั้งชื่อ"}</p>
-                                      <p className="text-xs text-slate-400">#{c._id.slice(0, 8)}</p>
-                                    </TableCell>
-                                    <TableCell className="text-sm text-slate-600">{c.email ?? "—"}</TableCell>
-                                    <TableCell className="text-sm text-slate-600">{formatThaiDate(c.createdAt)}</TableCell>
-                                    <TableCell className="pr-4 text-right">
-                                      <Badge className={c.status === "active" ? "rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/15" : "rounded-full bg-rose-50 text-rose-700 ring-1 ring-inset ring-rose-600/15"}>
-                                        {c.status === "active" ? "ใช้งาน" : c.status}
-                                      </Badge>
-                                    </TableCell>
-                                  </TableRow>
-                                ))}
-                              </TableBody>
-                            </Table>
-                          </div>
-
-                          <div className="space-y-2 md:hidden">
-                            {filteredCustomers.map((c) => (
-                              <div key={c._id} className="rounded-xl border border-slate-200 bg-white p-3">
-                                <div className="flex items-start justify-between gap-2">
-                                  <div className="min-w-0">
-                                    <p className="truncate text-sm font-semibold text-slate-900">{c.name || "ลูกค้าที่ยังไม่ตั้งชื่อ"}</p>
-                                    <p className="mt-0.5 truncate text-xs text-slate-400">{c.email ?? "—"}</p>
-                                  </div>
-                                  <Badge className={c.status === "active" ? "shrink-0 rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/15" : "shrink-0 rounded-full bg-rose-50 text-rose-700 ring-1 ring-inset ring-rose-600/15"}>
-                                    {c.status === "active" ? "ใช้งาน" : c.status}
-                                  </Badge>
-                                </div>
-                                <p className="mt-2 text-2xs text-slate-400">สมัครเมื่อ {formatThaiDate(c.createdAt)}</p>
-                              </div>
-                            ))}
-                          </div>
-                        </>
-                      )}
-                    </CardContent>
-                  </Card>
+                  <CustomerUsersTab
+                    peopleCounts={peopleCounts}
+                    customerUsers={customerUsers}
+                    customerSearch={customerSearch}
+                    onCustomerSearchChange={setCustomerSearch}
+                    onRefresh={() => void loadPeople()}
+                  />
                 </TabsContent>
               </Tabs>
               ) : (
@@ -2052,327 +1688,24 @@ export default function Center() {
               never a second source of truth for money or media. */}
           {canSee("settings") && (
             <TabsContent value="settings" className="mt-6">
-              {settingsError && (
-                <div className="mb-4 flex flex-col items-start gap-2 rounded-xl border border-red-200 bg-red-50/60 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                  <p className="flex items-center gap-2 text-sm text-red-700">
-                    <AlertTriangle className="size-4 shrink-0" />
-                    โหลดการตั้งค่าไม่สำเร็จ: {settingsError}
-                  </p>
-                  <Button variant="outline" size="sm" className="shrink-0 rounded-md" onClick={() => void loadSettings()}>
-                    ลองใหม่
-                  </Button>
-                </div>
-              )}
-
-              <div className="grid gap-5 lg:grid-cols-[minmax(0,240px)_minmax(0,1fr)]">
-                {/* Section nav — wrapping chip grid on mobile (nothing scrolls
-                    sideways or gets clipped), sidebar on desktop. min-h-11 keeps
-                    every section a 44px touch target. */}
-                <nav aria-label="หมวดการตั้งค่า" className="lg:sticky lg:top-24 lg:self-start">
-                  <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:flex lg:flex-col lg:gap-1">
-                    {SETTINGS_SECTIONS.map((section) => {
-                      const Icon = section.icon;
-                      const active = settingsSection === section.id;
-                      return (
-                        <button
-                          key={section.id}
-                          type="button"
-                          onClick={() => setSettingsSection(section.id)}
-                          aria-current={active ? "page" : undefined}
-                          className={`flex min-h-11 items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-medium transition-colors lg:w-full ${
-                            active ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"
-                          }`}
-                        >
-                          <Icon className="size-4 shrink-0" />
-                          <span className="min-w-0">{section.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </nav>
-
-                <div className="min-w-0 space-y-5">
-                  {/* ---------- Company / platform identity ---------- */}
-                  {settingsSection === "company" && (
-                    <Card className="border-slate-200 shadow-none">
-                      <CardHeader>
-                        <CardTitle className="flex items-center gap-2 text-base">
-                          <Store className="size-4 text-brand" />
-                          ข้อมูลบริษัท / แพลตฟอร์ม
-                        </CardTitle>
-                        <p className="mt-1 text-xs leading-5 text-slate-400">
-                          Identity ของ Velnox Marketplace ที่แสดงบน velshop — บันทึกแล้วมีผลทันที
-                          และทุกการเปลี่ยนแปลงถูกบันทึกใน Audit Logs
-                        </p>
-                      </CardHeader>
-                      <CardContent>
-                        <form onSubmit={handleSaveSettings} className="grid gap-4">
-                          <div className="grid gap-2">
-                            <Label htmlFor="settings-name">ชื่อแพลตฟอร์ม / ร้านค้า</Label>
-                            <Input
-                              id="settings-name"
-                              value={form.shopName}
-                              onChange={(e) => setForm((f) => ({ ...f, shopName: e.target.value }))}
-                              placeholder="เช่น Velnox Marketplace"
-                            />
-                          </div>
-                          <div className="grid gap-2">
-                            <Label htmlFor="settings-tagline">คำโปรย / tagline</Label>
-                            <Input
-                              id="settings-tagline"
-                              value={form.tagline}
-                              onChange={(e) => setForm((f) => ({ ...f, tagline: e.target.value }))}
-                              placeholder="ซื้อขายของจริง · ปลีกและส่ง ในที่เดียว"
-                            />
-                          </div>
-                          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                            <div className="grid gap-2">
-                              <Label htmlFor="settings-phone">เบอร์โทรติดต่อ</Label>
-                              <Input
-                                id="settings-phone"
-                                value={form.phone}
-                                onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
-                                placeholder="081-234-5678"
-                              />
-                            </div>
-                            <div className="grid gap-2">
-                              <Label htmlFor="settings-announcement">ประกาศหน้าร้านค้า (ShopDetail)</Label>
-                              <Input
-                                id="settings-announcement"
-                                value={form.announcement}
-                                onChange={(e) => setForm((f) => ({ ...f, announcement: e.target.value }))}
-                                placeholder="เช่น สินค้าใหม่เข้าคลังแล้ว!"
-                              />
-                              <p className="text-2xs text-slate-400">
-                                ประกาศนี้แสดงในหน้าร้านค้าแต่ละร้านเท่านั้น — แบนเนอร์หน้าแรกอยู่ที่แท็บ การตลาด
-                              </p>
-                            </div>
-                          </div>
-                          <div className="grid gap-2">
-                            <Label htmlFor="settings-address">ที่อยู่บริษัท / ที่อยู่ร้าน</Label>
-                            <Textarea
-                              id="settings-address"
-                              value={form.address}
-                              onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
-                              placeholder="ที่อยู่สำหรับรับสินค้า / นัดรับ"
-                              rows={2}
-                            />
-                          </div>
-                          <Button
-                            type="submit"
-                            className="w-fit gap-1.5 bg-slate-900 text-white hover:bg-slate-800"
-                            disabled={savingSettings || settings === null}
-                          >
-                            {savingSettings ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
-                            บันทึกการตั้งค่า
-                          </Button>
-                        </form>
-                      </CardContent>
-                    </Card>
-                  )}
-
-                  {/* ---------- Marketplace behaviour ---------- */}
-                  {settingsSection === "marketplace" && (
-                    <Card className="border-slate-200 shadow-none">
-                      <CardHeader>
-                        <CardTitle className="flex items-center gap-2 text-base">
-                          <Package className="size-4 text-brand" />
-                          ตลาด & การอนุมัติสินค้า
-                        </CardTitle>
-                        <p className="mt-1 text-xs leading-5 text-slate-400">
-                          ควบคุมว่าสินค้าที่ผู้ขายส่งเข้าตลาดต้องผ่านการอนุมัติหรือไม่
-                        </p>
-                      </CardHeader>
-                      <CardContent className="space-y-4">
-                        <div className="space-y-3">
-                          <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 bg-white p-3 transition-colors hover:border-emerald-300">
-                            <input type="radio" name="approval-mode" value="manual" checked={approvalMode === "manual"} onChange={() => handleApprovalModeChange("manual")} disabled={savingApproval} className="mt-0.5" />
-                            <div>
-                              <span className="text-sm font-medium text-slate-900">อนุมัติด้วยมือ</span>
-                              <p className="text-xs text-slate-500">สินค้าทุกชิ้นต้องได้รับการตรวจสอบและอนุมัติจากผู้ดูแลก่อนแสดงบน VelShop</p>
-                            </div>
-                          </label>
-                          <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 bg-white p-3 transition-colors hover:border-emerald-300">
-                            <input type="radio" name="approval-mode" value="auto" checked={approvalMode === "auto"} onChange={() => handleApprovalModeChange("auto")} disabled={savingApproval} className="mt-0.5" />
-                            <div>
-                              <span className="text-sm font-medium text-slate-900">อนุมัติอัตโนมัติ</span>
-                              <p className="text-xs text-slate-500">สินค้าจะได้รับการอนุมัติและแสดงบน VelShop ทันทีหลังผ่านการตรวจสอบข้อมูล</p>
-                            </div>
-                          </label>
-                        </div>
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs leading-5 text-slate-500">
-                          ระบบยืนยันตัวตนของ Velnox เป็นแบบเดียว: การยืนยันตัวตนของผู้ขาย/ร้านค้า
-                          {settingsMeta?.moderation?.productVerificationEnabled === false
-                            ? " — ไม่มีระบบยืนยันสินค้าแยกรายชิ้น ป้าย V จึงมาจากสถานะการยืนยันของผู้ขายเท่านั้น"
-                            : ""}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  )}
-
-                  {/* ---------- Seller commission (read-only, real policy) ---------- */}
-                  {settingsSection === "commission" && (
-                    <Card className="border-slate-200 shadow-none">
-                      <CardHeader>
-                        <CardTitle className="flex items-center gap-2 text-base">
-                          <Coins className="size-4 text-brand" />
-                          ค่าธรรมเนียมผู้ขาย (Seller & Commission)
-                        </CardTitle>
-                        <p className="mt-1 text-xs leading-5 text-slate-400">
-                          นโยบายการเงินที่ engine คำนวณรายได้ของผู้ขายใช้จริง — แสดงแบบอ่านอย่างเดียว
-                          เพื่อไม่ให้มีแหล่งความจริงซ้อนกัน
-                        </p>
-                      </CardHeader>
-                      <CardContent>
-                        {settingsMeta?.commission ? (
-                          <>
-                            <div className="grid gap-3 sm:grid-cols-3">
-                              <div className="rounded-xl border border-slate-200 bg-white p-4">
-                                <p className="text-xs text-slate-400">ค่าธรรมเนียมผู้ขาย</p>
-                                <p className="mt-1 text-2xl font-bold tabular-nums text-slate-900">
-                                  {((settingsMeta.commission.sellerRate ?? 0) * 100).toFixed(1)}%
-                                </p>
-                                <p className="mt-0.5 text-2xs text-slate-400">หักจากยอดขายแต่ละรายการ</p>
-                              </div>
-                              <div className="rounded-xl border border-slate-200 bg-white p-4">
-                                <p className="text-xs text-slate-400">ความคุ้มครองการคืนสินค้า</p>
-                                <p className="mt-1 text-2xl font-bold tabular-nums text-slate-900">
-                                  {((settingsMeta.commission.returnCoverage ?? 0) * 100).toFixed(0)}%
-                                </p>
-                                <p className="mt-0.5 text-2xs text-slate-400">ของยอดขาย ครอบคลุมด้วยค่าธรรมเนียม</p>
-                              </div>
-                              <div className="rounded-xl border border-slate-200 bg-white p-4">
-                                <p className="text-xs text-slate-400">สกุลเงิน</p>
-                                <p className="mt-1 text-2xl font-bold text-slate-900">{settingsMeta.commission.currency ?? "THB"}</p>
-                                <p className="mt-0.5 text-2xs text-slate-400">สกุลเงินที่ระบบใช้คำนวณ</p>
-                              </div>
-                            </div>
-                            <p className="mt-4 flex items-start gap-2 rounded-xl bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-700">
-                              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-                              ค่าธรรมเนียมถูกกำหนดในระดับแพลตฟอร์ม (โค้ด/คอนฟิกของผู้ให้บริการ)
-                              จึงแก้จากหน้านี้ไม่ได้ — ป้องกันไม่ให้ยอดเงินของผู้ขายผิดพลาดจากการตั้งค่าโดยไม่ตั้งใจ
-                            </p>
-                          </>
-                        ) : (
-                          <p className="text-sm text-slate-400">กำลังโหลดนโยบายค่าธรรมเนียม...</p>
-                        )}
-                      </CardContent>
-                    </Card>
-                  )}
-
-                  {/* ---------- Localization ---------- */}
-                  {settingsSection === "localization" && (
-                    <Card className="border-slate-200 shadow-none">
-                      <CardHeader>
-                        <CardTitle className="flex items-center gap-2 text-base">
-                          <Globe className="size-4 text-brand" />
-                          ภาษา & ท้องถิ่น
-                        </CardTitle>
-                        <p className="mt-1 text-xs leading-5 text-slate-400">
-                          ภาษาที่แพลตฟอร์มรองรับ (แหล่งความจริงเดียว: shared i18n config)
-                        </p>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="grid gap-2 sm:grid-cols-2">
-                          {SUPPORTED_LANGUAGES.map((lang) => (
-                            <div key={lang.code} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
-                              <div className="min-w-0">
-                                <p className="truncate text-sm font-medium text-slate-900">{lang.label}</p>
-                                <p className="font-mono text-xs uppercase text-slate-400">{lang.code}</p>
-                              </div>
-                              {lang.code === DEFAULT_LANGUAGE && (
-                                <Badge className="shrink-0 gap-1 rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/15">
-                                  <BadgeCheck className="size-3" />
-                                  ค่าเริ่มต้น
-                                </Badge>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                        <p className="mt-4 text-xs leading-5 text-slate-400">
-                          ภาษาถูกเก็บเป็นคีย์ในฐานข้อมูล (categories.names, platform_settings) — เพิ่มภาษาใหม่ต้องมี locale file ใน shared i18n
-                        </p>
-                      </CardContent>
-                    </Card>
-                  )}
-
-                  {/* ---------- Media ---------- */}
-                  {settingsSection === "media" && (
-                    <Card className="border-slate-200 shadow-none">
-                      <CardHeader>
-                        <CardTitle className="flex items-center gap-2 text-base">
-                          <ImageIcon className="size-4 text-brand" />
-                          ไฟล์ & สื่อ (Media)
-                        </CardTitle>
-                        <p className="mt-1 text-xs leading-5 text-slate-400">
-                          ข้อจำกัดการอัปโหลดที่ backend บังคับใช้จริง (Cloudflare R2)
-                        </p>
-                      </CardHeader>
-                      <CardContent className="space-y-4">
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          <div className="rounded-xl border border-slate-200 bg-white p-4">
-                            <p className="text-xs text-slate-400">ขนาดไฟล์สูงสุด</p>
-                            <p className="mt-1 text-2xl font-bold tabular-nums text-slate-900">
-                              {settingsMeta?.media?.maxUploadBytes
-                                ? `${Math.round(settingsMeta.media.maxUploadBytes / (1024 * 1024))} MB`
-                                : "—"}
-                            </p>
-                          </div>
-                          <div className="rounded-xl border border-slate-200 bg-white p-4">
-                            <p className="text-xs text-slate-400">ประเภทไฟล์ที่อนุญาต</p>
-                            <div className="mt-2 flex flex-wrap gap-1">
-                              {(settingsMeta?.media?.allowedTypes ?? []).map((type) => (
-                                <Badge key={type} className="rounded-full bg-slate-100 text-2xs text-slate-600 ring-1 ring-inset ring-slate-600/10">
-                                  {type.replace("image/", "")}
-                                </Badge>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-                        <p className="text-xs leading-5 text-slate-400">
-                          ไฟล์ถูกเก็บแบบ private บน R2 — หลักฐานการยืนยันตัวตนเข้าถึงได้เฉพาะผู้ตรวจสอบผ่าน signed URL อายุสั้น
-                        </p>
-                      </CardContent>
-                    </Card>
-                  )}
-
-                  {/* ---------- Access / permissions ---------- */}
-                  {settingsSection === "access" && (
-                    <Card className="border-slate-200 shadow-none">
-                      <CardHeader>
-                        <CardTitle className="flex items-center gap-2 text-base">
-                          <KeyRound className="size-4 text-brand" />
-                          สิทธิ์การเข้าถึง (Permissions)
-                        </CardTitle>
-                        <p className="mt-1 text-xs leading-5 text-slate-400">
-                          แคตตาล็อกสิทธิ์ที่ระบบรู้จัก — การมอบสิทธิ์ทำได้ที่แท็บ “ผู้ใช้ & ลูกค้า” (เจ้าของบริษัทเท่านั้น)
-                        </p>
-                      </CardHeader>
-                      <CardContent>
-                        {isOwner ? (
-                          permissionCatalog.length === 0 ? (
-                            <p className="text-sm text-slate-400">กำลังโหลดรายการสิทธิ์...</p>
-                          ) : (
-                            <ul className="grid gap-2 sm:grid-cols-2">
-                              {permissionCatalog.map((perm) => (
-                                <li key={perm.code} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5">
-                                  <p className="text-sm font-medium text-slate-900">{perm.label}</p>
-                                  <p className="mt-0.5 text-xs text-slate-400">{perm.description}</p>
-                                  <p className="mt-1 font-mono text-2xs text-slate-300">{perm.code}</p>
-                                </li>
-                              ))}
-                            </ul>
-                          )
-                        ) : (
-                          <p className="rounded-xl bg-slate-50 px-4 py-3 text-xs leading-5 text-slate-500">
-                            การจัดการสิทธิ์พนักงานเป็นสิทธิ์ของเจ้าของบริษัทเท่านั้น
-                          </p>
-                        )}
-                      </CardContent>
-                    </Card>
-                  )}
-                </div>
-              </div>
+              <SettingsTab
+                settingsError={settingsError}
+                onLoadSettings={() => void loadSettings()}
+                settingsSection={settingsSection}
+                onSelectSection={setSettingsSection}
+                form={form}
+                onFormChange={setForm}
+                onSaveSettings={handleSaveSettings}
+                savingSettings={savingSettings}
+                settings={settings}
+                approvalMode={approvalMode}
+                onApprovalModeChange={handleApprovalModeChange}
+                savingApproval={savingApproval}
+                settingsMeta={settingsMeta}
+                isOwner={isOwner}
+                permissionCatalog={permissionCatalog}
+                sections={SETTINGS_SECTIONS}
+              />
             </TabsContent>
           )}
         </Tabs>

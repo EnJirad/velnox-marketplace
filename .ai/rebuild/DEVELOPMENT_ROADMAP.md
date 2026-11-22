@@ -105,17 +105,22 @@
 - **Acceptance Criteria:** คำสั่งซื้อซ้ำหรือ Webhook ซ้ำต้องไม่หักเงินซ้ำ ยอดเงินและคอมมิชชันใน Ledger ตรงกับ Statement จริง
 - **Risk:** Low (Completed)
 
-### Milestone 6: Frontends Rebuild & Cloudflare Pages Deployment
+### Milestone 6: Frontends Rebuild & Cloudflare Pages Deployment (COMPLETED)
+- **Status:** COMPLETED (2026-11-22)
 - **Objective:** ปรับปรุง Frontend Applications (VelShop, VelSeller, VelCenter) ให้เชื่อมต่อกับ API Contract ใหม่, แยกโมดูล `Center.tsx` (2,384 บรรทัด) ออกเป็นโมดูลย่อย, และจัดเตรียมการ Deploy สู่ **Cloudflare Pages Static Hosting** พร้อมระบบ SPA Routing (`/* /index.html 200`)
 - **Key Modules/Files:**
-  - `apps/velshop/` (`shop.velnox.live`)
-  - `apps/velseller/` (`seller.velnox.live`)
-  - `apps/velcenter/` (`center.velnox.live`)
-  - `apps/velnox/` (`velnox.live`)
-  - Cloudflare Pages configuration & build output verification
+  - `apps/velshop/public/_redirects` (`shop.velnox.live`)
+  - `apps/velseller/public/_redirects` (`seller.velnox.live`)
+  - `apps/velcenter/public/_redirects` (`center.velnox.live`)
+  - `apps/velnox/public/_redirects` (`velnox.live`)
+  - `apps/velcenter/src/components/OverviewTab.tsx`
+  - `apps/velcenter/src/components/OrdersTab.tsx`
+  - `apps/velcenter/src/components/CustomerUsersTab.tsx`
+  - `apps/velcenter/src/components/SettingsTab.tsx`
+  - `apps/velcenter/src/pages/Center.tsx` (Decomposed)
 - **Dependencies:** Milestone 4, Milestone 5
 - **Acceptance Criteria:** หน้าจอโหลดเร็วระดับ Edge, Responsive สมบูรณ์, รองรับภาษา TH/EN/MY, Preview Deployments บน Cloudflare Pages ทำงานได้ 100% โดยคง Vercel เดิมไว้ขนานกัน
-- **Risk:** Medium
+- **Risk:** Low (Completed)
 
 ### Milestone 7: Realtime Hub & Push Notifications
 - **Objective:** ย้าย WebSocket in-memory สู่ Cloudflare Durable Objects และเพิ่มระบบ Push Notifications ผ่าน FCM สำหรับ Mobile

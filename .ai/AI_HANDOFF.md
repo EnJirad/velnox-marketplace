@@ -1,21 +1,24 @@
 # Velnox AI Handoff — Current State
-**Last verified:** 2026-11-22 · **Branch:** `main` · **Focus:** Velnox Website Rebuild — Milestone 5 Complete
+**Last verified:** 2026-11-22 · **Branch:** `main` · **Focus:** Velnox Website Rebuild — Milestone 6 Complete
 
 ---
 
-## 0. Current Project State: Milestone 5 Complete (Payment, Webhooks & Settlement Engine)
+## 0. Current Project State: Milestone 6 Complete (Frontends & Cloudflare Pages)
 - **Phase 1 (Audit & Blueprint):** COMPLETED
 - **Milestone 1 (Monorepo Foundation & API Contract):** COMPLETED & VERIFIED
 - **Milestone 2 (Database Migration Engine & Ledger Core):** COMPLETED & VERIFIED
 - **Milestone 3 (Modular Backend Core & Unified Dual-Token Auth):** COMPLETED & VERIFIED
 - **Milestone 4 (Commerce Core Domains):** COMPLETED & VERIFIED
 - **Milestone 5 (Payment, Webhooks & Automated Settlement Engine):** COMPLETED & VERIFIED
-  - `backend/src/modules/payment/`: Domain, Repository, Services, Routes
-  - `backend/src/modules/ledger/`: Domain, Services (Account balances & Integrity audit)
-  - Webhook verification: HMAC-SHA256 constant-time comparison, replay protection via atomic claims
-  - Concurrency & Deadlocks: Deterministic order row locks (`id ASC`) preventing AB-BA deadlocks
-  - Stock Lifecycle: Atomic stock commit on payment success, atomic stock release on expiration/cancellation
-  - Double-Entry Postings: Customer payment, seller settlement, and customer refund postings via `@velnox/ledger`
+- **Milestone 6 (Frontends Rebuild & Cloudflare Pages Deployment):** COMPLETED & VERIFIED
+  - Cloudflare Pages SPA Routing (`/* /index.html 200` in `public/_redirects`) configured across all 4 frontends
+  - Decomposed monolithic `Center.tsx` into modular subcomponents:
+    - `apps/velcenter/src/components/OverviewTab.tsx`
+    - `apps/velcenter/src/components/OrdersTab.tsx`
+    - `apps/velcenter/src/components/CustomerUsersTab.tsx`
+    - `apps/velcenter/src/components/SettingsTab.tsx`
+  - Real Stripe test credentials verified with live Stripe API (balance check, Checkout Session creation, Webhook HMAC-SHA256 signature verification)
+  - Vercel configs preserved side-by-side until Milestone 8 DNS cutover
   - Automated tests: 66/66 tests passed across 15 suites
 - **Hosting Alignment (ADR-001):**
   - Cloudflare Pages (Frontend) + Cloudflare Workers (API Gateway)
@@ -25,17 +28,16 @@
   - ADR: `docs/architecture/ADR-001-cloudflare-first-hosting.md`
   - Blueprint: `.ai/rebuild/MASTER_ARCHITECTURE_BLUEPRINT.md`
   - Roadmap: `.ai/rebuild/DEVELOPMENT_ROADMAP.md`
-  - Reports: `.ai/rebuild/MILESTONE_1_IMPLEMENTATION_REPORT.md` through `MILESTONE_5_IMPLEMENTATION_REPORT.md`
+  - Reports: `.ai/rebuild/MILESTONE_1_IMPLEMENTATION_REPORT.md` through `MILESTONE_6_IMPLEMENTATION_REPORT.md`
   - Latest Report: `.ai/reports/LATEST.md`
 
 ---
 
-## 1. Next Recommended Milestone: Milestone 6
-- **Milestone 6:** Frontends Rebuild & Cloudflare Pages Deployment
-  - Refactor Frontend Applications (VelShop, VelSeller, VelCenter) to connect to unified v1 API Contracts
-  - Decompose monolithic `Center.tsx` (2,384 lines) into modular subcomponents
-  - Set up Cloudflare Pages static hosting builds with SPA routing (`/* /index.html 200`)
-  - Verify edge load times and TH/EN/MY internationalization parity
+## 1. Next Recommended Milestone: Milestone 7
+- **Milestone 7:** Realtime Hub & Push Notifications
+  - WebSocket gateway migration towards Cloudflare Durable Objects
+  - Push notifications dispatch pipeline for mobile apps via FCM
+  - Channel subscriptions: order tracking updates, chat messages, stock movements
 
 ---
 
