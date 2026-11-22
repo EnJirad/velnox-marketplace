@@ -15,10 +15,10 @@
  * browser by Vite. Never store secrets in VITE_* variables.
  */
 export const SITE_URLS = {
-  corporate: import.meta.env.VITE_CORPORATE_URL ?? "https://velnox-theta.vercel.app",
-  velshop: import.meta.env.VITE_VELSHOP_URL ?? "https://velshop.vercel.app",
-  velseller: import.meta.env.VITE_VELSELLER_URL ?? "https://velseller.vercel.app",
-  velcenter: import.meta.env.VITE_VELCENTER_URL ?? "https://velcenter.vercel.app",
+  corporate: import.meta.env.VITE_CORPORATE_URL ?? "https://velnox.live",
+  velshop: import.meta.env.VITE_VELSHOP_URL ?? "https://shop.velnox.live",
+  velseller: import.meta.env.VITE_VELSELLER_URL ?? "https://seller.velnox.live",
+  velcenter: import.meta.env.VITE_VELCENTER_URL ?? "https://center.velnox.live",
 } as const;
 
 export type SiteId = keyof typeof SITE_URLS;
@@ -27,10 +27,11 @@ export type SiteId = keyof typeof SITE_URLS;
  * Backend API origin (no path).
  *
  * VITE_API_URL contains ONLY the backend origin — never include /api here.
- * Falls back to the local dev server port (3001) when the env var is absent.
+ * Defaults to https://api.velnox.live in production and http://localhost:8787 for local Workers dev.
  */
 export const apiUrl: string =
-  import.meta.env.VITE_API_URL || "http://localhost:3001";
+  import.meta.env.VITE_API_URL ||
+  (import.meta.env.PROD ? "https://api.velnox.live" : "http://localhost:8787");
 
 /**
  * Full API base URL including /api prefix.

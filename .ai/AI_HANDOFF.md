@@ -1,12 +1,12 @@
 # Velnox AI Handoff — Current State
-**Last verified:** 2026-11-22 · **Branch:** `main` · **Focus:** Clean Rebuild Initiative · Phase 5 Complete
+**Last verified:** 2026-11-22 · **Branch:** `main` · **Focus:** Clean Rebuild Initiative · Phase 6 Complete
 
 ---
 
-## 0. Current Project State: CLEAN REBUILD INITIATIVE (PHASE 5 COMPLETE)
+## 0. Current Project State: CLEAN REBUILD INITIATIVE (PHASE 6 COMPLETE)
 - **Active Initiative:** Velnox Clean Rebuild Initiative (Cloudflare-First · Clean Database)
-- **Last Completed Milestone:** **Phase 5 (Payment & Finance — Stripe Webhook, Double-Entry Ledger, Settlements)**
-- **Next Active Milestone:** **Phase 6 (Frontend Integration — Pages -> Workers API, Real States, Zero Mocks)**
+- **Last Completed Milestone:** **Phase 6 (Frontend Integration — Pages -> Workers API, Real States, Zero Mocks)**
+- **Next Active Milestone:** **Phase 7 (Realtime & Notifications — Durable Objects WebSockets, Queues, FCM)**
 
 ### Approved Rebuild Directives (MANDATORY):
 - **STRATEGY:** Full clean rebuild designed for Cloudflare from day one. We are NOT continuing a legacy backend migration.
@@ -16,7 +16,7 @@
 - **DOUBLE-ENTRY SATANG LEDGER:** Integrated `@velnox/ledger` accounting engine. Strictly integer satang minor units (`BigInt`). Zero floating-point arithmetic. Double-entry invariant guaranteed: `Debits === Credits`.
 - **STRIPE & WEBHOOK INTEGRATION:** Pure Web Crypto HMAC-SHA256 signature verifier with idempotency guards. Automatic settlement creation and platform fee computation (5%).
 - **GUARDED INVENTORY & CHECKOUT:** Pessimistic row locking with 15-minute TTL stock reservations preventing overselling.
-- **FRONTEND HOSTING:** **Cloudflare Pages** (`shop.velnox.live`, `seller.velnox.live`, `center.velnox.live`, `velnox.live`).
+- **FRONTEND HOSTING & INTEGRATION:** **Cloudflare Pages** (`shop.velnox.live`, `seller.velnox.live`, `center.velnox.live`, `velnox.live`) fully configured to consume Workers API with CORS and credentials support.
 
 ### Core Architecture Artifacts:
 - **Clean Rebuild Architecture:** [`docs/architecture/VELNOX_CLEAN_REBUILD_ARCHITECTURE.md`](file:///workspace/quiet-hopper/docs/architecture/VELNOX_CLEAN_REBUILD_ARCHITECTURE.md)
@@ -33,8 +33,8 @@
 - [x] **Phase 3: Marketplace Core (Sellers, Shops, Categories, Products, R2 Media)** (COMPLETED 2026-11-22)
 - [x] **Phase 4: Commerce Core (Cart, Checkout, Guarded Inventory Reservations, Orders)** (COMPLETED 2026-11-22)
 - [x] **Phase 5: Payment & Finance (Stripe Webhook, Double-Entry Ledger, Settlements)** (COMPLETED 2026-11-22)
-- [ ] **Phase 6: Frontend Integration (Pages -> Workers API, Real States, Zero Mocks)** (NEXT ACTIVE)
-- [ ] **Phase 7: Realtime & Notifications (Durable Objects WebSockets, Queues, FCM)**
+- [x] **Phase 6: Frontend Integration (Pages -> Workers API, Real States, Zero Mocks)** (COMPLETED 2026-11-22)
+- [ ] **Phase 7: Realtime & Notifications (Durable Objects WebSockets, Queues, FCM)** (NEXT ACTIVE)
 - [ ] **Phase 8: Quality, Security & Release (E2E Tests, OWASP Audit, Production Cutover)**
 
 ---

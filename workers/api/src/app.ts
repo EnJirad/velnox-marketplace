@@ -55,27 +55,27 @@ export function createApplication() {
   // Mount Health Routes
   app.route("/", healthRoutes);
 
-  // Mount Auth Routes under /api/v1/auth
+  // Mount Version 1 Routes
+  app.route("/api/v1/health", healthRoutes);
   app.route("/api/v1/auth", authRoutes);
-
-  // Mount Catalog Routes under /api/v1/catalog and /api/v1 (for category/product aliases)
   app.route("/api/v1/catalog", catalogRoutes);
+  app.route("/api/v1/seller", sellerRoutes);
+  app.route("/api/v1/media", mediaRoutes);
+  app.route("/api/v1/cart", cartRoutes);
+  app.route("/api/v1/orders", orderRoutes);
+  app.route("/api/v1/payments", paymentRoutes);
   app.route("/api/v1", catalogRoutes);
 
-  // Mount Seller Routes under /api/v1/seller
-  app.route("/api/v1/seller", sellerRoutes);
-
-  // Mount Media Routes under /api/v1/media
-  app.route("/api/v1/media", mediaRoutes);
-
-  // Mount Cart Routes under /api/v1/cart
-  app.route("/api/v1/cart", cartRoutes);
-
-  // Mount Order Routes under /api/v1/orders
-  app.route("/api/v1/orders", orderRoutes);
-
-  // Mount Payment & Finance Routes under /api/v1/payments
-  app.route("/api/v1/payments", paymentRoutes);
+  // Mount Unversioned /api Aliases for Full Frontend & Legacy Client Compatibility
+  app.route("/api/health", healthRoutes);
+  app.route("/api/auth", authRoutes);
+  app.route("/api/catalog", catalogRoutes);
+  app.route("/api/seller", sellerRoutes);
+  app.route("/api/media", mediaRoutes);
+  app.route("/api/cart", cartRoutes);
+  app.route("/api/orders", orderRoutes);
+  app.route("/api/payments", paymentRoutes);
+  app.route("/api", catalogRoutes);
 
   // Default root index endpoint
   app.get("/", (c) => {

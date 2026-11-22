@@ -18,12 +18,13 @@ export const authRoutes = new Hono<{ Bindings: Bindings; Variables: Variables }>
 
 // Cache of identity service per environment
 let identityServiceInstance: IdentityService | null = null;
+let cachedJwtSecret: string | null = null;
 
 function getIdentityService(c: any): IdentityService {
-  if (identityServiceInstance) return identityServiceInstance;
-
   const env = c.env as Bindings | undefined;
   const jwtSecret = env?.JWT_SECRET || "velnox-default-development-jwt-secret-at-least-32-chars";
+
+  if (identityServiceInstance && cachedJwtSecret === jwtSecret) return identityServiceInstance;
 
   let repo;
   if (env?.DATABASE_URL) {
@@ -35,11 +36,13 @@ function getIdentityService(c: any): IdentityService {
   }
 
   identityServiceInstance = new IdentityService(repo, jwtSecret);
+  cachedJwtSecret = jwtSecret;
   return identityServiceInstance;
 }
 
 export function setTestIdentityService(service: IdentityService | null) {
   identityServiceInstance = service;
+  cachedJwtSecret = null;
 }
 
 /**
