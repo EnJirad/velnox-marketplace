@@ -124,7 +124,7 @@ CREATE INDEX IF NOT EXISTS idx_media_objects_r2_key ON media_objects (r2_key);
 INSERT INTO categories (id, parent_id, name, name_th, name_en, name_my, slug, level, sort_order)
 VALUES
   ('00000000-0000-0000-0000-000000000001', NULL, 'Electronics', 'อิเล็กทรอนิกส์และไอที', 'Electronics & IT', 'အီလက်ထရွန်းနစ်', 'electronics', 1, 1),
-  ('00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000001', 'Smartphones & Tablets', 'สมาร์ทโฟนและแท็บเล็ต', 'Smartphones & Tablets', 'စမတ်ဖုန်းและ တက်ဘလက်', 'smartphones-tablets', 2, 1),
+  ('00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000001', 'Smartphones & Tablets', 'สมาร์ทโฟนและแท็บเล็ต', 'Smartphones & Tablets', 'စမတ်ဖုန်းနှင့် တက်ဘလက်', 'smartphones-tablets', 2, 1),
   ('00000000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-000000000001', 'Computers & Laptops', 'คอมพิวเตอร์และแล็ปท็อป', 'Computers & Laptops', 'ကွန်ပျူတာနှင့် လက်ပ်တော့', 'computers-laptops', 2, 2),
   ('00000000-0000-0000-0000-000000000004', NULL, 'Fashion', 'แฟชั่น', 'Fashion', 'ဖက်ရှင်', 'fashion', 1, 2),
   ('00000000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-000000000004', 'Men Fashion', 'แฟชั่นผู้ชาย', 'Men Fashion', 'အမျိုးသားဖက်ရှင်', 'men-fashion', 2, 1),

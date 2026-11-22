@@ -12,7 +12,7 @@
 - **STRATEGY:** Full clean rebuild designed for Cloudflare from day one. Completed and verified across all subsystems.
 - **TARGET BACKEND:** **Cloudflare Workers** (`workers/api`) running **Hono Framework** in TypeScript, Modular Monolith at `api.velnox.live`.
 - **DATABASE CONNECTIVITY:** Cloudflare Workers connects to Neon PostgreSQL via `@neondatabase/serverless` over WebSockets/HTTP.
-- **CLEAN CORE SCHEMA:** Production migrations `0001_identity.sql` through `0005_realtime_chat.sql` established in Neon PostgreSQL.
+- **CLEAN CORE SCHEMA:** Production migrations `0001_identity.sql` through `0005_realtime_chat.sql` established in Neon PostgreSQL with 100% UUID foreign key type alignment (SQLSTATE 42804 resolved).
 - **DOUBLE-ENTRY SATANG LEDGER:** Integrated `@velnox/ledger` accounting engine. Strictly integer satang minor units (`BigInt`). Zero floating-point arithmetic. Double-entry invariant guaranteed: `Debits === Credits`.
 - **REALTIME & DURABLE OBJECTS:** Distributed stateful WebSockets via `RealtimeHubDO` with channel fan-out, multi-tab presence, and active-chat push notification suppression.
 - **FRONTEND HOSTING & INTEGRATION:** **Cloudflare Pages** (`shop.velnox.live`, `seller.velnox.live`, `center.velnox.live`, `velnox.live`) fully configured to consume Workers API.
