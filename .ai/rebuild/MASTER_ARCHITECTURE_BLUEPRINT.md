@@ -53,22 +53,34 @@
 
 ## 2. Infrastructure Specification (เป้าหมายโครงสร้างพื้นฐาน)
 
+> [!IMPORTANT]
+> **Hosting & Infrastructure Decision (ADR-001):**
+> Cloudflare ได้รับการอนุมัติให้เป็นแพลตฟอร์มหลักอันดับหนึ่ง (Cloudflare-First Unified Platform) สำหรับระบบ Rebuild ใหม่ทั้งหมด Vercel ไม่ได้เป็นส่วนหนึ่งของสถาปัตยกรรมเป้าหมายอีกต่อไป โดยการใช้งาน Vercel ในปัจจุบันถูกจัดเป็น **Legacy Infrastructure** เท่านั้น (อ้างอิง: [`docs/architecture/ADR-001-cloudflare-first-hosting.md`](file:///workspace/quiet-hopper/docs/architecture/ADR-001-cloudflare-first-hosting.md))
+
 ### 2.1 Cloudflare Edge Stack
-1. **Cloudflare Pages:** โฮสต์เว็บแอปพลิเคชัน SPA/SSR ทั้ง 4 ตัว รวดเร็ว รองรับ Global CDN Caching และ Automatic Preview Deployments
-2. **Cloudflare Workers (Backend API):** ย้าย API Gateway และ Modular Monolith สู่ Workers Runtime ไร้ปัญหา Cold Start ของ Container, รองรับ V8 Isolates ทำงานได้ทั่วโลกด้วย Latency ต่ำ
-3. **Cloudflare R2 Storage:** สำหรับจัดเก็บรูปภาพและเอกสารทั้งหมด เชื่อมต่อผ่าน Worker Direct Bindings ไร้ค่า Egress Fees
-4. **Cloudflare KV:** แคชสำหรับ System Settings, Global Annoucements, Category Tree และ Token Revocation Blocklist ที่ต้องการความเร็วระดับ Sub-millisecond
-5. **Cloudflare Queues:** จัดการ Asynchronous Background Workflows เช่น:
-   - Webhook Retries & Dead Letter Queue
-   - Email / Push Notification Dispatch (FCM)
-   - Daily Financial Reconciliation Jobs
-   - Media Post-Processing
-6. **Cloudflare Durable Objects:** จัดการการเชื่อมต่อ WebSocket Real-time สำหรับระบบแชทและการแจ้งเตือน เพื่อรักษา In-Memory State เฉพาะห้องหรือกลุ่มผู้ใช้โดยสามารถสเกลได้อย่างอิสระทั่วโลก
+1. **Cloudflare Pages (Frontend Hosting):** โฮสต์เว็บแอปพลิเคชัน SPA ทั้งหมดแบบ Static Hosting รองรับ Global Anycast CDN, Asset Compression, และ SPA Routing (`/* /index.html 200`):
+   - **Velnox Shop:** `shop.velnox.live` (Customer Storefront)
+   - **Velnox Seller:** `seller.velnox.live` (Seller Operations Dashboard)
+   - **Velnox Center:** `center.velnox.live` (Marketplace Admin Control Center)
+   - **Velnox Corporate:** `velnox.live` (Corporate Showcase)
+2. **Cloudflare Workers (Backend API):** รัน Modular Monolith API Gateway ด้วย TypeScript + Hono ที่ความเร็วระดับ Edge Sub-millisecond:
+   - Target Endpoint: `https://api.velnox.live/api/v1/*`
+   - ไร้ปัญหา Cold Start ของคอนเทนเนอร์ และรองรับการสเกลแบบ Serverless ทั่วโลก
+3. **Cloudflare R2 Storage:** จัดเก็บรูปภาพสินค้า ภาพโปรไฟล์ และเอกสาร ผ่าน Worker Native Bindings (`env.R2_BUCKET`) ไร้ค่า Data Egress และไม่จำเป็นต้องใช้ AWS S3 SDK
+4. **Cloudflare KV:** จัดเก็บ Distributed Cache สำหรับ System Settings, Banners, Announcements, Category Tree และ Token Revocation Blocklist
+5. **Cloudflare Queues:** จัดการ Asynchronous Background Workflows (Webhook retries, FCM push notifications, Financial reconciliation)
+6. **Cloudflare Durable Objects:** จัดการการเชื่อมต่อ WebSocket Stateful Hub สำหรับห้องแชท Real-time และ Presence Synchronization
 
 ### 2.2 Neon PostgreSQL (The Single Source of Truth)
-- ทุกธุรกรรมพาณิชย์ การเงิน และความปลอดภัยต้องอยู่ใน Neon PostgreSQL เท่านั้น
-- เชื่อมต่อผ่าน `@neondatabase/serverless` (WebSocket/HTTP driver) ป้องกันปัญหา Connection Exhaustion บน Serverless
-- บังคับใช้ Foreign Keys, Check Constraints, Row Locking (`FOR UPDATE NOWAIT`) และ Database Transactions อย่างเคร่งครัด
+- Neon PostgreSQL ยังคงเป็นฐานข้อมูลหลักเพียงหนึ่งเดียว (Single Source of Truth) ของธุรกรรมการเงิน สต็อกสินค้า คำสั่งซื้อ และข้อมูลบัญชี
+- **ห้ามแทนที่ Neon ด้วย Cloudflare D1** เนื่องจาก D1 ยังไม่รองรับ ACID Transaction เต็มรูปแบบ, Foreign Keys และ Concurrency Isolation ระดับที่ระบบ Marketplace ต้องการ
+- ห้ามสร้างฐานข้อมูลโปรดักชันที่สองเพื่อป้องกันปัญหา Data Inconsistency
+- เชื่อมต่อผ่าน `@neondatabase/serverless` (WebSocket/HTTP driver) พร้อม PgBouncer Connection Pooling
+
+### 2.3 Legacy Vercel Retirement Policy (นโยบายปลดระวาง Vercel)
+- Vercel ถูกตัดออกจากสถาปัตยกรรมเป้าหมายใหม่ (Target Architecture)
+- **การคงไว้ชั่วคราว:** ไฟล์ `vercel.json` และการตั้งค่าในโปรดักชันเดิมจะถูกคงไว้เพื่อไม่ให้กระทบเว็บที่กำลังออนไลน์อยู่ (`velshop.vercel.app`, ฯลฯ)
+- **ขั้นตอนการสลับระบบ:** จะย้ายขึ้น Cloudflare Pages ในช่วง Milestone 6 และทำการสลับ Cloudflare DNS เมื่อระบบใหม่ผ่าน E2E Verification 100% หลังจากนั้นจึงจะปลดระวาง Vercel อย่างเป็นทางการ
 
 ---
 

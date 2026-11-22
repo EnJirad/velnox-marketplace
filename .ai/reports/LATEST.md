@@ -1,54 +1,57 @@
-# LATEST — 2026-11-22 · สำเร็จ Milestone 1: Monorepo Foundation & Shared API Contract
-**Branch:** `main` · **Status:** DONE · สร้างรากฐาน Monorepo, Shared Packages, Zod API Contracts และ Type-Safe Client เรียบร้อย
+# LATEST — 2026-11-22 · สรุปผล Architecture Alignment & Milestone 1 Verification
+**Branch:** `main` · **Status:** DONE · ปรับสถาปัตยกรรมสู่ Cloudflare-first, ปลดระวาง Vercel ตามแผน, ตรวจสอบ Milestone 1 ผ่าน 100%
 
 ---
 
-## 1. สรุปงานที่ดำเนินการใน Milestone 1
+## 1. สรุปผลการดำเนินงาน (Architecture Alignment & Milestone 1 Verification)
 
-1. **การแก้ไข Entry Point ของ `@velnox/shared`:**
-   - สร้างไฟล์ [packages/shared/src/index.ts](file:///workspace/quiet-hopper/packages/shared/src/index.ts) เพื่อเป็น Public Entry Point ที่แท้จริง แก้ไขปัญหาการ Import จาก root `@velnox/shared` ที่เคยล้มเหลว
-2. **การจัดตั้ง Shared Packages ใหม่ใน Monorepo:**
-   - **`@velnox/config`**: เก็บ Base TypeScript configuration และค่าคงที่ระบบ
-   - **`@velnox/validation`**: รวม Zod Primitives (UUID, Phone, Money minor/decimal, Slugs, Address, Auth inputs)
-   - **`@velnox/api-contract`**: มาตรฐาน Envelopes (`ApiResponse`, `ApiErrorResponse`), Domain Contracts v1 (Health, Auth, Categories, Products, Cart) พร้อมตัวสร้าง OpenAPI 3.1.0 Spec
-   - **`@velnox/api-client`**: Client เรียกใช้ API แบบ Type-safe พร้อมระบบถอดรหัส Envelope, Token Injection, Timeout และ Error Classification
-3. **การทดสอบความถูกต้อง (Test & Quality Gates):**
-   - เขียน Unit Tests ครบถ้วนสำหรับ Validation Primitives, Domain Contracts, OpenAPI Generator และ API Client
-   - อัปเดตสคริปต์ใน `package.json` (`test:contracts`, `typecheck:packages`)
-   - อัปเดต `.github/workflows/test.yml` เพื่อให้ CI ตรวจสอบ Packages ใหม่เสมอ
-   - ปรับปรุง `bun.lock` ให้ตรงกับ Workspace Manifest 100% ป้องกันปัญหา `--frozen-lockfile`
-4. **ความปลอดภัยและระบบเดิม:**
-   - ยืนยันไม่มีการแก้ไขฐานข้อมูล Production (Neon PostgreSQL)
-   - ไม่มีการแตะต้องโค้ดธุรกรรมเดิมใน Backend หรือ UI ของแอปทั้ง 4 ตัว
-   - ไม่มีการแก้ไข Repository `velnox-mobile`
+1. **การบันทึกการตัดสินใจทางสถาปัตยกรรม (ADR-001: Cloudflare-First Hosting):**
+   - บันทึกการตัดสินใจอย่างเป็นทางการใน [docs/architecture/ADR-001-cloudflare-first-hosting.md](file:///workspace/quiet-hopper/docs/architecture/ADR-001-cloudflare-first-hosting.md)
+   - กำหนดให้ **Cloudflare Pages** เป็นโฮสติ้งหลักสำหรับเว็บแอปพลิเคชันทั้ง 4 ตัว (`shop.velnox.live`, `seller.velnox.live`, `center.velnox.live`, `velnox.live`)
+   - กำหนดให้ **Cloudflare Workers** เป็นรันไทม์เป้าหมายสำหรับ Backend API Gateway (`api.velnox.live`)
+   - ยืนยันให้ **Neon PostgreSQL** เป็น Single Source of Truth เพียงหนึ่งเดียว โดยปฏิเสธ Cloudflare D1 เนื่องจากข้อจำกัดด้าน ACID Transactions และ Concurrency Isolation
+   - อัปเดต [MASTER_ARCHITECTURE_BLUEPRINT.md](file:///workspace/quiet-hopper/.ai/rebuild/MASTER_ARCHITECTURE_BLUEPRINT.md) และ [DEVELOPMENT_ROADMAP.md](file:///workspace/quiet-hopper/.ai/rebuild/DEVELOPMENT_ROADMAP.md) ให้สอดคล้องกัน
 
----
+2. **ผลการตรวจสอบความเข้ากันได้ของ Frontend กับ Cloudflare Pages (Pages Compatibility Audit):**
+   - ตรวจสอบ `apps/velshop`, `apps/velseller`, `apps/velcenter`, `apps/velnox` พบว่าเป็น Pure React 19 + Vite 7 SPAs 100%
+   - Build Artifacts เป็น Static Files (`index.html`, `assets/*.js`, `assets/*.css`) ไม่มีโค้ด SSR หรือ Node Runtime
+   - เข้ากันได้กับ Cloudflare Pages Static Hosting 100% โดยใช้กติกา SPA Routing (`/* /index.html 200`)
 
-## 2. ไฟล์ที่สร้างและเปลี่ยนแปลง
+3. **ผลการตรวจสอบความเข้ากันได้ของ Backend กับ Edge Runtime:**
+   - Backend ปัจจุบัน (Express บน Render) ยังมี Node-specific modules (`ws`, `@aws-sdk/client-s3`, `http`)
+   - วางแผนเปลี่ยนผ่านสู่ Hono บน Cloudflare Workers อย่างปลอดภัยใน Milestone 4 และ 5 โดยใช้ Cloudflare Durable Objects สำหรับ WebSocket, R2 Native Bindings สำหรับ Media, และ `@neondatabase/serverless` สำหรับ Neon PostgreSQL
 
-- `packages/shared/src/index.ts` *(สร้างใหม่)*: Public export สำหรับ `@velnox/shared`
-- `packages/config/*` *(สร้างใหม่)*: Package `@velnox/config`
-- `packages/validation/*` *(สร้างใหม่)*: Package `@velnox/validation` พร้อม Unit Tests
-- `packages/api-contract/*` *(สร้างใหม่)*: Package `@velnox/api-contract` พร้อม Unit Tests
-- `packages/api-client/*` *(สร้างใหม่)*: Package `@velnox/api-client` พร้อม Unit Tests
-- `package.json` *(แก้ไข)*: เพิ่มสคริปต์ `test:contracts` และ `typecheck:packages`
-- `bun.lock` *(แก้ไข)*: เพิ่มการอ้างอิง Workspace Packages ใหม่
-- `.github/workflows/test.yml` *(แก้ไข)*: เพิ่มขั้นตอนการ Typecheck และรัน Contract Tests ใน CI
-- `.ai/rebuild/MILESTONE_1_IMPLEMENTATION_REPORT.md` *(สร้างใหม่)*: รายงานผลการดำเนินงาน Milestone 1 ฉบับสมบูรณ์
-- `.ai/history/archive/AI_Handoff-2026-11-22-milestone-1.md` *(สร้างใหม่)*: บันทึกประวัติรอบการทำงาน
-- `.ai/AI_HANDOFF.md` *(แก้ไข)*: อัปเดตสถานะโครงการสู่ Milestone 1 Complete
-- `.ai/rebuild/DEVELOPMENT_ROADMAP.md` *(แก้ไข)*: อัปเดตสถานะ Milestone 1 เป็น COMPLETED
+4. **นโยบายการปลดระวาง Vercel (Vercel Retirement Policy):**
+   - ถอด Vercel ออกจากเป้าหมายสถาปัตยกรรมใหม่ แต่ **คงไฟล์ `vercel.json` และการตั้งค่าเดิมไว้** เพื่อป้องกัน Downtime ของเว็บโปรดักชันปัจจุบัน (`velshop.vercel.app`, ฯลฯ)
+   - การปลดระวาง Vercel จะกระทำใน Milestone 8 หลังจากการสลับ Cloudflare DNS Records สำเร็จและยืนยันความเสถียร 100%
+
+5. **การตรวจสอบ Milestone 1 Foundation & Quality Gates:**
+   - ตรวจสอบความถูกต้องของ 4 Packages ใหม่ (`@velnox/config`, `@velnox/validation`, `@velnox/api-contract`, `@velnox/api-client`)
+   - แก้ไขการ Export ใน `@velnox/shared/src/index.ts` ให้ใช้ Extensionless Imports ป้องกันปัญหา Bundler Module Resolution
+   - สร้าง Quality Gate Test Suite `backend/tests/packages-contracts.test.ts` เพื่อให้การทดสอบสัญญา API รันอัตโนมัติใน CI
+   - Unit Tests ของทุก Package ผ่าน 100% (14 tests passed, 0 failed)
+
+6. **การวิเคราะห์และจำแนกข้อผิดพลาดใน CI (CI Failures Root Cause Classification):**
+   - **`Typecheck apps and backend` ใน `test.yml`:** เป็น **PRE-EXISTING** (เกิดขึ้นตั้งแต่ Baseline Commits ก่อนเริ่มงาน เนื่องจากโค้ดเก่าใน `apps/` และ `backend/` มีปัญหาประเภทตัวแปร TypeScript)
+   - **`Reconciler behaviour (idempotency, cases A–I)` ใน `production-db-verify.yml`:** เป็น **PRE-EXISTING** (มีระบุใน `AI_HANDOFF.md` เดิม)
+   - **Unit Tests ใน `backend/tests` เดิม:** เป็น **PRE-EXISTING** (มีระบุใน `AI_HANDOFF.md` เดิม)
+   - **ข้อผิดพลาดที่เกิดจาก Milestone 1 หรือการปรับสถาปัตยกรรม:** **0 รายการ (NONE INTRODUCED)** โค้ดและ Packages ใหม่ทั้งหมด Typecheck ผ่านและ Unit Tests ผ่าน 100%
 
 ---
 
-## 3. ผลการตรวจสอบความปลอดภัยและความสะอาดของโค้ด
+## 2. ไฟล์ที่สร้างและเปลี่ยนแปลงในรอบนี้
 
-- **`git diff --check`:** ผ่าน (Clean 100% ไม่มี Whitespace Error)
-- **Workspaces Integration:** โครงสร้าง Workspace เชื่อมต่อกันแบบไม่มี Circular Dependencies
-- **Remote Parity:** พร้อมส่งมอบขึ้นสู่ GitHub `origin/main`
+- `docs/architecture/ADR-001-cloudflare-first-hosting.md` *(สร้างใหม่)*: บันทึกการตัดสินใจสถาปัตยกรรม Cloudflare-first Hosting
+- `.ai/rebuild/MASTER_ARCHITECTURE_BLUEPRINT.md` *(แก้ไข)*: ปรับปรุงโครงสร้างพื้นฐานเป้าหมายสู่ Cloudflare Pages & Workers และ Neon PostgreSQL
+- `.ai/rebuild/DEVELOPMENT_ROADMAP.md` *(แก้ไข)*: ปรับ Milestone 6 (Cloudflare Pages) และ Milestone 8 (DNS Cutover & Vercel Retirement)
+- `.ai/rebuild/MASTER_AUDIT_REPORT.md` *(แก้ไข)*: เพิ่ม Section 5 สรุป ADR-001, ผลการ Audit Frontend/Backend, และ Vercel Retirement Policy
+- `.ai/AI_HANDOFF.md` *(แก้ไข)*: อัปเดตสถานะและ Invariants ล่าสุด
+- `.ai/reports/LATEST.md` *(แก้ไข)*: รายงานฉบับสมบูรณ์
 
 ---
 
-## 4. ข้อเสนอสำหรับก้าวถัดไป (Next Step)
+## 3. ความพร้อมสำหรับ Milestone 2
 
-พร้อมเริ่ม **Milestone 2: Versioned Database Migration Engine & Ledger Core** ในรอบถัดไปตามแผนงาน
+- โครงสร้างและสัญญา API (Milestone 1) ได้รับการยืนยันความสมบูรณ์และพร้อมใช้งาน
+- สถาปัตยกรรม Cloudflare-first มีเอกสารและการตัดสินใจรองรับครบถ้วน
+- ระบบพร้อมสำหรับ **Milestone 2: Versioned Database Migration Engine & Ledger Core** ในขั้นตอนถัดไป (โดยไม่มีการสร้างตารางซ้ำซ้อนหรือแตะต้องระบบการเงินก่อนได้รับคำสั่ง)

@@ -94,14 +94,16 @@
 - **Acceptance Criteria:** คำสั่งซื้อซ้ำหรือ Webhook ซ้ำต้องไม่หักเงินซ้ำ ยอดเงินและคอมมิชชันใน Ledger ตรงกับ Statement จริง
 - **Risk:** Critical (ความถูกต้องทางการเงิน)
 
-### Milestone 6: Frontends Rebuild & Cloudflare Pages Alignment
-- **Objective:** ปรับปรุง Frontend Applications (VelShop, VelSeller, VelCenter) ให้เชื่อมต่อกับ API Contract ใหม่ แยกโมดูล `Center.tsx` (2,384 บรรทัด) ออกเป็นโมดูลย่อย
+### Milestone 6: Frontends Rebuild & Cloudflare Pages Deployment
+- **Objective:** ปรับปรุง Frontend Applications (VelShop, VelSeller, VelCenter) ให้เชื่อมต่อกับ API Contract ใหม่, แยกโมดูล `Center.tsx` (2,384 บรรทัด) ออกเป็นโมดูลย่อย, และจัดเตรียมการ Deploy สู่ **Cloudflare Pages Static Hosting** พร้อมระบบ SPA Routing (`/* /index.html 200`)
 - **Key Modules/Files:**
-  - `apps/velshop/`
-  - `apps/velseller/`
-  - `apps/velcenter/` (refactor Center.tsx into sub-tab components)
+  - `apps/velshop/` (`shop.velnox.live`)
+  - `apps/velseller/` (`seller.velnox.live`)
+  - `apps/velcenter/` (`center.velnox.live`)
+  - `apps/velnox/` (`velnox.live`)
+  - Cloudflare Pages configuration & build output verification
 - **Dependencies:** Milestone 4, Milestone 5
-- **Acceptance Criteria:** หน้าจอโหลดเร็ว Responsive สมบูรณ์ รองรับภาษา TH, EN, MY ไม่มี Broken Actions
+- **Acceptance Criteria:** หน้าจอโหลดเร็วระดับ Edge, Responsive สมบูรณ์, รองรับภาษา TH/EN/MY, Preview Deployments บน Cloudflare Pages ทำงานได้ 100% โดยคง Vercel เดิมไว้ขนานกัน
 - **Risk:** Medium
 
 ### Milestone 7: Realtime Hub & Push Notifications
@@ -113,8 +115,8 @@
 - **Acceptance Criteria:** แชทรับส่งข้อความและรูปภาพแบบ Real-time ข้ามทวีปได้โดยไม่หลุด แจ้งเตือนเข้ามือถือเมื่อมีออเดอร์ใหม่
 - **Risk:** Medium
 
-### Milestone 8: Full E2E Integration, Security Hardening & Production Cutover
-- **Objective:** รัน E2E Tests ครบทุก Flow, ทดสอบความปลอดภัย (OWASP Top 10), ทำ Data Reconcile และเตรียมพร้อมสลับ DNS
+### Milestone 8: Full E2E Integration, Production Cutover & Vercel Retirement
+- **Objective:** รัน E2E Tests ครบทุก Flow, ทดสอบความปลอดภัย (OWASP Top 10), ทำ Data Reconcile, สลับ Cloudflare DNS Records สู่ Cloudflare Pages และ Workers เต็มรูปแบบ และดำเนินการปลดระวาง Legacy Vercel Projects หลังยืนยันความเสถียร
 - **Dependencies:** All previous milestones
-- **Acceptance Criteria:** Automated CI ผ่าน 100%, Load test ผ่าน, Zero defect ในระบบเงินและสต็อก
-- **Risk:** High (ขั้นตอนการปล่อยสู่ Production)
+- **Acceptance Criteria:** Automated CI ผ่าน 100%, Load test ผ่าน, Zero defect ในระบบเงินและสต็อก, DNS Cutover สำเร็จราบรื่นไร้ Downtime
+- **Risk:** High (ขั้นตอนการปล่อยสู่ Production และสลับ DNS)
