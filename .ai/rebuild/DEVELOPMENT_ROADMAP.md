@@ -13,10 +13,10 @@
 [ Phase 1: Audit & Blueprint ] ──────► (COMPLETED)
            │
            ▼
-[ Milestone 1: Monorepo Foundation & API Contract Package ]
+[ Milestone 1: Monorepo Foundation & API Contract Package ] ──► (COMPLETED)
            │
            ▼
-[ Milestone 2: Versioned Database Migration Engine & Ledger Core ]
+[ Milestone 2: Versioned Database Migration Engine & Ledger Core ] ──► (NEXT ACTIVE)
            │
            ▼
 [ Milestone 3: Modular Backend Core & Unified Dual-Token Auth ]
@@ -41,16 +41,18 @@
 
 ## Detailed Milestones & Tasks
 
-### Milestone 1: Monorepo Foundation & API Contract Package
+### Milestone 1: Monorepo Foundation & API Contract Package (COMPLETED)
+- **Status:** COMPLETED (2026-11-22)
 - **Objective:** ปรับโครงสร้าง Monorepo สร้าง Package กลางสำหรับ Shared Types, Zod Schemas, API Contract (OpenAPI) และ UI System
 - **Key Modules/Files:**
-  - `packages/api-contract` (OpenAPI definitions & endpoint contracts)
-  - `packages/shared-types` (Domain types & models)
-  - `packages/validation` (Zod schemas for all business rules)
-  - Fix missing `packages/shared/src/index.ts`
+  - `packages/shared/src/index.ts` (Entry point resolved)
+  - `packages/config` (@velnox/config)
+  - `packages/validation` (@velnox/validation)
+  - `packages/api-contract` (@velnox/api-contract & OpenAPI 3.1 generator)
+  - `packages/api-client` (@velnox/api-client)
 - **Dependencies:** None
-- **Acceptance Criteria:** Typecheck ผ่าน 100%, Shared packages สามารถ import ใช้งานได้อย่างราบรื่น
-- **Risk:** Low
+- **Acceptance Criteria:** Typecheck และ Contract Tests ผ่าน 100%, Packages เชื่อมโยงใน Monorepo สำเร็จ
+- **Risk:** Low (Completed)
 
 ### Milestone 2: Versioned Database Migration Engine & Ledger Core
 - **Objective:** แปลงระบบฐานข้อมูลจากการรันสคริปต์มือ `run-sqleditor.sql` สู่ระบบ Automated Migration Scripts ที่มีหมายเลขเวอร์ชันและ Checksum

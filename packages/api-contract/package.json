@@ -1,0 +1,22 @@
+{
+  "name": "@velnox/api-contract",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./v1": "./src/v1/index.ts",
+    "./openapi": "./src/openapi/spec.ts"
+  },
+  "scripts": {
+    "test": "bun test tests",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@velnox/validation": "workspace:*",
+    "zod": "^4.1.13"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3"
+  }
+}

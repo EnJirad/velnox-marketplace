@@ -25,6 +25,8 @@
     "db:smoke": "echo 'DB smoke test placeholder'",
     "db:consistency": "echo 'DB consistency check placeholder'",
     "typecheck": "bun --filter '@velnox/velshop' typecheck && bun --filter '@velnox/velseller' typecheck && bun --filter '@velnox/velcenter' typecheck && bun --filter '@velnox/velnox' typecheck",
+    "typecheck:packages": "bun --filter '@velnox/validation' typecheck && bun --filter '@velnox/api-contract' typecheck && bun --filter '@velnox/api-client' typecheck",
+    "test:contracts": "bun test packages/*/tests",
     "i18n:check": "bun packages/shared/scripts/i18n-check.ts",
     "test": "bun test backend/tests",
     "lint": "eslint .",

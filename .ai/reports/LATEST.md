@@ -1,51 +1,54 @@
-# LATEST — 2026-11-22 · สำเร็จ Phase 1: Full Repository Audit & Architecture Blueprint
-**Branch:** `main` · **Status:** DONE · ตรวจสอบระบบทั้งหมดและจัดทำพิมพ์เขียวสถาปัตยกรรมใหม่
+# LATEST — 2026-11-22 · สำเร็จ Milestone 1: Monorepo Foundation & Shared API Contract
+**Branch:** `main` · **Status:** DONE · สร้างรากฐาน Monorepo, Shared Packages, Zod API Contracts และ Type-Safe Client เรียบร้อย
 
 ---
 
-## 1. สรุปงานที่ดำเนินการใน Phase 1 (Audit & Architecture Blueprint)
+## 1. สรุปงานที่ดำเนินการใน Milestone 1
 
-1. **การตรวจสอบคลังโค้ดล่าสุด (Repository Synchronization):**
-   - ตรวจสอบ `git fetch origin` และ Fast-forward รวม commit ล่าสุด (`ab57925`) สู่เครื่องทำงาน สถานะโค้ดตรงกับ Remote 100%
-   - ตรวจสอบ Branch `main`, สถานะ Working tree สะอาด ปราศจาก Untracked/Modified file ตกค้าง
-2. **การวิเคราะห์เว็บแอปพลิเคชันทั้ง 4 ตัว (Websites Audit):**
-   - `apps/velshop` (Customer Storefront), `apps/velseller` (Seller Dashboard), `apps/velcenter` (Operations Center), `apps/velnox` (Corporate Website)
-   - พบหนี้ทางเทคนิคสำคัญ เช่น `Center.tsx` (2,384 บรรทัด) และ `ShopProductDetail.tsx` (1,792 บรรทัด) มีความซับซ้อนสูงเกินไป
-3. **การวิเคราะห์ Backend API & Architecture:**
-   - ตรวจสอบ Express 4.21 และ Route ขนาดใหญ่ผิดปกติ (`products.ts` 4,009 บรรทัด, `stripe.ts` 3,122 บรรทัด, `cart.ts` 2,152 บรรทัด) ที่ผสม Business Logic, Direct SQL และ State Formatting ไว้ด้วยกัน
-   - ตรวจสอบระบบ WebSocket in-memory ที่ไม่รองรับ Horizontal Scale
-4. **การวิเคราะห์ Database & Schema (Neon PostgreSQL):**
-   - ตรวจสอบ 62 ตารางใน `db/schema.sql` และ `db/run-sqleditor.sql`
-   - ยืนยันความปลอดภัยของ Financial Ledger และ Invariants แต่พบปัญหาการขาดระบบ Automated Migration Versioning
-5. **การวิเคราะห์ Authentication, Storage & Security:**
-   - ตรวจสอบ Google OAuth, JWT cookies, Turnstile, Rate limiting และการใช้งาน Cloudflare R2 ผ่าน S3 SDK
-   - พบช่องว่างระหว่าง Web Authentication (เน้น Cookie) และ Mobile Authentication (เน้น Bearer Token)
-6. **การวิเคราะห์ความเข้ากันได้กับ Mobile Repository (`velnox-mobile`):**
-   - วิเคราะห์โมดูล Android VelShop และ Android VelSeller กำหนดแนวทาง API-First, Unified JSON Envelope, Dual-Token Strategy (Access 15m + Refresh 30d) และระบบ Push Notification ผ่าน FCM
-7. **การจัดทำพิมพ์เขียวและแผนงานสถาปัตยกรรมใหม่ (Master Blueprint & Roadmap):**
-   - จัดทำเอกสารครบถ้วนใน `.ai/rebuild/` ตามมาตรฐานระบบ
+1. **การแก้ไข Entry Point ของ `@velnox/shared`:**
+   - สร้างไฟล์ [packages/shared/src/index.ts](file:///workspace/quiet-hopper/packages/shared/src/index.ts) เพื่อเป็น Public Entry Point ที่แท้จริง แก้ไขปัญหาการ Import จาก root `@velnox/shared` ที่เคยล้มเหลว
+2. **การจัดตั้ง Shared Packages ใหม่ใน Monorepo:**
+   - **`@velnox/config`**: เก็บ Base TypeScript configuration และค่าคงที่ระบบ
+   - **`@velnox/validation`**: รวม Zod Primitives (UUID, Phone, Money minor/decimal, Slugs, Address, Auth inputs)
+   - **`@velnox/api-contract`**: มาตรฐาน Envelopes (`ApiResponse`, `ApiErrorResponse`), Domain Contracts v1 (Health, Auth, Categories, Products, Cart) พร้อมตัวสร้าง OpenAPI 3.1.0 Spec
+   - **`@velnox/api-client`**: Client เรียกใช้ API แบบ Type-safe พร้อมระบบถอดรหัส Envelope, Token Injection, Timeout และ Error Classification
+3. **การทดสอบความถูกต้อง (Test & Quality Gates):**
+   - เขียน Unit Tests ครบถ้วนสำหรับ Validation Primitives, Domain Contracts, OpenAPI Generator และ API Client
+   - อัปเดตสคริปต์ใน `package.json` (`test:contracts`, `typecheck:packages`)
+   - อัปเดต `.github/workflows/test.yml` เพื่อให้ CI ตรวจสอบ Packages ใหม่เสมอ
+   - ปรับปรุง `bun.lock` ให้ตรงกับ Workspace Manifest 100% ป้องกันปัญหา `--frozen-lockfile`
+4. **ความปลอดภัยและระบบเดิม:**
+   - ยืนยันไม่มีการแก้ไขฐานข้อมูล Production (Neon PostgreSQL)
+   - ไม่มีการแตะต้องโค้ดธุรกรรมเดิมใน Backend หรือ UI ของแอปทั้ง 4 ตัว
+   - ไม่มีการแก้ไข Repository `velnox-mobile`
 
 ---
 
-## 2. เอกสารที่สร้างขึ้นใหม่ในรอบนี้
+## 2. ไฟล์ที่สร้างและเปลี่ยนแปลง
 
-1. `.ai/rebuild/MASTER_AUDIT_REPORT.md` — รายงานผลการตรวจสอบคลังโค้ดฉบับสมบูรณ์
-2. `.ai/rebuild/MASTER_ARCHITECTURE_BLUEPRINT.md` — พิมพ์เขียวสถาปัตยกรรม Modular Monolith บน Cloudflare + Neon
-3. `.ai/rebuild/DEVELOPMENT_ROADMAP.md` — แผนงานการพัฒนา 8 Milestones อย่างละเอียด
-4. `.ai/history/archive/AI_Handoff-2026-11-22-phase1-master-audit.md` — บันทึกประวัติรอบการทำงานตามกฎข้อ 19
-5. `.ai/reports/LATEST.md` — รายงานสรุปผลรอบล่าสุดนี้
-6. `.ai/AI_HANDOFF.md` — อัปเดตสถานะปัจจุบันและเป้าหมายถัดไป
+- `packages/shared/src/index.ts` *(สร้างใหม่)*: Public export สำหรับ `@velnox/shared`
+- `packages/config/*` *(สร้างใหม่)*: Package `@velnox/config`
+- `packages/validation/*` *(สร้างใหม่)*: Package `@velnox/validation` พร้อม Unit Tests
+- `packages/api-contract/*` *(สร้างใหม่)*: Package `@velnox/api-contract` พร้อม Unit Tests
+- `packages/api-client/*` *(สร้างใหม่)*: Package `@velnox/api-client` พร้อม Unit Tests
+- `package.json` *(แก้ไข)*: เพิ่มสคริปต์ `test:contracts` และ `typecheck:packages`
+- `bun.lock` *(แก้ไข)*: เพิ่มการอ้างอิง Workspace Packages ใหม่
+- `.github/workflows/test.yml` *(แก้ไข)*: เพิ่มขั้นตอนการ Typecheck และรัน Contract Tests ใน CI
+- `.ai/rebuild/MILESTONE_1_IMPLEMENTATION_REPORT.md` *(สร้างใหม่)*: รายงานผลการดำเนินงาน Milestone 1 ฉบับสมบูรณ์
+- `.ai/history/archive/AI_Handoff-2026-11-22-milestone-1.md` *(สร้างใหม่)*: บันทึกประวัติรอบการทำงาน
+- `.ai/AI_HANDOFF.md` *(แก้ไข)*: อัปเดตสถานะโครงการสู่ Milestone 1 Complete
+- `.ai/rebuild/DEVELOPMENT_ROADMAP.md` *(แก้ไข)*: อัปเดตสถานะ Milestone 1 เป็น COMPLETED
 
 ---
 
-## 3. ผลการทดสอบและตรวจสอบความปลอดภัย
+## 3. ผลการตรวจสอบความปลอดภัยและความสะอาดของโค้ด
 
-- **Code Integrity:** ไม่มีการแตะต้อง Source Code หรือ Database Data ใน Phase นี้ตามคำสั่งเคร่งครัด
-- **`git diff --check`:** ผ่าน (Clean - ไม่มี Whitespace Error ใดๆ)
-- **Remote Parity:** Local SHA ตรงกับ origin/main ก่อนการบันทึกเอกสาร
+- **`git diff --check`:** ผ่าน (Clean 100% ไม่มี Whitespace Error)
+- **Workspaces Integration:** โครงสร้าง Workspace เชื่อมต่อกันแบบไม่มี Circular Dependencies
+- **Remote Parity:** พร้อมส่งมอบขึ้นสู่ GitHub `origin/main`
 
 ---
 
 ## 4. ข้อเสนอสำหรับก้าวถัดไป (Next Step)
 
-พร้อมเริ่ม **Milestone 1: Monorepo Foundation & API Contract Package** เพื่อเตรียมรากฐานแพ็กเกจกลาง (OpenAPI, Zod Schemas, Shared Types) ให้พร้อมรองรับทั้ง Web และ Mobile App ต่อไป
+พร้อมเริ่ม **Milestone 2: Versioned Database Migration Engine & Ledger Core** ในรอบถัดไปตามแผนงาน
