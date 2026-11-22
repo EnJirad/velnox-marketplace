@@ -7,8 +7,15 @@
   "vars": {
     "ENVIRONMENT": "development",
     "APP_NAME": "Velnox Marketplace API",
-    "APP_VERSION": "3.0.0"
+    "APP_VERSION": "3.0.0",
+    "R2_PUBLIC_URL_PREFIX": "https://media.velnox.live"
   },
+  "r2_buckets": [
+    {
+      "binding": "R2_BUCKET",
+      "bucket_name": "velnox-media"
+    }
+  ],
   "observability": {
     "enabled": true
   }

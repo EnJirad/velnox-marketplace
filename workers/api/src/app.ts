@@ -3,6 +3,9 @@ import { cors } from "hono/cors";
 import { errorHandler, notFoundHandler } from "./middleware/error.js";
 import { healthRoutes } from "./routes/health.js";
 import { authRoutes } from "./routes/auth.js";
+import { catalogRoutes } from "./routes/catalog.js";
+import { sellerRoutes } from "./routes/seller.js";
+import { mediaRoutes } from "./routes/media.js";
 import type { Bindings, Variables } from "./types.js";
 
 export function createApplication() {
@@ -51,6 +54,16 @@ export function createApplication() {
 
   // Mount Auth Routes under /api/v1/auth
   app.route("/api/v1/auth", authRoutes);
+
+  // Mount Catalog Routes under /api/v1/catalog and /api/v1 (for category/product aliases)
+  app.route("/api/v1/catalog", catalogRoutes);
+  app.route("/api/v1", catalogRoutes);
+
+  // Mount Seller Routes under /api/v1/seller
+  app.route("/api/v1/seller", sellerRoutes);
+
+  // Mount Media Routes under /api/v1/media
+  app.route("/api/v1/media", mediaRoutes);
 
   // Default root index endpoint
   app.get("/", (c) => {

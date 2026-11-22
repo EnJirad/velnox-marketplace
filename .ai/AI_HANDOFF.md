@@ -1,23 +1,22 @@
 # Velnox AI Handoff — Current State
-**Last verified:** 2026-11-22 · **Branch:** `main` · **Focus:** Clean Rebuild Initiative · Phase 2 Complete
+**Last verified:** 2026-11-22 · **Branch:** `main` · **Focus:** Clean Rebuild Initiative · Phase 3 Complete
 
 ---
 
-## 0. Current Project State: CLEAN REBUILD INITIATIVE (PHASE 2 COMPLETE)
+## 0. Current Project State: CLEAN REBUILD INITIATIVE (PHASE 3 COMPLETE)
 - **Active Initiative:** Velnox Clean Rebuild Initiative (Cloudflare-First · Clean Database)
-- **Last Completed Milestone:** **Phase 2 (Database & Identity — Clean Schema, Web Crypto Auth, Dual Tokens, RBAC)**
-- **Next Active Milestone:** **Phase 3 (Marketplace Core — Sellers, Shops, Categories, Products, R2 Media)**
+- **Last Completed Milestone:** **Phase 3 (Marketplace Core — Sellers, Shops, Categories, Products, R2 Media)**
+- **Next Active Milestone:** **Phase 4 (Commerce Core — Cart, Checkout, Guarded Inventory Reservations, Orders)**
 
 ### Approved Rebuild Directives (MANDATORY):
 - **STRATEGY:** Full clean rebuild designed for Cloudflare from day one. We are NOT continuing a legacy backend migration.
 - **TARGET BACKEND:** **Cloudflare Workers** (`workers/api`) running **Hono Framework** in TypeScript, Modular Monolith at `api.velnox.live`.
 - **DATABASE CONNECTIVITY:** Cloudflare Workers connects to Neon PostgreSQL via `@neondatabase/serverless` over WebSockets/HTTP.
-- **CLEAN IDENTITY SCHEMA:** Production migration `0001_identity.sql` established with `users`, `auth_identities`, and `refresh_tokens`. Strict UUIDs, check constraints, indexes, and UTC timestamps. Zero legacy schema baggage.
-- **SECURITY ARCHITECTURE:** Pure Web Crypto API implementations for HS256 JWT, PBKDF2 password hashing (100k iterations, SHA-256), and timing-safe equality. Dual tokens: 15-min Access Token + 7-day Refresh Token with Refresh Token Rotation.
+- **CLEAN CORE SCHEMA:** Production migrations `0001_identity.sql` and `0002_marketplace_core.sql` established with `users`, `auth_identities`, `refresh_tokens`, `sellers`, `shops`, `categories`, `products`, `product_variants`, and `media_objects`. Strict UUIDs, foreign keys, check constraints, composite indexes, and UTC timestamps.
+- **MEDIA & STORAGE:** Native **Cloudflare R2** bindings (`env.R2_BUCKET`), 5 MB limit, WebP/JPEG/PNG validation, structured object key format (`<purpose>/<userId>/<timestamp>-<randomId>.<ext>`), and zero egress fee public URLs.
+- **CATALOG & SELLER DOMAIN:** Hierarchical category tree builder (L1 -> L2 -> L3), full product listing with search/filter/pagination/sorting, satang minor units mapped to decimal currency, seller onboarding, shop profile management, and product CRUD with shop ownership enforcement.
 - **COOKIES & SESSIONS:** HttpOnly, Secure, SameSite=None session and refresh cookies for web; Authorization header tokens for mobile clients.
-- **DATABASE PROVISIONING STATUS:** Cloud Neon project can be pointed via `DATABASE_URL`. Testing uses isolated database or in-memory repository to guarantee production safety.
 - **FRONTEND HOSTING:** **Cloudflare Pages** (`shop.velnox.live`, `seller.velnox.live`, `center.velnox.live`, `velnox.live`).
-- **STORAGE:** **Cloudflare R2** via native Workers bindings (`env.R2_BUCKET`), eliminating S3 SDK overhead.
 
 ### Core Architecture Artifacts:
 - **Clean Rebuild Architecture:** [`docs/architecture/VELNOX_CLEAN_REBUILD_ARCHITECTURE.md`](file:///workspace/quiet-hopper/docs/architecture/VELNOX_CLEAN_REBUILD_ARCHITECTURE.md)
@@ -31,8 +30,8 @@
 - [x] **Phase 0: Rebuild Strategy & Legacy Audit** (COMPLETED 2026-11-22)
 - [x] **Phase 1: New Foundation (Monorepo, TS Config, Hono Workers Skeleton, /health)** (COMPLETED 2026-11-22)
 - [x] **Phase 2: Database & Identity (Clean Schema, Web Crypto Auth, Dual Tokens, RBAC)** (COMPLETED 2026-11-22)
-- [ ] **Phase 3: Marketplace Core (Sellers, Shops, Categories, Products, R2 Media)** (NEXT ACTIVE)
-- [ ] **Phase 4: Commerce Core (Cart, Checkout, Guarded Inventory Reservations, Orders)**
+- [x] **Phase 3: Marketplace Core (Sellers, Shops, Categories, Products, R2 Media)** (COMPLETED 2026-11-22)
+- [ ] **Phase 4: Commerce Core (Cart, Checkout, Guarded Inventory Reservations, Orders)** (NEXT ACTIVE)
 - [ ] **Phase 5: Payment & Finance (Stripe Webhook, Double-Entry Ledger, Settlements)**
 - [ ] **Phase 6: Frontend Integration (Pages -> Workers API, Real States, Zero Mocks)**
 - [ ] **Phase 7: Realtime & Notifications (Durable Objects WebSockets, Queues, FCM)**
@@ -43,6 +42,6 @@
 ## 2. Invariants & Rules for All AI Agents
 - **Startup Order:** `AGENTS.md` ➜ `.ai/office/QUICK_START.md` ➜ `docs/architecture/VELNOX_CANONICAL_ARCHITECTURE.md` ➜ `.ai/AI_HANDOFF.md` ➜ `.ai/reports/LATEST.md` ➜ inspect actual code.
 - **Clean Rebuild Mandate:** Do not attempt to fix or migrate legacy Express routes or legacy database data. Build the clean Workers backend and clean schema.
-- **Fail-Closed DB Guard:** Never test against production Neon. Tests must use `TEST_DATABASE_URL` pointing to disposable/local PostgreSQL.
+- **Fail-Closed DB Guard:** Never test against production Neon. Tests must use `TEST_DATABASE_URL` pointing to disposable/local PostgreSQL or in-memory mock repository.
 - **Financial Precision:** Integer satang minor units (`BigInt`) only. No floats. Double-entry ledger invariant: Debits == Credits.
 - **Communication:** Thai language for all user-facing communication (MANDATORY).

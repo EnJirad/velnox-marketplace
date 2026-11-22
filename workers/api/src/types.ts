@@ -12,6 +12,7 @@ export interface Bindings {
   DATABASE_URL?: string;
   JWT_SECRET?: string;
   R2_BUCKET?: R2Bucket;
+  R2_PUBLIC_URL_PREFIX?: string;
 }
 
 export interface Variables {
