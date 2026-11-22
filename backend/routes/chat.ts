@@ -659,6 +659,10 @@ export function setupChatRoutes(app: Express): void {
         res.status(500).json({ success: false, error: { code: "DB_ERROR", message: "Failed to create support conversation" } });
         return;
       }
+      sendToCenter(CHANNELS.CHAT_CONVERSATION, CHANNELS.CHAT_CONVERSATION, {
+        conversationId: conversation.id,
+        type: conversation.type,
+      });
       res.json({ success: true, data: mapConversation(conversation, userId) });
     } catch (err) {
       console.error("[chat] support conversation error:", err);

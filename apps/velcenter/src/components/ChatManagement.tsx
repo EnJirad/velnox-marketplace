@@ -194,7 +194,7 @@ export default function ChatManagement() {
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeIdRef = useRef<string | null>(null);
-  const tabRef = useRef<ChatTab>("customer");
+  const tabRef = useRef<ChatTab>(tab);
   tabRef.current = tab;
   const retryRef = useRef<{ clientId: string; body: string } | null>(null);
 
@@ -292,22 +292,66 @@ export default function ChatManagement() {
   // messages are deduped by id; a reconnect re-reads the whole thread.
   useEffect(() => {
     if (!userId) return;
+    connectChatSocket(userId);
     const offMessage = onChatEvent("chat:message", (data: any) => {
       const message = data?.message as CenterMessage | undefined;
-      if (!message) return;
-      if (belongsToConversation(message, activeIdRef.current)) {
+      if (!message?.id) return;
+      const conversationId = (data?.conversationId as string) || message.conversationId;
+      const isActive = Boolean(conversationId && activeIdRef.current === conversationId);
+
+      if (isActive) {
         setMessages((prev) => mergeIncomingMessage(prev, message));
         // A SYSTEM message is never unread — no badge, no read round-trip.
-        if (!isOwnMessage(message, userId) && !isSystemMessage(message)) void markRead(message.conversationId, message.createdAt);
+        if (!isOwnMessage(message, userId) && !isSystemMessage(message)) {
+          void markRead(conversationId, message.createdAt);
+        }
       }
-      // The event is only a signal: re-read both the list (last message /
+
+      // Realtime in-memory update for the conversation list (instant feedback)
+      setItems((prev) => {
+        if (!prev) return prev;
+        let found = false;
+        const next = prev.map((c) => {
+          if (c.id === conversationId) {
+            found = true;
+            return {
+              ...c,
+              lastMessage: message.body || (message.attachmentUrl ? "[รูปภาพ]" : c.lastMessage),
+              lastMessageAt: message.createdAt,
+              updatedAt: message.createdAt,
+              unreadCount:
+                isActive || isOwnMessage(message, userId)
+                  ? (isActive ? 0 : c.unreadCount)
+                  : c.unreadCount + 1,
+            };
+          }
+          return c;
+        });
+        if (found) {
+          return [...next].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+        }
+        return next;
+      });
+
+      setActive((prev) => {
+        if (!prev || prev.id !== conversationId) return prev;
+        return {
+          ...prev,
+          lastMessage: message.body || (message.attachmentUrl ? "[รูปภาพ]" : prev.lastMessage),
+          lastMessageAt: message.createdAt,
+          updatedAt: message.createdAt,
+        };
+      });
+
+      // The event is also a signal: re-read both the list (last message /
       // unread) and the tab counts from the server. A conversation the list did
       // not have yet arrives this way too, without inventing a row client-side.
       void loadList(tabRef.current);
       void loadCounts();
     });
     const offRead = onChatEvent("chat:read", (data: any) => {
-      if (data?.conversationId !== activeIdRef.current) return;
+      const convId = data?.conversationId;
+      if (convId && convId !== activeIdRef.current) return;
       // A staff member's own read receipt must never tick their own messages.
       if (userId && data?.readerId === userId) return;
       const upTo = typeof data?.upTo === "number" ? data.upTo : null;

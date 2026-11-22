@@ -1,8 +1,14 @@
 # Velnox AI Handoff — Current State
 
-**Last verified:** 2026-11-21 · **Branch:** `main` · **Focus:** Full Website Audit & Autonomous UI/UX Improvement (Completed)
+**Last verified:** 2026-11-22 · **Branch:** `main` · **Focus:** VelCenter Real-time Chat Sync & Mobile UI/UX
 
-## 0. UI/UX & Responsive Optimization (2026-11-21)
+## 0. VelCenter Real-time Chat Sync (2026-11-22)
+- **ChatManagement WebSocket Assurance:** เพิ่ม `connectChatSocket(userId)` เพื่อการันตีการเชื่อมต่อ socket ทุกครั้งที่เปิดหน้าแชทใน VelCenter
+- **Tab Ref Alignment:** แก้ไข `tabRef` เริ่มต้นให้ตรงกับ active tab (`useRef<ChatTab>(tab)`) ป้องกันการ fetch ผิดแท็บเมื่อมีข้อความใหม่เข้ามา
+- **In-Memory Reactive List Update:** อัปเดต state `items` ทันทีเมื่อได้รับ event `chat:message` พร้อมเรียงลำดับห้องที่มีความเคลื่อนไหวล่าสุดขึ้นด้านบนทันทีแบบ real-time ไม่ต้องรอ network response
+- **Conversation Creation Broadcast:** ใน `backend/routes/chat.ts` เพิ่มการ broadcast `sendToCenter(CHANNELS.CHAT_CONVERSATION, ...)` เมื่อลูกค้าเริ่มห้อง support ใหม่
+
+## 1. UI/UX & Responsive Optimization (2026-11-21)
 - **Header & Navigation:** เพิ่ม Desktop Search bar, คืนค่าปุ่มตะกร้าสินค้า (Cart Button + Count Badge) ทั้งบน Desktop และ Mobile เชื่อมโยงกับ `CartDrawer` และจัด Layout ฝั่งขวาด้วย `ml-auto`
 - **Mobile Responsive:** แก้ไขปัญหา MobileTabBar บังเนื้อหาด้านล่างในหน้า Home, Products, และ Shop Detail ด้วย `pb-28 md:pb-12`
 - **Shop Detail:** ปรับ Grid บนมือถือจาก 3 คอลัมน์ที่แออัดเกินไปเป็น 2 คอลัมน์ตามมาตรฐาน Design Theme
