@@ -1,51 +1,48 @@
 # Velnox AI Handoff — Current State
-**Last verified:** 2026-11-22 · **Branch:** `main` · **Focus:** Architecture Truth Reset & Cloudflare-First Alignment Complete (CF-0)
+**Last verified:** 2026-11-22 · **Branch:** `main` · **Focus:** Clean Rebuild Initiative · Phase 0 Complete
 
 ---
 
-## 0. Current Project State: ARCHITECTURE TRUTH RESET COMPLETE (CF-0)
-- **Active Focus:** Cloudflare Migration Roadmap (CF-0 through CF-11)
-- **Last Completed Milestone:** **CF-0 (Architecture Truth Reset & Documentation Alignment)**
-- **Next Active Milestone:** **CF-1 (Cloudflare Workers Foundation — Hono + TypeScript)**
+## 0. Current Project State: CLEAN REBUILD INITIATIVE (PHASE 0 COMPLETE)
+- **Active Initiative:** Velnox Clean Rebuild Initiative (Cloudflare-First · Clean Database)
+- **Last Completed Milestone:** **Phase 0 (Rebuild Strategy & Legacy Audit)**
+- **Next Active Milestone:** **Phase 1 (New Foundation — Monorepo, TypeScript, Hono Workers Skeleton, /health)**
 
-### Canonical Architecture Directives (MANDATORY):
-- **TARGET BACKEND:** **Cloudflare Workers** (Hono Framework, TypeScript, Modular Monolith, Web Standards Fetch API).
-- **PRIMARY DATABASE:** **Neon PostgreSQL** (Permanent Single Source of Truth — 62 tables, ACID ledger, conditional stock guards). Workers connects to Neon via `@neondatabase/serverless` over WebSockets/HTTP. Never replace Neon with D1, MongoDB, or Supabase.
-- **FRONTEND HOSTING:** **Cloudflare Pages** (`shop.velnox.live`, `seller.velnox.live`, `center.velnox.live`, `velnox.live`). Static SPA Vite bundles with `_redirects`.
-- **OBJECT STORAGE:** **Cloudflare R2** (Zero egress media storage with native Worker bindings).
-- **REALTIME:** **Cloudflare Durable Objects** (Distributed stateful WebSockets, presence tracking, room pub/sub).
-- **BACKGROUND JOBS:** **Cloudflare Queues** (Asynchronous tasks, retries, FCM notifications).
-- **RENDER:** **LEGACY BACKEND INFRASTRUCTURE DURING MIGRATION — NOT THE TARGET ARCHITECTURE**.
-- **VERCEL:** **LEGACY FRONTEND INFRASTRUCTURE DURING MIGRATION — NOT THE TARGET ARCHITECTURE**.
+### Approved Rebuild Directives (MANDATORY):
+- **STRATEGY:** Full clean rebuild designed for Cloudflare from day one. We are NOT continuing a legacy backend migration.
+- **TARGET BACKEND:** **Cloudflare Workers** (`workers/api`) running **Hono Framework** in TypeScript, Modular Monolith at `api.velnox.live`.
+- **PRIMARY DATABASE:** **Neon PostgreSQL** (Permanent Single Source of Truth). Clean database schema designed from actual business requirements. Zero legacy data migration.
+- **DATABASE PROVISIONING STATUS:** **BLOCKED** for production/cloud until owner creates a new dedicated Neon project. Local isolated PostgreSQL instance is used for local development and testing. Never touch or delete existing Neon databases.
+- **FRONTEND HOSTING:** **Cloudflare Pages** (`shop.velnox.live`, `seller.velnox.live`, `center.velnox.live`, `velnox.live`).
+- **OBJECT STORAGE:** **Cloudflare R2** via native Workers bindings (`env.R2_BUCKET`), eliminating S3 SDK overhead and egress costs. File metadata recorded in Neon.
+- **REALTIME:** **Cloudflare Durable Objects** (Distributed stateful WebSockets, presence tracking, chat room pub/sub).
+- **BACKGROUND PROCESSING:** **Cloudflare Queues** (Asynchronous tasks, retries, FCM notifications).
+- **LEGACY CODE:** Legacy Express monolith (`backend/server.ts`) and 62-table schema (`db/schema.sql`) are **REFERENCE ONLY**. Legacy code must never be imported into Workers.
 
 ### Core Architecture Artifacts:
+- **Clean Rebuild Architecture:** [`docs/architecture/VELNOX_CLEAN_REBUILD_ARCHITECTURE.md`](file:///workspace/quiet-hopper/docs/architecture/VELNOX_CLEAN_REBUILD_ARCHITECTURE.md)
 - **Canonical Architecture:** [`docs/architecture/VELNOX_CANONICAL_ARCHITECTURE.md`](file:///workspace/quiet-hopper/docs/architecture/VELNOX_CANONICAL_ARCHITECTURE.md)
-- **Migration Roadmap:** [`docs/architecture/CLOUDFLARE_MIGRATION_ROADMAP.md`](file:///workspace/quiet-hopper/docs/architecture/CLOUDFLARE_MIGRATION_ROADMAP.md)
-- **Cutover Runbook:** [`docs/CLOUDFLARE_CUTOVER_RUNBOOK.md`](file:///workspace/quiet-hopper/docs/CLOUDFLARE_CUTOVER_RUNBOOK.md)
+- **Rebuild Roadmap:** [`docs/architecture/VELNOX_CLEAN_REBUILD_ROADMAP.md`](file:///workspace/quiet-hopper/docs/architecture/VELNOX_CLEAN_REBUILD_ROADMAP.md)
 - **Latest Report:** [`.ai/reports/LATEST.md`](file:///workspace/quiet-hopper/.ai/reports/LATEST.md)
-- **Smoke Test Tool:** [`scripts/verify-cutover.ts`](file:///workspace/quiet-hopper/scripts/verify-cutover.ts) (`bun run cutover:verify`)
 
 ---
 
-## 1. Cloudflare Migration Sequence (CF-0 to CF-11)
-- [x] **CF-0: Architecture Truth & Infrastructure Inventory** (COMPLETED)
-- [ ] **CF-1: Cloudflare Workers Foundation (Hono, Types, Config)** (NEXT ACTIVE)
-- [ ] **CF-2: Neon Connectivity (@neondatabase/serverless)**
-- [ ] **CF-3: Identity & Dual-Token Authentication on Workers**
-- [ ] **CF-4: Catalog & Read-Only APIs (KV Cache)**
-- [ ] **CF-5: Commerce Write APIs (Cart, Checkout, Guarded Inventory)**
-- [ ] **CF-6: Payments, Stripe Webhooks & Financial Ledger**
-- [ ] **CF-7: Cloudflare R2 Native Bindings Migration**
-- [ ] **CF-8: Durable Objects Realtime Hub & Queues**
-- [ ] **CF-9: Frontend Cloudflare Pages Alignment**
-- [ ] **CF-10: Full Staging Verification & Security Audit**
-- [ ] **CF-11: Production Cutover & Legacy Retirement** (Requires Owner Authorization)
+## 1. Master Rebuild Sequence (Phases 0–8)
+- [x] **Phase 0: Rebuild Strategy & Legacy Audit** (COMPLETED 2026-11-22)
+- [ ] **Phase 1: New Foundation (Monorepo, TS Config, Hono Workers Skeleton, /health)** (NEXT ACTIVE)
+- [ ] **Phase 2: Database & Identity (Clean Neon Schema, Migrations, Web Crypto Auth, RBAC)**
+- [ ] **Phase 3: Marketplace Core (Sellers, Shops, Categories, Products, R2 Media)**
+- [ ] **Phase 4: Commerce Core (Cart, Checkout, Guarded Inventory Reservations, Orders)**
+- [ ] **Phase 5: Payment & Finance (Stripe Webhook, Double-Entry Ledger, Settlements)**
+- [ ] **Phase 6: Frontend Integration (Pages -> Workers API, Real States, Zero Mocks)**
+- [ ] **Phase 7: Realtime & Notifications (Durable Objects WebSockets, Queues, FCM)**
+- [ ] **Phase 8: Quality, Security & Release (E2E Tests, OWASP Audit, Production Cutover)**
 
 ---
 
 ## 2. Invariants & Rules for All AI Agents
 - **Startup Order:** `AGENTS.md` ➜ `.ai/office/QUICK_START.md` ➜ `docs/architecture/VELNOX_CANONICAL_ARCHITECTURE.md` ➜ `.ai/AI_HANDOFF.md` ➜ `.ai/reports/LATEST.md` ➜ inspect actual code.
-- **Render Rule:** Never assume Render is the target backend. If working on legacy code on Render, do not silently extend it as if it were permanent.
-- **Database Safety:** Neon PostgreSQL is Single Source of Truth. The fail-closed database guard (`backend/db/test-database.ts`) protects production. Never test against production.
-- **Financial Precision:** BigInt satang minor units only. No floats. Double-entry ledger invariant: Debits == Credits.
+- **Clean Rebuild Mandate:** Do not attempt to fix or migrate legacy Express routes or legacy database data. Build the clean Workers backend and clean schema.
+- **Fail-Closed DB Guard:** Never test against production Neon. Tests must use `TEST_DATABASE_URL` pointing to disposable/local PostgreSQL.
+- **Financial Precision:** Integer satang minor units (`BigInt`) only. No floats. Double-entry ledger invariant: Debits == Credits.
 - **Communication:** Thai language for all user-facing communication (MANDATORY).

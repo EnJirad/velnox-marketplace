@@ -40,13 +40,14 @@ These are loaded for **every** task level, including T1. Full text: `.ai/office/
 Startup sequence for all agents:
 1. `AGENTS.md` (mandates, Thai communication, native checklist fallback)
 2. `.ai/office/QUICK_START.md` (this file)
-3. `docs/architecture/VELNOX_CANONICAL_ARCHITECTURE.md` (authoritative architecture definition)
+3. `docs/architecture/VELNOX_CANONICAL_ARCHITECTURE.md` (authoritative architecture definition) & `docs/architecture/VELNOX_CLEAN_REBUILD_ARCHITECTURE.md`
 4. `.ai/AI_HANDOFF.md` (current state)
 5. `.ai/reports/LATEST.md` (latest completed task report)
 6. Subsystem doc / code only as needed for task scope
 
 > [!IMPORTANT]
-> **Explicit Architecture Rule:** Never assume Render is the target backend. Render is legacy/current infrastructure. Cloudflare Workers is the approved target API platform. Neon PostgreSQL remains the permanent primary database. If code still runs on Render, report the migration status honestly and do not silently extend the legacy architecture unless a migration bridge, compatibility fix, or owner-approved exception requires it.
+> **Explicit Architecture Rule — Clean Rebuild Initiative:**
+> Never assume Render is the target backend. Render is legacy infrastructure. Cloudflare Workers (Hono) is the approved target API platform. Neon PostgreSQL is the permanent primary database with a clean schema. We are NOT migrating legacy backend or legacy database records. If code still runs on Render, treat it strictly as reference material and never import it into the new Workers backend.
 
 | Phase | Load |
 |-------|------|

@@ -5,8 +5,8 @@ Monorepo ("bun" workspaces: "apps/velshop|velseller|velcenter|velnox", "backend"
 What is Velnox
 
 Multi-vendor marketplace.
-Target Architecture: Four Cloudflare Pages frontends → Cloudflare Workers backend (Hono) → Neon PostgreSQL (Single Source of Truth) + Cloudflare R2 (media) + Cloudflare Durable Objects (realtime).
-Legacy/Current Transition: Four Vercel frontends & one Render backend (Express + WebSocket) remain active temporarily during incremental Cloudflare migration. Google OAuth + JWT httpOnly cookies. Languages: th, en, my.
+Target Architecture: Four Cloudflare Pages frontends → Cloudflare Workers backend (Hono) → Neon PostgreSQL (Single Source of Truth, Clean Database Schema) + Cloudflare R2 (media) + Cloudflare Durable Objects (realtime).
+Initiative: Clean Rebuild Initiative (Not a legacy migration. Legacy Render backend and 62-table schema are reference only. Zero customer data migration needed). Google OAuth + JWT httpOnly cookies. Languages: th, en, my.
 
 1. Communication Language — Thai (MANDATORY)
 

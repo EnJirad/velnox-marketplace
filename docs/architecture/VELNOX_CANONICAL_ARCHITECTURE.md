@@ -9,16 +9,17 @@
 > [!IMPORTANT]
 > **MANDATORY ARCHITECTURE DIRECTIVE — READ BEFORE TOUCHING ANY CODE**
 > 
+> - **INITIATIVE:** **Clean Rebuild Initiative** (Not a legacy backend migration).
 > - **TARGET BACKEND:** **Cloudflare Workers** (TypeScript + Hono Framework, Modular Monolith, Web Standards)
-> - **PRIMARY DATABASE:** **Neon PostgreSQL** (Permanent Single Source of Truth — NEVER replace with D1, MongoDB, or Supabase)
+> - **PRIMARY DATABASE:** **Neon PostgreSQL** (Permanent Single Source of Truth — Clean Database Schema, zero customer data migration needed).
 > - **FRONTEND HOSTING:** **Cloudflare Pages** (All 4 Static SPAs: `velnox.live`, `shop.velnox.live`, `seller.velnox.live`, `center.velnox.live`)
 > - **OBJECT STORAGE:** **Cloudflare R2** (Images, KYC media, attachments — file metadata stored in Neon)
 > - **REALTIME:** **Cloudflare Durable Objects** (Distributed stateful WebSockets, presence tracking, chat coordination)
 > - **BACKGROUND JOBS:** **Cloudflare Queues** (Asynchronous tasks, retries, notifications — only where required)
-> - **RENDER:** **LEGACY BACKEND INFRASTRUCTURE DURING MIGRATION — NOT THE TARGET ARCHITECTURE**
-> - **VERCEL:** **LEGACY FRONTEND INFRASTRUCTURE DURING MIGRATION — NOT THE TARGET ARCHITECTURE**
+> - **RENDER & VERCEL:** **LEGACY INFRASTRUCTURE DURING TRANSITION — NOT THE TARGET ARCHITECTURE**
+> - **LEGACY BACKEND:** **REFERENCE ONLY** for business requirements, UI flows, and lessons learned. Do not import into Workers.
 >
-> All AI agents, future milestones, and technical decisions MUST adhere strictly to this canonical definition. No agent is permitted to treat Render as the target backend or continue expanding the legacy Express architecture under the assumption that it is permanent.
+> All AI agents, future milestones, and technical decisions MUST adhere strictly to this canonical definition. No agent is permitted to treat Render as the target backend or continue expanding the legacy Express architecture under the assumption that it is permanent. Detailed Clean Rebuild Architecture is documented in [`VELNOX_CLEAN_REBUILD_ARCHITECTURE.md`](file:///workspace/quiet-hopper/docs/architecture/VELNOX_CLEAN_REBUILD_ARCHITECTURE.md).
 
 ---
 
