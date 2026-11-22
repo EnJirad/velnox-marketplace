@@ -22,10 +22,10 @@ PHASE 3: Marketplace Core (Sellers, Shops, Products) ──► [COMPLETED]
 PHASE 4: Commerce Core (Cart, Checkout, Guarded Stock) ─► [COMPLETED]
           │
           ▼
-PHASE 5: Payment & Finance (Stripe Webhook, Ledger) ───► [NEXT ACTIVE]
+PHASE 5: Payment & Finance (Stripe Webhook, Ledger) ───► [COMPLETED]
           │
           ▼
-PHASE 6: Frontend Integration (Pages -> Workers API)
+PHASE 6: Frontend Integration (Pages -> Workers API) ──► [NEXT ACTIVE]
           │
           ▼
 PHASE 7: Realtime & Notifications (Durable Objects, Queues)
@@ -40,4 +40,5 @@ PHASE 8: Quality, Security & Release (E2E, Cutover)
 - **Phase 2 (Database & Identity):** **COMPLETED** (2026-11-22)
 - **Phase 3 (Marketplace Core):** **COMPLETED** (2026-11-22)
 - **Phase 4 (Commerce Core):** **COMPLETED** (2026-11-22)
-- **Phase 5 (Payment & Finance):** **NEXT ACTIVE**
+- **Phase 5 (Payment & Finance):** **COMPLETED** (2026-11-22)
+- **Phase 6 (Frontend Integration):** **NEXT ACTIVE**

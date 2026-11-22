@@ -10,10 +10,12 @@
     "forceConsistentCasingInFileNames": true,
     "declaration": true,
     "noEmit": true,
+    "allowImportingTsExtensions": true,
     "baseUrl": ".",
     "types": ["@cloudflare/workers-types", "bun-types"],
     "paths": {
       "@velnox/api-contract": ["../../packages/api-contract/src/index.ts"],
+      "@velnox/ledger": ["../../packages/ledger/src/index.ts"],
       "@velnox/validation": ["../../packages/validation/src/index.ts"],
       "@velnox/config": ["../../packages/config/src/index.ts"]
     }

@@ -8,6 +8,7 @@ import { sellerRoutes } from "./routes/seller.js";
 import { mediaRoutes } from "./routes/media.js";
 import { cartRoutes } from "./routes/cart.js";
 import { orderRoutes } from "./routes/orders.js";
+import { paymentRoutes } from "./routes/payments.js";
 import type { Bindings, Variables } from "./types.js";
 
 export function createApplication() {
@@ -39,7 +40,7 @@ export function createApplication() {
         return null;
       },
       allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-      allowHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Idempotency-Key"],
+      allowHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Idempotency-Key", "stripe-signature"],
       exposeHeaders: ["X-Request-Id", "X-Response-Time"],
       credentials: true,
       maxAge: 86400,
@@ -72,6 +73,9 @@ export function createApplication() {
 
   // Mount Order Routes under /api/v1/orders
   app.route("/api/v1/orders", orderRoutes);
+
+  // Mount Payment & Finance Routes under /api/v1/payments
+  app.route("/api/v1/payments", paymentRoutes);
 
   // Default root index endpoint
   app.get("/", (c) => {
