@@ -24,7 +24,8 @@ This runbook outlines the zero-downtime production cutover of the Velnox Marketp
          └────────────────────────┘                │
                                                    ▼
                                         Backend API Gateway
-                                     (Render Monolith / Worker)
+                                    (Cloudflare Workers + Hono)
+                          [Legacy during transition: Render Monolith]
                                                    │
                          ┌─────────────────────────┴─────────────────────────┐
                          ▼                                                   ▼
@@ -47,7 +48,8 @@ All DNS records are managed within Cloudflare DNS under zone `velnox.live`. Prox
 | `seller.velnox.live` | CNAME | `velnox-seller.pages.dev` | **Proxied (Orange)** | Cloudflare Pages (VelSeller SPA) |
 | `center.velnox.live` | CNAME | `velnox-center.pages.dev` | **Proxied (Orange)** | Cloudflare Pages (VelCenter SPA) |
 | `velnox.live` | CNAME | `velnox-landing.pages.dev` | **Proxied (Orange)** | Cloudflare Pages (Landing SPA) |
-| `api.velnox.live` | CNAME | `velnox-api.onrender.com` | **Proxied (Orange)** | Backend Modular API Gateway |
+| `api.velnox.live` | CNAME / Worker Route | Cloudflare Workers Route (`api.velnox.live/*`) | **Proxied (Orange)** | Cloudflare Workers (Target Backend API) |
+| `api.velnox.live` *(interim)* | CNAME | `velnox-api.onrender.com` | **Proxied (Orange)** | Render Monolith (Legacy/Transition only) |
 
 ---
 

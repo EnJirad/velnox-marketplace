@@ -4,7 +4,9 @@ Monorepo ("bun" workspaces: "apps/velshop|velseller|velcenter|velnox", "backend"
 
 What is Velnox
 
-Multi-vendor marketplace. Four Vercel frontends → one Render backend (Express + WebSocket) → one Neon PostgreSQL (source of truth) + Cloudflare R2 (file storage). Google OAuth + JWT httpOnly cookies. Languages: th, en, my.
+Multi-vendor marketplace.
+Target Architecture: Four Cloudflare Pages frontends → Cloudflare Workers backend (Hono) → Neon PostgreSQL (Single Source of Truth) + Cloudflare R2 (media) + Cloudflare Durable Objects (realtime).
+Legacy/Current Transition: Four Vercel frontends & one Render backend (Express + WebSocket) remain active temporarily during incremental Cloudflare migration. Google OAuth + JWT httpOnly cookies. Languages: th, en, my.
 
 1. Communication Language — Thai (MANDATORY)
 
@@ -96,15 +98,18 @@ The project owner should be able to open Android Harness and see the actual task
 
 3. Progressive Context Loading — START HERE
 
-The canonical agent workspace is ".ai/". New sessions start with ".ai/office/QUICK_START.md" — it contains the essential entry point (~500 tokens). Load additional context only when required.
+The canonical agent workspace is ".ai/". New sessions MUST follow this exact startup reading order:
 
-1. .ai/office/QUICK_START.md          ← ALWAYS (this is the new startup entry point)
-2. .ai/AI_RULES.md                    ← when changing code (full rulebook)
-3. .ai/AI_HANDOFF.md                  ← current state + remaining gaps (compact)
-4. .ai/context/project-map.md         ← to locate files
-5. .ai/context/<subsystem>.md         ← only the subsystem you touch
-6. Actual source code                 ← authoritative implementation
-7. Verify → update .ai/AI_HANDOFF.md
+1. AGENTS.md                                             ← ALWAYS (core rules & Thai communication)
+2. .ai/office/QUICK_START.md                             ← ALWAYS (session entry point)
+3. docs/architecture/VELNOX_CANONICAL_ARCHITECTURE.md    ← ALWAYS (authoritative target architecture)
+4. .ai/AI_HANDOFF.md                                     ← current state + remaining gaps (compact)
+5. .ai/reports/LATEST.md                                 ← last completed task report
+6. Active milestone & relevant docs (.ai/context/<subsystem>.md)
+7. Actual source code                                    ← authoritative implementation (inspect before assuming)
+
+Explicit Architecture Rule:
+Never assume Render is the target backend. Render is legacy/current infrastructure. Cloudflare Workers is the approved target API platform. Neon PostgreSQL remains the permanent primary database. If code still runs on Render, report the migration status honestly and do not silently extend the legacy architecture unless a migration bridge, compatibility fix, or owner-approved exception requires it.
 
 Do NOT read every doc file. Load the smallest useful set.
 

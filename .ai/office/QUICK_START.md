@@ -37,9 +37,20 @@ These are loaded for **every** task level, including T1. Full text: `.ai/office/
 
 ## Context Loading Policy (Progressive)
 
+Startup sequence for all agents:
+1. `AGENTS.md` (mandates, Thai communication, native checklist fallback)
+2. `.ai/office/QUICK_START.md` (this file)
+3. `docs/architecture/VELNOX_CANONICAL_ARCHITECTURE.md` (authoritative architecture definition)
+4. `.ai/AI_HANDOFF.md` (current state)
+5. `.ai/reports/LATEST.md` (latest completed task report)
+6. Subsystem doc / code only as needed for task scope
+
+> [!IMPORTANT]
+> **Explicit Architecture Rule:** Never assume Render is the target backend. Render is legacy/current infrastructure. Cloudflare Workers is the approved target API platform. Neon PostgreSQL remains the permanent primary database. If code still runs on Render, report the migration status honestly and do not silently extend the legacy architecture unless a migration bridge, compatibility fix, or owner-approved exception requires it.
+
 | Phase | Load |
 |-------|------|
-| **Startup** | This file only |
+| **Startup** | `QUICK_START.md` + `VELNOX_CANONICAL_ARCHITECTURE.md` |
 | **Every task** | `.ai/office/ESSENTIAL_RULES.md` (always) |
 | **T1** | Essential rules + affected source files. No full rulebook, no AI 02. |
 | **T2** | + `.ai/AI_RULES.md`, architecture, agent roles, inferred subsystem doc |

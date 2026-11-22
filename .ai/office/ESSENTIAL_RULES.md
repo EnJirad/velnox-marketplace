@@ -43,7 +43,8 @@ project documentation, never these rules. Full detail: `.ai/AI_RULES.md`.
 - Report status as VERIFIED / UNVERIFIED / FAILED / BLOCKED / SKIPPED / NOT TESTED.
 
 ## 8. Project architecture boundaries
-- `apps/velshop` (customer) · `apps/velseller` (seller) · `apps/velcenter` (staff ops) · `apps/velnox` (corporate) → `backend` (Express + ws) → Neon + Cloudflare R2.
+- **Target Architecture:** `apps/velshop` (customer) · `apps/velseller` (seller) · `apps/velcenter` (staff ops) · `apps/velnox` (corporate) hosted on **Cloudflare Pages** → **Cloudflare Workers** (Hono API at `api.velnox.live`) → **Neon PostgreSQL** (Single Source of Truth) + **Cloudflare R2** + **Cloudflare Durable Objects** (realtime).
+- **Legacy / Transition:** Render (Express + Node ws) and Vercel are legacy/current infrastructure during migration. Never assume Render is the target backend.
 - `packages/shared` holds the UI kit, i18n, and `api-routes.ts`.
 - The backend is the **only** gateway to Neon and R2.
 - Languages `th` (key-shape source of truth), `en`, `my` — parity enforced by `bun run i18n:check`.

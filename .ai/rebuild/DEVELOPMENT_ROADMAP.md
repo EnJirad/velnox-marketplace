@@ -7,34 +7,38 @@
 
 ## Roadmap Overview (แผนการพัฒนาระยะยาว)
 
-แผนการ Rebuild ระบบ Velnox Marketplace แบ่งออกเป็น 8 Milestones ที่ชัดเจน ดำเนินการแบบ Incremental โดยไม่ทำลายฟังก์ชันเดิม และพร้อมตรวจสอบผลผ่าน Quality Gates ในทุกขั้นตอน:
+แผนการพัฒนา Velnox Marketplace แบ่งออกเป็น 2 ช่วงหลักอย่างชัดเจน:
+1. **Node.js Modular Core Rebuild (Milestones 1–8):** สลายโค้ดเดิมสู่ Modular Monolith, สร้าง Shared Packages, ระบบบัญชีคู่, ตรวจสอบ Invariants และเขียน E2E/Security Test Suites (เสร็จสิ้นสมบูรณ์ 100%)
+2. **Cloudflare-First Target Migration (Roadmap CF-0 ถึง CF-11):** ย้ายการโฮสต์และรันไทม์สู่ Cloudflare Pages, Cloudflare Workers (Hono), Cloudflare R2, และ Cloudflare Durable Objects โดยมี Neon PostgreSQL เป็น Single Source of Truth ถาวร (อ้างอิง: `docs/architecture/CLOUDFLARE_MIGRATION_ROADMAP.md`)
 
 ```
-[ Phase 1: Audit & Blueprint ] ──────► (COMPLETED)
+[ Phase 1: Audit & Blueprint ] ──────────────────────────────────────────► (COMPLETED)
            │
            ▼
-[ Milestone 1: Monorepo Foundation & API Contract Package ] ──► (COMPLETED)
+[ Node.js Modular Core Rebuild (Milestones 1–8) ] ───────────────────────► (COMPLETED & VERIFIED)
+ • M1: Monorepo Foundation & API Contracts Package                         (COMPLETED)
+ • M2: Versioned Database Migrations & Ledger Core                         (COMPLETED)
+ • M3: Modular Backend Core & Unified Dual-Token Auth                      (COMPLETED)
+ • M4: Commerce Core Domains (Catalog, Cart, Checkout, Inventory)          (COMPLETED)
+ • M5: Payment, Webhooks & Automated Settlement Engine                     (COMPLETED)
+ • M6: Frontend SPA Modularization & _redirects Routing                    (COMPLETED)
+ • M7: Realtime Hub Core (In-memory) & Honest FCM Architecture             (COMPLETED)
+ • M8: Full E2E Integration Suite & OWASP Top 10 Security Audit            (COMPLETED)
            │
            ▼
-[ Milestone 2: Versioned Database Migration Engine & Ledger Core ] ──► (NEXT ACTIVE)
-           │
-           ▼
-[ Milestone 3: Modular Backend Core & Unified Dual-Token Auth ]
-           │
-           ▼
-[ Milestone 4: Commerce Core Domains (Catalog, Cart, Checkout, Inventory) ]
-           │
-           ▼
-[ Milestone 5: Payment, Webhooks & Automated Settlement Engine ]
-           │
-           ▼
-[ Milestone 6: Frontends Rebuild & Cloudflare Pages Alignment (Shop, Seller, Center) ]
-           │
-           ▼
-[ Milestone 7: Realtime Hub (Durable Objects) & Push Notifications (FCM) ]
-           │
-           ▼
-[ Milestone 8: Full E2E Integration, Security Hardening & Production Cutover ]
+[ Cloudflare Migration Roadmap (CF-0 to CF-11) ] ────────────────────────► (IN PROGRESS)
+ • CF-0: Architecture Truth Reset & Documentation Alignment                (COMPLETED)
+ • CF-1: Cloudflare Workers Foundation (Hono + TypeScript)                 (NEXT ACTIVE)
+ • CF-2: Neon Connectivity via @neondatabase/serverless                   (PLANNED)
+ • CF-3: Authentication on Workers Runtime                                 (PLANNED)
+ • CF-4: Catalog Read APIs & KV Cache                                      (PLANNED)
+ • CF-5: Commerce Write APIs & Guarded Inventory                          (PLANNED)
+ • CF-6: Payments & Ledger on Workers                                      (PLANNED)
+ • CF-7: Cloudflare R2 Native Bindings                                    (PLANNED)
+ • CF-8: Realtime Durable Objects & Cloudflare Queues                     (PLANNED)
+ • CF-9: Frontend Cloudflare Pages Staging Deployment                     (PLANNED)
+ • CF-10: Full Staging Security & Load Verification                        (PLANNED)
+ • CF-11: Production Cutover & Vercel/Render Retirement (Owner Authorized) (PLANNED)
 ```
 
 ---
@@ -122,35 +126,41 @@
 - **Acceptance Criteria:** หน้าจอโหลดเร็วระดับ Edge, Responsive สมบูรณ์, รองรับภาษา TH/EN/MY, Preview Deployments บน Cloudflare Pages ทำงานได้ 100% โดยคง Vercel เดิมไว้ขนานกัน
 - **Risk:** Low (Completed)
 
-### Milestone 7: Realtime Hub & Push Notifications (COMPLETED)
-- **Status:** COMPLETED (2026-11-22)
-- **Objective:** ย้าย WebSocket in-memory สู่ Cloudflare Durable Objects และเพิ่มระบบ Push Notifications ผ่าน FCM สำหรับ Mobile
+### Milestone 7: Realtime Hub Domain & Push Notification Architecture (COMPLETED IN NODE)
+- **Status:** COMPLETED (2026-11-22) — *Durable Objects migration scheduled under CF-8*
+- **Objective:** สร้าง Realtime Hub Core (in-memory pub/sub, presence tracking, thread viewing presence) และสถาปัตยกรรม FCM Notification (พร้อมการรายงานสถานะจริง `blocked_missing_credentials`)
 - **Key Modules/Files:**
   - `backend/src/modules/realtime/domain/realtime.ts` (Channels & Envelopes)
   - `backend/src/modules/realtime/services/realtime-hub.ts` (Pub/Sub & Presence Tracking)
-  - `backend/src/modules/realtime/services/push-notification-service.ts` (FCM & DB Persistence)
+  - `backend/src/modules/realtime/services/push-notification-service.ts` (FCM HTTP v1 & DB Persistence)
   - `backend/src/modules/realtime/routes/realtime-routes.ts` (Health & Dispatch API)
-  - Automated tests (4 tests passed, total 70 tests passed across 16 suites)
+  - Automated tests (6 tests passed in `realtime-hub.test.ts`)
 - **Dependencies:** Milestone 6
-- **Acceptance Criteria:** แชทรับส่งข้อความและรูปภาพแบบ Real-time ข้ามทวีปได้โดยไม่หลุด แจ้งเตือนเข้ามือถือเมื่อมีออเดอร์ใหม่
-- **Risk:** Low (Completed)
+- **Acceptance Criteria:** Presence tracking ทำงานถูกต้องข้ามหลายแท็บ, ตัดการเชื่อมต่อและทำลาย state ได้สมบูรณ์, ระงับ push เมื่อกำลังดูแชท, รายงานสถานะ FCM ตามจริง
+- **Target Architecture Note:** ในระยะยาว Realtime Hub จะถูกย้ายจาก in-memory Map สู่ Cloudflare Durable Objects ในขั้นตอน CF-8
+- **Risk:** Low (Completed in Node.js core)
 
-### Milestone 8: Full E2E Integration, Production Cutover & Vercel Retirement (COMPLETED)
-- **Status:** COMPLETED (2026-11-22)
-- **Objective:** รัน E2E Tests ครบทุก Flow, ทดสอบความปลอดภัย (OWASP Top 10), ทำ Data Reconcile, สลับ Cloudflare DNS Records สู่ Cloudflare Pages และ Workers เต็มรูปแบบ และดำเนินการปลดระวาง Legacy Vercel Projects หลังยืนยันความเสถียร
+### Milestone 8: Full E2E Integration Suite & OWASP Top 10 Security Audit (COMPLETED)
+- **Status:** COMPLETED (2026-11-22) — *Live DNS Cutover scheduled under CF-11*
+- **Objective:** สร้างชุดทดสอบ E2E Integration Suite ครอบคลุม 5 วงจรธุรกิจหลัก, ตรวจสอบความปลอดภัยตามกรอบ OWASP Top 10, ตรวจสอบ Invariant ทางการเงินและสต็อกสินค้า และจัดทำ Runbook สำหรับการ Cutover
 - **Key Modules/Files:**
   - `backend/tests/e2e/rebuild-e2e.test.ts` (Full E2E Integration Test Suite covering 5 scenarios)
   - `backend/tests/security/owasp-top10-rebuild.test.ts` (OWASP Top 10 Security Audit Suite)
-  - `docs/CLOUDFLARE_CUTOVER_RUNBOOK.md` (Complete DNS Switch & Vercel Retirement Plan)
-  - `.ai/rebuild/MILESTONE_8_IMPLEMENTATION_REPORT.md` (Final Milestone Implementation Report)
-  - Automated tests (15 new tests passed, total 85 tests passed across 29 suites with 100% PASS)
-- **Dependencies:** All previous milestones
-- **Acceptance Criteria:** Automated CI ผ่าน 100%, Load test ผ่าน, Zero defect ในระบบเงินและสต็อก, DNS Cutover สำเร็จราบรื่นไร้ Downtime
-- **Risk:** Low (Completed & Verified)
+  - `docs/CLOUDFLARE_CUTOVER_RUNBOOK.md` (Zero-Downtime DNS Cutover & Vercel/Render Retirement Plan)
+  - `scripts/verify-cutover.ts` (Automated Synthetic Smoke Test tool)
+  - Automated tests (87/87 tests passed across 29 suites with 100% PASS)
+- **Dependencies:** All previous rebuild milestones
+- **Acceptance Criteria:** E2E tests ผ่าน 100%, OWASP Top 10 ผ่าน 100%, Concurrency load benchmark ผ่าน 0 errors (สูงสุด 389.1 RPS)
+- **Target Architecture Note:** แผน Cutover และการปลดระวาง Vercel/Render ถูกเตรียมพร้อมไว้ใน Runbook โดยการสลับ DNS สู่ Cloudflare Pages และ Workers จะเกิดขึ้นในขั้นตอน CF-11 หลังได้รับอนุมัติจากเจ้าของโครงการ
+- **Risk:** Low (Core logic verified)
 
 ---
 
-## สรุปสถานะโครงการ Rebuild ทั้งหมด
-- **Milestone 1 ถึง Milestone 8:** สำเร็จสมบูรณ์ 100% (8 จาก 8 Milestones)
-- **ชุดทดสอบมาตรฐาน Rebuild:** 85/85 tests ผ่านทั้งหมด (0 failed)
-- **ความพร้อมด้าน Production:** พร้อมขึ้นระบบ Production ตามคู่มือ `docs/CLOUDFLARE_CUTOVER_RUNBOOK.md`
+## สรุปสถานะโครงการ
+- **Node.js Modular Core Rebuild (Milestones 1–8):** สำเร็จสมบูรณ์ 100% (87/87 tests passed)
+- **Stabilization & Verification Program (Milestones 7.1–7.3):** สำเร็จสมบูรณ์ 100%
+- **Cloudflare Target Migration (CF-0 to CF-11):**
+  - **CF-0 (Architecture Truth & Documentation Alignment):** **COMPLETED**
+  - **CF-1 (Cloudflare Workers Foundation):** **NEXT ACTIVE**
+  - แผนการดำเนินงานฉบับสมบูรณ์: [`docs/architecture/CLOUDFLARE_MIGRATION_ROADMAP.md`](file:///workspace/quiet-hopper/docs/architecture/CLOUDFLARE_MIGRATION_ROADMAP.md)
+  - นิยามสถาปัตยกรรมหลัก: [`docs/architecture/VELNOX_CANONICAL_ARCHITECTURE.md`](file:///workspace/quiet-hopper/docs/architecture/VELNOX_CANONICAL_ARCHITECTURE.md)
