@@ -32,6 +32,7 @@
     "test:ledger": "node --experimental-strip-types --test packages/ledger/tests/*.test.ts backend/tests/ledger-service.test.ts",
     "test:migrations": "node --experimental-strip-types --test database/tests/*.test.ts",
     "test:identity": "node --experimental-strip-types --test backend/tests/identity/*.test.ts",
+    "test:commerce": "node --experimental-strip-types --test backend/tests/commerce/*.test.ts",
     "i18n:check": "bun packages/shared/scripts/i18n-check.ts",
     "test": "bun test backend/tests",
     "lint": "eslint .",

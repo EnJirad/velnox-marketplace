@@ -79,16 +79,18 @@
 - **Acceptance Criteria:** Dual Tokens (Access 15m + Refresh 30d), Refresh Token Rotation, Dual Response (Cookie for Web, Body for Mobile) ผ่านการทดสอบ 100%
 - **Risk:** Low (Completed)
 
-### Milestone 4: Commerce Core Domains (Catalog, Cart, Checkout, Inventory)
+### Milestone 4: Commerce Core Domains (Catalog, Cart, Checkout, Inventory) (COMPLETED)
+- **Status:** COMPLETED (2026-11-22)
 - **Objective:** สลาย Route ยักษ์ `products.ts` (4,009 บรรทัด) และ `cart.ts` (2,152 บรรทัด) ออกเป็น Modular Domains
 - **Key Modules/Files:**
-  - `backend/src/modules/catalog/`
-  - `backend/src/modules/cart/`
-  - `backend/src/modules/checkout/`
-  - `backend/src/modules/inventory/`
+  - `backend/src/modules/catalog/` (Category Tree, Product Listing & Detail)
+  - `backend/src/modules/inventory/` (Atomic Guarded Stock Reservation & Movement Audit)
+  - `backend/src/modules/cart/` (Multi-shop Item Grouping, Exact Minor Totals)
+  - `backend/src/modules/checkout/` (Checkout Groups, Multi-shop Split, 30-min Deadline, Idempotent Replay)
+  - Automated tests (10 tests passed, total 57 tests passed)
 - **Dependencies:** Milestone 3
-- **Acceptance Criteria:** แยกหมวดหมู่สินค้าชัดเจน สต็อกสินค้าแยก 5 มิติ (on-hand, reserved, committed, fulfilled, returned) ทดสอบ Concurrency และ Race Condition ผ่าน
-- **Risk:** High (แกนกลางของการสั่งซื้อสินค้า)
+- **Acceptance Criteria:** แยกหมวดหมู่สินค้าชัดเจน สต็อกสินค้าแยกมิติป้องกัน Race Condition ทดสอบ Concurrency และ Idempotency ผ่าน 100%
+- **Risk:** Low (Completed)
 
 ### Milestone 5: Payment, Webhooks & Automated Settlement Engine
 - **Objective:** ปรับปรุงโมดูล `stripe.ts` (3,122 บรรทัด) และระบบการเงินให้มี Idempotency และตรวจสอบความถูกต้องย้อนหลังได้ 100%

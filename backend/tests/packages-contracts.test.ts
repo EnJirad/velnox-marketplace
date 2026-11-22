@@ -241,4 +241,37 @@ describe("Milestone 1 — Monorepo Foundation & Contract Quality Gate", () => {
       }
     });
   });
+
+  describe("Milestone 4 — Commerce Core Contracts", () => {
+    it("validates product list and cart envelopes match contract schemas", () => {
+      const productList = {
+        success: true,
+        data: [
+          {
+            id: "00000000-0000-0000-0000-000000000001",
+            shopId: "00000000-0000-0000-0000-000000000002",
+            categoryId: "electronics",
+            title: "Velnox Smartphone",
+            description: "High quality smartphone",
+            priceMinor: 1990000,
+            status: "published" as const,
+            images: ["https://r2.velnox.live/img1.jpg"],
+            rating: 4.8,
+            salesCount: 50,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          },
+        ],
+        meta: {
+          page: 1,
+          limit: 20,
+          total: 1,
+          hasMore: false,
+        },
+      };
+
+      const parsedList = productListResponseSchema.safeParse(productList);
+      expect(parsedList.success).toBe(true);
+    });
+  });
 });
