@@ -1,21 +1,21 @@
-# Latest Task Execution Report — Durable Objects Free Plan SQLite Migration Fix
+# Latest Task Execution Report — Worker Live in Production & Pages Integration
 
 **Execution Timestamp:** 2026-11-22
-**Task:** Fix Cloudflare deploy error 10097 (Durable Objects free plan SQLite migration) & Worker name alignment
+**Task:** Production Worker Live Verification & Pages CORS Alignment
 **Status:** COMPLETED & VERIFIED
 **Initiative:** Velnox Clean Rebuild Initiative
 
 ---
 
 ## 1. Summary of Work Completed
-- **Free Plan Durable Objects:** Converted migration definition in `wrangler.jsonc` from `new_classes` to `new_sqlite_classes: ["RealtimeHubDO"]` to comply with Cloudflare Workers Free plan specifications.
-- **Worker Name Alignment:** Synced Worker name to `"velnox-marketplace"` matching the Cloudflare Dashboard CI project name.
-- **Verification:** Dry-run deployment compiled under 1.1 MB, 94/94 test cases passing, zero TypeScript errors.
+- **Live Production Worker:** Verified `https://velnox-marketplace.ma0979354966-js91934.workers.dev/health` is online with HTTP 200 OK.
+- **Pages CORS & Default API:** Whitelisted `*.pages.dev` in CORS origin checks and set the production Worker URL as fallback in `@velnox/shared`.
+- **Zero Regressions:** 94/94 Workers API tests passing.
 
 ---
 
 ## 2. Verification Summary
-- `npx wrangler deploy --dry-run`: PASS (1019.65 KiB upload)
+- `curl /health`: HTTP 200 OK
 - `bun --filter @velnox/api test`: 94/94 tests PASS
 - `bun run typecheck:worker`: PASS (0 errors)
 - `git diff --check`: PASS (clean)

@@ -31,7 +31,9 @@ export type SiteId = keyof typeof SITE_URLS;
  */
 export const apiUrl: string =
   import.meta.env.VITE_API_URL ||
-  (import.meta.env.PROD ? "https://api.velnox.live" : "http://localhost:8787");
+  (import.meta.env.PROD
+    ? "https://velnox-marketplace.ma0979354966-js91934.workers.dev"
+    : "http://localhost:8787");
 
 /**
  * Full API base URL including /api prefix.

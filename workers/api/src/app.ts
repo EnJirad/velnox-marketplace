@@ -36,6 +36,8 @@ export function createApplication() {
         if (/^http:\/\/127\.0\.0\.1(:\d+)?$/.test(origin)) return origin;
         // Allow all *.velnox.live and velnox.live domains
         if (/^https:\/\/([a-zA-Z0-9-]+\.)*velnox\.live$/.test(origin)) return origin;
+        // Allow Cloudflare Pages preview & production domains (*.pages.dev)
+        if (/^https:\/\/([a-zA-Z0-9-]+\.)*pages\.dev$/.test(origin)) return origin;
         // Check custom CORS_ORIGINS from environment
         const customOrigins = c.env?.CORS_ORIGINS?.split(",").map((o) => o.trim()) || [];
         if (customOrigins.includes(origin)) return origin;
