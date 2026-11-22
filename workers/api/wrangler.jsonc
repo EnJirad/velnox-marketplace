@@ -8,7 +8,7 @@
     "ENVIRONMENT": "development",
     "APP_NAME": "Velnox Marketplace API",
     "APP_VERSION": "3.0.0",
-    "R2_PUBLIC_URL_PREFIX": "https://media.velnox.live"
+    "R2_PUBLIC_URL_PREFIX": "https://pub-75f6f26e59df431b854fe53caedb49b6.r2.dev"
   },
   "r2_buckets": [
     {

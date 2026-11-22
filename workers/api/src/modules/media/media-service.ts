@@ -50,7 +50,7 @@ export class MediaService {
     }
 
     // 5. Build public URL
-    const publicUrlPrefix = this.env?.R2_PUBLIC_URL_PREFIX?.replace(/\/$/, "") || "https://media.velnox.live";
+    const publicUrlPrefix = this.env?.R2_PUBLIC_URL_PREFIX?.replace(/\/$/, "") || "https://pub-75f6f26e59df431b854fe53caedb49b6.r2.dev";
     const publicUrl = `${publicUrlPrefix}/${r2Key}`;
 
     const id = crypto.randomUUID();

@@ -47,7 +47,7 @@ describe("Media & Cloudflare R2 Upload Tests", () => {
     expect(json.data.id).toBeDefined();
     expect(json.data.purpose).toBe("product_image");
     expect(json.data.contentType).toBe("image/webp");
-    expect(json.data.publicUrl).toContain("https://media.velnox.live/product_image/user-media-1/");
+    expect(json.data.publicUrl).toContain("https://pub-75f6f26e59df431b854fe53caedb49b6.r2.dev/product_image/user-media-1/");
     expect(json.data.fileSizeBytes).toBe(fileBytes.length);
   });
 

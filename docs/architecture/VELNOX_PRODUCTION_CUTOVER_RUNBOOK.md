@@ -17,7 +17,7 @@ All customer, commerce, and seller functionalities have been cleanly rebuilt for
 | **VelNox** (Corporate Landing) | Cloudflare Pages | `https://velnox.live` | $0.00 (Unlimited Edge CDN) |
 | **Backend API** (Hono Framework) | Cloudflare Workers | `https://api.velnox.live` | Standard Workers Paid |
 | **Realtime Gateway** | Cloudflare Durable Objects | `wss://api.velnox.live/ws` | Distributed Edge Coordination |
-| **Media & Object Storage** | Cloudflare R2 | `https://media.velnox.live` | $0.00 (Zero Egress Fees) |
+| **Media & Object Storage** | Cloudflare R2 | `https://pub-75f6f26e59df431b854fe53caedb49b6.r2.dev` (or `media.velnox.live`) | $0.00 (Zero Egress Fees) |
 | **Primary Database** | Neon PostgreSQL | Singapore Pooler (`ap-southeast-1`) | High Availability Serverless PG |
 
 ---

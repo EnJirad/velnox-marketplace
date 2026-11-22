@@ -14,6 +14,7 @@
 - **DATABASE CONNECTIVITY:** Cloudflare Workers connects to Neon PostgreSQL via `@neondatabase/serverless` over WebSockets/HTTP.
 - **CLEAN CORE SCHEMA:** Production migrations `0001_identity.sql` through `0005_realtime_chat.sql` established in Neon PostgreSQL with 100% UUID foreign key type alignment (SQLSTATE 42804 resolved).
 - **DOUBLE-ENTRY SATANG LEDGER:** Integrated `@velnox/ledger` accounting engine. Strictly integer satang minor units (`BigInt`). Zero floating-point arithmetic. Double-entry invariant guaranteed: `Debits === Credits`.
+- **MEDIA STORAGE:** Cloudflare R2 (`velnox-media`) with active public access endpoint (`https://pub-75f6f26e59df431b854fe53caedb49b6.r2.dev`).
 - **REALTIME & DURABLE OBJECTS:** Distributed stateful WebSockets via `RealtimeHubDO` with channel fan-out, multi-tab presence, and active-chat push notification suppression.
 - **FRONTEND HOSTING & INTEGRATION:** **Cloudflare Pages** (`shop.velnox.live`, `seller.velnox.live`, `center.velnox.live`, `velnox.live`) fully configured to consume Workers API.
 - **SECURITY & AUDIT:** Comprehensive OWASP Top 10 test suite passing, RBAC/IDOR protected, pure Web Crypto HS256 JWT, timing-safe HMAC webhooks.

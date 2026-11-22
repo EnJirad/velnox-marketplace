@@ -152,7 +152,7 @@ export class MockCartRepository implements ICartRepository {
       shopId: "shop-001",
       shopName: "Velnox Official Flagship",
       priceSatang: 2990000,
-      imageUrl: "https://media.velnox.live/products/phone1.webp",
+      imageUrl: "https://pub-75f6f26e59df431b854fe53caedb49b6.r2.dev/products/phone1.webp",
       stockAvailable: 95,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
