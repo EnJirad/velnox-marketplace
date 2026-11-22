@@ -6,6 +6,8 @@ import { authRoutes } from "./routes/auth.js";
 import { catalogRoutes } from "./routes/catalog.js";
 import { sellerRoutes } from "./routes/seller.js";
 import { mediaRoutes } from "./routes/media.js";
+import { cartRoutes } from "./routes/cart.js";
+import { orderRoutes } from "./routes/orders.js";
 import type { Bindings, Variables } from "./types.js";
 
 export function createApplication() {
@@ -64,6 +66,12 @@ export function createApplication() {
 
   // Mount Media Routes under /api/v1/media
   app.route("/api/v1/media", mediaRoutes);
+
+  // Mount Cart Routes under /api/v1/cart
+  app.route("/api/v1/cart", cartRoutes);
+
+  // Mount Order Routes under /api/v1/orders
+  app.route("/api/v1/orders", orderRoutes);
 
   // Default root index endpoint
   app.get("/", (c) => {

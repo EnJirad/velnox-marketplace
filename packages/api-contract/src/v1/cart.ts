@@ -48,4 +48,5 @@ export const cartResponseSchema = createSuccessEnvelope(cartSchema);
 export type AddToCartInput = z.infer<typeof addToCartInputSchema>;
 export type UpdateCartItemInput = z.infer<typeof updateCartItemInputSchema>;
 export type CartItem = z.infer<typeof cartItemSchema>;
+export type CartShopGroup = z.infer<typeof cartShopGroupSchema>;
 export type Cart = z.infer<typeof cartSchema>;
