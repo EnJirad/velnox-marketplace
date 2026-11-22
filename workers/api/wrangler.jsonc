@@ -16,6 +16,20 @@
       "bucket_name": "velnox-media"
     }
   ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "REALTIME_HUB",
+        "class_name": "RealtimeHubDO"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_classes": ["RealtimeHubDO"]
+    }
+  ],
   "observability": {
     "enabled": true
   }

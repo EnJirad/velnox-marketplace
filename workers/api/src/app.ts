@@ -9,6 +9,8 @@ import { mediaRoutes } from "./routes/media.js";
 import { cartRoutes } from "./routes/cart.js";
 import { orderRoutes } from "./routes/orders.js";
 import { paymentRoutes } from "./routes/payments.js";
+import { realtimeRoutes } from "./routes/realtime.js";
+import { chatRoutes } from "./routes/chat.js";
 import type { Bindings, Variables } from "./types.js";
 
 export function createApplication() {
@@ -55,6 +57,11 @@ export function createApplication() {
   // Mount Health Routes
   app.route("/", healthRoutes);
 
+  // Mount Realtime WebSockets & Coordination
+  app.route("/ws", realtimeRoutes);
+  app.route("/api/v1/realtime", realtimeRoutes);
+  app.route("/api/realtime", realtimeRoutes);
+
   // Mount Version 1 Routes
   app.route("/api/v1/health", healthRoutes);
   app.route("/api/v1/auth", authRoutes);
@@ -64,6 +71,7 @@ export function createApplication() {
   app.route("/api/v1/cart", cartRoutes);
   app.route("/api/v1/orders", orderRoutes);
   app.route("/api/v1/payments", paymentRoutes);
+  app.route("/api/v1", chatRoutes);
   app.route("/api/v1", catalogRoutes);
 
   // Mount Unversioned /api Aliases for Full Frontend & Legacy Client Compatibility
@@ -75,6 +83,7 @@ export function createApplication() {
   app.route("/api/cart", cartRoutes);
   app.route("/api/orders", orderRoutes);
   app.route("/api/payments", paymentRoutes);
+  app.route("/api", chatRoutes);
   app.route("/api", catalogRoutes);
 
   // Default root index endpoint

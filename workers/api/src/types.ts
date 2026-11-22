@@ -13,6 +13,8 @@ export interface Bindings {
   JWT_SECRET?: string;
   R2_BUCKET?: R2Bucket;
   R2_PUBLIC_URL_PREFIX?: string;
+  REALTIME_HUB?: DurableObjectNamespace;
+  NOTIFICATIONS_QUEUE?: Queue<any>;
 }
 
 export interface Variables {
