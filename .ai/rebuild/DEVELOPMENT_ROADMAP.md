@@ -54,15 +54,18 @@
 - **Acceptance Criteria:** Typecheck และ Contract Tests ผ่าน 100%, Packages เชื่อมโยงใน Monorepo สำเร็จ
 - **Risk:** Low (Completed)
 
-### Milestone 2: Versioned Database Migration Engine & Ledger Core
-- **Objective:** แปลงระบบฐานข้อมูลจากการรันสคริปต์มือ `run-sqleditor.sql` สู่ระบบ Automated Migration Scripts ที่มีหมายเลขเวอร์ชันและ Checksum
+### Milestone 2: Versioned Database Migration Engine & Ledger Core (COMPLETED)
+- **Status:** COMPLETED (2026-11-22)
+- **Objective:** แปลงระบบฐานข้อมูลจากการรันสคริปต์มือ `run-sqleditor.sql` สู่ระบบ Automated Migration Scripts ที่มีหมายเลขเวอร์ชันและ Checksum พร้อมสร้าง Double-Entry Ledger Core
 - **Key Modules/Files:**
-  - `database/migrations/`
-  - Migration runner script ที่ปลอดภัยต่อ Neon PostgreSQL
-  - Verification test เพื่อยืนยันว่าไม่มี Schema Drift
+  - `database/migrations/0001_initial_schema.sql`
+  - `database/src/migrator.ts` & `database/migrate.ts`
+  - `packages/ledger` (@velnox/ledger)
+  - `backend/src/core/ledger/ledger-service.ts`
+  - Automated tests (18 tests passed)
 - **Dependencies:** Milestone 1
-- **Acceptance Criteria:** รัน Migration ไป-กลับได้ ข้อมูลเดิมไม่สูญหาย Transaction integrity ผ่านการทดสอบ
-- **Risk:** Medium (ต้องไม่แตะต้อง Production Database)
+- **Acceptance Criteria:** Checksum verification, transaction atomicity, double-entry mathematical invariants passed 100%
+- **Risk:** Low (Completed without modifying production DB)
 
 ### Milestone 3: Modular Backend Core & Unified Dual-Token Auth
 - **Objective:** สร้างโครงสร้าง Modular Monolith Backend พร้อมระบบ Authentication ใหม่ที่รองรับทั้ง Web (Cookie) และ Mobile (Bearer Token + Refresh Token Rotation)

@@ -20,6 +20,13 @@ import {
   validateOpenApiSpec,
 } from "../../packages/api-contract/src/index.js";
 import { VelnoxApiClient, ApiClientError } from "../../packages/api-client/src/index.js";
+import {
+  validateTransaction,
+  assertBalancedTransaction,
+  createCustomerPaymentTransaction,
+  createSellerSettlementTransaction,
+  createRefundTransaction,
+} from "../../packages/ledger/src/index.ts";
 import { z } from "zod";
 
 describe("Milestone 1 — Monorepo Foundation & Contract Quality Gate", () => {
@@ -169,6 +176,41 @@ describe("Milestone 1 — Monorepo Foundation & Contract Quality Gate", () => {
         expect((err as ApiClientError).status).toBe(403);
         expect((err as ApiClientError).code).toBe("FORBIDDEN");
       }
+    });
+  });
+
+  describe("@velnox/ledger package", () => {
+    it("validates double-entry accounting balance invariants", () => {
+      const tx = createCustomerPaymentTransaction({
+        idempotencyKey: "test_ch_001",
+        paymentId: "00000000-0000-0000-0000-000000000001",
+        sellerId: "00000000-0000-0000-0000-000000000002",
+        grossAmountMinor: 10000n,
+        platformFeeMinor: 500n,
+      });
+
+      const validation = validateTransaction(tx);
+      expect(validation.isValid).toBe(true);
+      expect(validation.totalDebitMinor).toBe(10000n);
+      expect(validation.totalCreditMinor).toBe(10000n);
+      expect(() => assertBalancedTransaction(tx)).not.toThrow();
+    });
+
+    it("verifies settlement and refund double-entry transactions", () => {
+      const settle = createSellerSettlementTransaction({
+        idempotencyKey: "test_settle_001",
+        settlementId: "00000000-0000-0000-0000-000000000003",
+        sellerId: "00000000-0000-0000-0000-000000000002",
+        amountMinor: 9500n,
+      });
+      expect(validateTransaction(settle).isValid).toBe(true);
+
+      const refund = createRefundTransaction({
+        idempotencyKey: "test_refund_001",
+        refundId: "00000000-0000-0000-0000-000000000004",
+        refundAmountMinor: 5000n,
+      });
+      expect(validateTransaction(refund).isValid).toBe(true);
     });
   });
 });

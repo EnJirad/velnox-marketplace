@@ -1,57 +1,60 @@
-# LATEST — 2026-11-22 · สรุปผล Architecture Alignment & Milestone 1 Verification
-**Branch:** `main` · **Status:** DONE · ปรับสถาปัตยกรรมสู่ Cloudflare-first, ปลดระวาง Vercel ตามแผน, ตรวจสอบ Milestone 1 ผ่าน 100%
+# LATEST — 2026-11-22 · สำเร็จ Milestone 2: Versioned Database Migration Engine & Ledger Core
+**Branch:** `main` · **Status:** DONE · สร้างระบบ Migration Engine ตรวจสอบ Checksum และ Double-Entry Ledger Core เรียบร้อย 100%
 
 ---
 
-## 1. สรุปผลการดำเนินงาน (Architecture Alignment & Milestone 1 Verification)
+## 1. สรุปผลงานที่ดำเนินการใน Milestone 2
 
-1. **การบันทึกการตัดสินใจทางสถาปัตยกรรม (ADR-001: Cloudflare-First Hosting):**
-   - บันทึกการตัดสินใจอย่างเป็นทางการใน [docs/architecture/ADR-001-cloudflare-first-hosting.md](file:///workspace/quiet-hopper/docs/architecture/ADR-001-cloudflare-first-hosting.md)
-   - กำหนดให้ **Cloudflare Pages** เป็นโฮสติ้งหลักสำหรับเว็บแอปพลิเคชันทั้ง 4 ตัว (`shop.velnox.live`, `seller.velnox.live`, `center.velnox.live`, `velnox.live`)
-   - กำหนดให้ **Cloudflare Workers** เป็นรันไทม์เป้าหมายสำหรับ Backend API Gateway (`api.velnox.live`)
-   - ยืนยันให้ **Neon PostgreSQL** เป็น Single Source of Truth เพียงหนึ่งเดียว โดยปฏิเสธ Cloudflare D1 เนื่องจากข้อจำกัดด้าน ACID Transactions และ Concurrency Isolation
-   - อัปเดต [MASTER_ARCHITECTURE_BLUEPRINT.md](file:///workspace/quiet-hopper/.ai/rebuild/MASTER_ARCHITECTURE_BLUEPRINT.md) และ [DEVELOPMENT_ROADMAP.md](file:///workspace/quiet-hopper/.ai/rebuild/DEVELOPMENT_ROADMAP.md) ให้สอดคล้องกัน
+1. **ระบบ Versioned Database Migration Engine (`database/`):**
+   - พัฒนา Migration Runner อัตโนมัติใน [database/src/migrator.ts](file:///workspace/quiet-hopper/database/src/migrator.ts)
+   - จัดการตารางควบคุมสถานะ `_velnox_migrations` ใน PostgreSQL
+   - คำนวณ Checksum ด้วย SHA-256 [database/src/checksum.ts](file:///workspace/quiet-hopper/database/src/checksum.ts) เพื่อตรวจจับการดัดแปลงไฟล์ Migration ย้อนหลัง (`MigrationTamperedError`)
+   - บังคับใช้การรันแบบ Atomic Transaction (`BEGIN; ... COMMIT;` พร้อม `ROLLBACK;` เมื่อเกิดข้อผิดพลาด)
+   - จัดทำ CLI Tool [database/migrate.ts](file:///workspace/quiet-hopper/database/migrate.ts) รองรับคำสั่ง `status`, `up`, และ `check-files`
+   - จัดทำ Baseline Migration [database/migrations/0001_initial_schema.sql](file:///workspace/quiet-hopper/database/migrations/0001_initial_schema.sql) สอดคล้องกับ `db/schema.sql` 100%
 
-2. **ผลการตรวจสอบความเข้ากันได้ของ Frontend กับ Cloudflare Pages (Pages Compatibility Audit):**
-   - ตรวจสอบ `apps/velshop`, `apps/velseller`, `apps/velcenter`, `apps/velnox` พบว่าเป็น Pure React 19 + Vite 7 SPAs 100%
-   - Build Artifacts เป็น Static Files (`index.html`, `assets/*.js`, `assets/*.css`) ไม่มีโค้ด SSR หรือ Node Runtime
-   - เข้ากันได้กับ Cloudflare Pages Static Hosting 100% โดยใช้กติกา SPA Routing (`/* /index.html 200`)
+2. **แพ็กเกจบัญชีแยกประเภทคู่ (@velnox/ledger):**
+   - สร้างแพ็กเกจใหม่ [packages/ledger/](file:///workspace/quiet-hopper/packages/ledger/) สำหรับคำนวณและตรวจสอบกฎบัญชีคู่
+   - กำหนดผังบัญชี canonical: `platform_cash`, `platform_revenue`, `seller_payable`, `refund_clearing`
+   - บังคับใช้กฎ Invariants: $\sum \text{Debits} == \sum \text{Credits}$, ยอดเงินเป็น `bigint` satang เท่านั้น (ห้าม float), ห้ามยอดเงิน 0 หรือติดลบ
+   - มี Domain Helpers สร้างธุรกรรม: Customer Charge, Seller Settlement, Customer Refund, Manual Adjustment
 
-3. **ผลการตรวจสอบความเข้ากันได้ของ Backend กับ Edge Runtime:**
-   - Backend ปัจจุบัน (Express บน Render) ยังมี Node-specific modules (`ws`, `@aws-sdk/client-s3`, `http`)
-   - วางแผนเปลี่ยนผ่านสู่ Hono บน Cloudflare Workers อย่างปลอดภัยใน Milestone 4 และ 5 โดยใช้ Cloudflare Durable Objects สำหรับ WebSocket, R2 Native Bindings สำหรับ Media, และ `@neondatabase/serverless` สำหรับ Neon PostgreSQL
+3. **บริการบันทึกธุรกรรมทางการเงิน (`LedgerService`):**
+   - พัฒนา [backend/src/core/ledger/ledger-service.ts](file:///workspace/quiet-hopper/backend/src/core/ledger/ledger-service.ts)
+   - บันทึกธุรกรรมลงตาราง `ledger_entries` ใน Neon แบบ Atomic
+   - รองรับ Unique Constraint Violation `23505` บน `idempotency_key` เพื่อคืนค่าเดิมแบบ Idempotent อย่างปลอดภัย
 
-4. **นโยบายการปลดระวาง Vercel (Vercel Retirement Policy):**
-   - ถอด Vercel ออกจากเป้าหมายสถาปัตยกรรมใหม่ แต่ **คงไฟล์ `vercel.json` และการตั้งค่าเดิมไว้** เพื่อป้องกัน Downtime ของเว็บโปรดักชันปัจจุบัน (`velshop.vercel.app`, ฯลฯ)
-   - การปลดระวาง Vercel จะกระทำใน Milestone 8 หลังจากการสลับ Cloudflare DNS Records สำเร็จและยืนยันความเสถียร 100%
-
-5. **การตรวจสอบ Milestone 1 Foundation & Quality Gates:**
-   - ตรวจสอบความถูกต้องของ 4 Packages ใหม่ (`@velnox/config`, `@velnox/validation`, `@velnox/api-contract`, `@velnox/api-client`)
-   - แก้ไขการ Export ใน `@velnox/shared/src/index.ts` ให้ใช้ Extensionless Imports ป้องกันปัญหา Bundler Module Resolution
-   - สร้าง Quality Gate Test Suite `backend/tests/packages-contracts.test.ts` เพื่อให้การทดสอบสัญญา API รันอัตโนมัติใน CI
-   - Unit Tests ของทุก Package ผ่าน 100% (14 tests passed, 0 failed)
-
-6. **การวิเคราะห์และจำแนกข้อผิดพลาดใน CI (CI Failures Root Cause Classification):**
-   - **`Typecheck apps and backend` ใน `test.yml`:** เป็น **PRE-EXISTING** (เกิดขึ้นตั้งแต่ Baseline Commits ก่อนเริ่มงาน เนื่องจากโค้ดเก่าใน `apps/` และ `backend/` มีปัญหาประเภทตัวแปร TypeScript)
-   - **`Reconciler behaviour (idempotency, cases A–I)` ใน `production-db-verify.yml`:** เป็น **PRE-EXISTING** (มีระบุใน `AI_HANDOFF.md` เดิม)
-   - **Unit Tests ใน `backend/tests` เดิม:** เป็น **PRE-EXISTING** (มีระบุใน `AI_HANDOFF.md` เดิม)
-   - **ข้อผิดพลาดที่เกิดจาก Milestone 1 หรือการปรับสถาปัตยกรรม:** **0 รายการ (NONE INTRODUCED)** โค้ดและ Packages ใหม่ทั้งหมด Typecheck ผ่านและ Unit Tests ผ่าน 100%
+4. **ผลการทดสอบและการประกันคุณภาพ (Quality Gate):**
+   - Unit Tests ของ `@velnox/ledger` ผ่าน 8/8 ข้อ
+   - Unit Tests ของ `database/migrator` ผ่าน 7/7 ข้อ
+   - Unit Tests ของ `LedgerService` ผ่าน 3/3 ข้อ
+   - รวมการทดสอบเข้าสู่ Contract Quality Gate ใน [backend/tests/packages-contracts.test.ts](file:///workspace/quiet-hopper/backend/tests/packages-contracts.test.ts)
+   - อัปเดต `package.json` และ `bun.lock` ให้ครอบคลุม `@velnox/ledger`
 
 ---
 
-## 2. ไฟล์ที่สร้างและเปลี่ยนแปลงในรอบนี้
+## 2. ไฟล์ที่สร้างและเปลี่ยนแปลง
 
-- `docs/architecture/ADR-001-cloudflare-first-hosting.md` *(สร้างใหม่)*: บันทึกการตัดสินใจสถาปัตยกรรม Cloudflare-first Hosting
-- `.ai/rebuild/MASTER_ARCHITECTURE_BLUEPRINT.md` *(แก้ไข)*: ปรับปรุงโครงสร้างพื้นฐานเป้าหมายสู่ Cloudflare Pages & Workers และ Neon PostgreSQL
-- `.ai/rebuild/DEVELOPMENT_ROADMAP.md` *(แก้ไข)*: ปรับ Milestone 6 (Cloudflare Pages) และ Milestone 8 (DNS Cutover & Vercel Retirement)
-- `.ai/rebuild/MASTER_AUDIT_REPORT.md` *(แก้ไข)*: เพิ่ม Section 5 สรุป ADR-001, ผลการ Audit Frontend/Backend, และ Vercel Retirement Policy
-- `.ai/AI_HANDOFF.md` *(แก้ไข)*: อัปเดตสถานะและ Invariants ล่าสุด
-- `.ai/reports/LATEST.md` *(แก้ไข)*: รายงานฉบับสมบูรณ์
+- `database/src/types.ts` *(สร้างใหม่)*: Data types สำหรับ Migration Engine
+- `database/src/checksum.ts` *(สร้างใหม่)*: SHA-256 checksum calculator
+- `database/src/migrator.ts` *(สร้างใหม่)*: Core Migration Engine with transaction rollback & tamper protection
+- `database/migrations/0001_initial_schema.sql` *(สร้างใหม่)*: Canonical baseline schema migration
+- `database/migrate.ts` *(สร้างใหม่)*: CLI migration runner (`status`, `up`, `check-files`)
+- `database/tests/migrator.test.ts` *(สร้างใหม่)*: Automated unit tests สำหรับ Migration Engine
+- `packages/ledger/*` *(สร้างใหม่)*: Package `@velnox/ledger` พร้อม Invariants, Transactions, and Tests
+- `backend/src/core/ledger/ledger-service.ts` *(สร้างใหม่)*: Atomic ledger persistence service with idempotency
+- `backend/tests/ledger-service.test.ts` *(สร้างใหม่)*: Automated unit tests สำหรับ LedgerService
+- `backend/tests/packages-contracts.test.ts` *(แก้ไข)*: เพิ่มการทดสอบ `@velnox/ledger` ใน Quality Gate
+- `package.json` *(แก้ไข)*: เพิ่ม scripts `db:migrate`, `db:status`, `db:check`, `test:ledger`, `test:migrations`
+- `bun.lock` *(แก้ไข)*: เพิ่มการอ้างอิง workspace สำหรับ `@velnox/ledger`
+- `.ai/rebuild/MILESTONE_2_IMPLEMENTATION_REPORT.md` *(สร้างใหม่)*: รายงานผลการดำเนินงาน Milestone 2 ฉบับสมบูรณ์
+- `.ai/rebuild/DEVELOPMENT_ROADMAP.md` *(แก้ไข)*: อัปเดตสถานะ Milestone 2 เป็น COMPLETED
+- `.ai/AI_HANDOFF.md` *(แก้ไข)*: อัปเดตสถานะล่าสุดของโครงการ
 
 ---
 
-## 3. ความพร้อมสำหรับ Milestone 2
+## 3. ขั้นตอนถัดไป (Next Step)
 
-- โครงสร้างและสัญญา API (Milestone 1) ได้รับการยืนยันความสมบูรณ์และพร้อมใช้งาน
-- สถาปัตยกรรม Cloudflare-first มีเอกสารและการตัดสินใจรองรับครบถ้วน
-- ระบบพร้อมสำหรับ **Milestone 2: Versioned Database Migration Engine & Ledger Core** ในขั้นตอนถัดไป (โดยไม่มีการสร้างตารางซ้ำซ้อนหรือแตะต้องระบบการเงินก่อนได้รับคำสั่ง)
+ระบบมีความพร้อม 100% ในการดำเนินการ **Milestone 3: Modular Backend Core & Unified Dual-Token Auth**:
+- วางรากฐาน Modular Monolith Backend (`backend/src/core/`)
+- พัฒนาระบบ Unified Dual-Token Authentication รองรับ Web (httpOnly Cookies) และ Mobile (Bearer Token + Refresh Token Rotation)
