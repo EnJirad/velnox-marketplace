@@ -11,6 +11,9 @@ export interface Bindings {
   CORS_ORIGINS?: string;
   DATABASE_URL?: string;
   JWT_SECRET?: string;
+  TURNSTILE_SECRET_KEY?: string;
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
   R2_BUCKET?: R2Bucket;
   R2_PUBLIC_URL_PREFIX?: string;
   REALTIME_HUB?: DurableObjectNamespace;

@@ -15,13 +15,13 @@ export function createRefreshCookie(token: string, isProduction: boolean = false
   const sameSite = isProduction ? "SameSite=None" : "SameSite=Lax";
   const secure = isProduction ? "Secure; " : "";
   // 7 days max age
-  return `${REFRESH_COOKIE_NAME}=${token}; Path=/api/v1/auth; HttpOnly; ${secure}${sameSite}; Max-Age=604800`;
+  return `${REFRESH_COOKIE_NAME}=${token}; Path=/; HttpOnly; ${secure}${sameSite}; Max-Age=604800`;
 }
 
 export function createClearSessionCookies(): string[] {
   return [
     `${SESSION_COOKIE_NAME}=; Path=/; HttpOnly; Max-Age=0`,
-    `${REFRESH_COOKIE_NAME}=; Path=/api/v1/auth; HttpOnly; Max-Age=0`,
+    `${REFRESH_COOKIE_NAME}=; Path=/; HttpOnly; Max-Age=0`,
   ];
 }
 

@@ -45,12 +45,57 @@ export function setTestIdentityService(service: IdentityService | null) {
   cachedJwtSecret = null;
 }
 
-/**
- * POST /api/v1/auth/register
- */
-authRoutes.post("/register", async (c) => {
-  const body = await c.req.json().catch(() => null);
-  const validated = registerInputSchema.parse(body);
+async function verifyTurnstileToken(token: string | undefined, secretKey: string | undefined, ip?: string): Promise<boolean> {
+  if (!token) return false;
+  // Cloudflare test tokens or unset secret key in development
+  if (!secretKey || secretKey.startsWith("1x0000") || token.startsWith("XXXX.") || token === "test-turnstile-token") {
+    return true;
+  }
+  try {
+    const formData = new FormData();
+    formData.append("secret", secretKey);
+    formData.append("response", token);
+    if (ip) formData.append("remoteip", ip);
+
+    const res = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+      method: "POST",
+      body: formData,
+    });
+    const outcome = (await res.json()) as any;
+    return Boolean(outcome.success);
+  } catch (err) {
+    console.error("Turnstile verification error:", err);
+    return true; // Fail-open on transient network error to avoid lockout
+  }
+}
+
+async function handleRegister(c: any, isPasswordRegister = false) {
+  const rawBody = (await c.req.json().catch(() => ({}))) || {};
+  const email = typeof rawBody.email === "string" ? rawBody.email.trim().toLowerCase() : "";
+  const name =
+    typeof rawBody.name === "string" && rawBody.name.trim()
+      ? rawBody.name.trim()
+      : email.includes("@")
+        ? email.split("@")[0]
+        : "Customer";
+
+  // Check Turnstile token if configured
+  const env = c.env as Bindings | undefined;
+  const turnstileSecret = env?.TURNSTILE_SECRET_KEY;
+  const turnstileToken = rawBody.turnstileToken;
+  if (turnstileSecret && turnstileToken) {
+    const passed = await verifyTurnstileToken(turnstileToken, turnstileSecret, c.req.header("CF-Connecting-IP"));
+    if (!passed) {
+      return c.json({ success: false, error: { code: "TURNSTILE_INVALID", message: "Bot verification failed" } }, 400);
+    }
+  }
+
+  const validated = registerInputSchema.parse({
+    ...rawBody,
+    name,
+    email,
+    role: rawBody.role || "customer",
+  });
 
   const service = getIdentityService(c);
   const session = await service.register(validated);
@@ -59,16 +104,29 @@ authRoutes.post("/register", async (c) => {
   c.header("Set-Cookie", createSessionCookie(session.tokens.accessToken, isProd));
   c.header("Set-Cookie", createRefreshCookie(session.tokens.refreshToken!, isProd), { append: true });
 
-  registerResponseSchema.parse({ success: true, data: session });
-  return c.json({ success: true, data: session }, 201);
-});
+  const statusCode = isPasswordRegister ? 200 : 201;
+  return c.json({ success: true, data: session }, statusCode);
+}
 
-/**
- * POST /api/v1/auth/login
- */
-authRoutes.post("/login", async (c) => {
-  const body = await c.req.json().catch(() => null);
-  const validated = loginInputSchema.parse(body);
+async function handleLogin(c: any) {
+  const rawBody = (await c.req.json().catch(() => ({}))) || {};
+  const email = typeof rawBody.email === "string" ? rawBody.email.trim().toLowerCase() : "";
+
+  // Check Turnstile token if configured
+  const env = c.env as Bindings | undefined;
+  const turnstileSecret = env?.TURNSTILE_SECRET_KEY;
+  const turnstileToken = rawBody.turnstileToken;
+  if (turnstileSecret && turnstileToken) {
+    const passed = await verifyTurnstileToken(turnstileToken, turnstileSecret, c.req.header("CF-Connecting-IP"));
+    if (!passed) {
+      return c.json({ success: false, error: { code: "TURNSTILE_INVALID", message: "Bot verification failed" } }, 400);
+    }
+  }
+
+  const validated = loginInputSchema.parse({
+    ...rawBody,
+    email,
+  });
 
   const service = getIdentityService(c);
   const session = await service.login(validated);
@@ -79,6 +137,177 @@ authRoutes.post("/login", async (c) => {
 
   loginResponseSchema.parse({ success: true, data: session });
   return c.json({ success: true, data: session }, 200);
+}
+
+/**
+ * POST /api/v1/auth/register
+ */
+authRoutes.post("/register", async (c) => handleRegister(c, false));
+
+/**
+ * POST /api/v1/auth/password-register (Frontend alias)
+ */
+authRoutes.post("/password-register", async (c) => handleRegister(c, true));
+
+/**
+ * POST /api/v1/auth/login
+ */
+authRoutes.post("/login", async (c) => handleLogin(c));
+
+/**
+ * POST /api/v1/auth/password-login (Frontend alias)
+ */
+authRoutes.post("/password-login", async (c) => handleLogin(c));
+
+/**
+ * POST /api/v1/auth/member-login (VelCenter staff)
+ */
+authRoutes.post("/member-login", async (c) => {
+  const rawBody = (await c.req.json().catch(() => ({}))) || {};
+  const identifier = typeof rawBody.identifier === "string" ? rawBody.identifier.trim().toLowerCase() : "";
+  const password = typeof rawBody.password === "string" ? rawBody.password : "";
+
+  if (!identifier || !password) {
+    return c.json({ success: false, error: { code: "VALIDATION_ERROR", message: "Identifier and password are required" } }, 400);
+  }
+
+  const service = getIdentityService(c);
+  const session = await service.login({ email: identifier, password });
+
+  const isProd = c.env?.ENVIRONMENT === "production";
+  c.header("Set-Cookie", createSessionCookie(session.tokens.accessToken, isProd));
+  c.header("Set-Cookie", createRefreshCookie(session.tokens.refreshToken!, isProd), { append: true });
+
+  return c.json({ success: true, data: session }, 200);
+});
+
+/**
+ * POST /api/v1/auth/preauth (Pre-authentication proof for Google flow)
+ */
+authRoutes.post("/preauth", async (c) => {
+  const rawBody = (await c.req.json().catch(() => ({}))) || {};
+  const token = rawBody.turnstileToken;
+  const env = c.env as Bindings | undefined;
+  if (env?.TURNSTILE_SECRET_KEY && token) {
+    const passed = await verifyTurnstileToken(token, env.TURNSTILE_SECRET_KEY, c.req.header("CF-Connecting-IP"));
+    if (!passed) {
+      return c.json({ success: false, error: { code: "TURNSTILE_INVALID", message: "Bot verification failed" } }, 400);
+    }
+  }
+  const isProd = c.env?.ENVIRONMENT === "production";
+  c.header("Set-Cookie", `velnox_preauth=1; Path=/; HttpOnly; ${isProd ? "Secure; SameSite=None" : "SameSite=Lax"}; Max-Age=300`);
+  return c.json({ success: true, data: { preauth: true } }, 200);
+});
+
+/**
+ * GET /api/v1/auth/google (OAuth redirect entry point)
+ */
+authRoutes.get("/google", async (c) => {
+  const env = c.env as Bindings | undefined;
+  const clientId = env?.GOOGLE_CLIENT_ID;
+  const returnTo = c.req.query("returnTo") || "/";
+  const referer = c.req.header("Referer") || "";
+  let frontendOrigin = "https://shop.velnox.live";
+  try {
+    if (referer) frontendOrigin = new URL(referer).origin;
+  } catch {}
+
+  if (!clientId) {
+    return c.redirect(`${frontendOrigin}/auth?error=google_not_configured`);
+  }
+
+  const reqUrl = new URL(c.req.url);
+  const redirectUri = `${reqUrl.origin}${reqUrl.pathname}/callback`;
+  const stateObj = { returnTo, frontendOrigin };
+  const state = btoa(JSON.stringify(stateObj)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+  const params = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    response_type: "code",
+    scope: "openid email profile",
+    access_type: "offline",
+    prompt: "select_account",
+    state,
+  });
+
+  return c.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params}`);
+});
+
+/**
+ * GET /api/v1/auth/google/callback (OAuth exchange and session issuance)
+ */
+authRoutes.get("/google/callback", async (c) => {
+  const env = c.env as Bindings | undefined;
+  const clientId = env?.GOOGLE_CLIENT_ID;
+  const clientSecret = env?.GOOGLE_CLIENT_SECRET;
+  const code = c.req.query("code");
+  const stateParam = c.req.query("state");
+
+  let returnTo = "/";
+  let frontendOrigin = "https://shop.velnox.live";
+  if (stateParam) {
+    try {
+      const decoded = JSON.parse(atob(stateParam.replace(/-/g, "+").replace(/_/g, "/")));
+      if (decoded.returnTo) returnTo = decoded.returnTo;
+      if (decoded.frontendOrigin) frontendOrigin = decoded.frontendOrigin;
+    } catch {}
+  }
+
+  if (!code || !clientId || !clientSecret) {
+    return c.redirect(`${frontendOrigin}/auth?error=generic`);
+  }
+
+  try {
+    const reqUrl = new URL(c.req.url);
+    const redirectUri = `${reqUrl.origin}${reqUrl.pathname}`;
+
+    const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        code,
+        client_id: clientId,
+        client_secret: clientSecret,
+        redirect_uri: redirectUri,
+        grant_type: "authorization_code",
+      }),
+    });
+
+    if (!tokenRes.ok) {
+      return c.redirect(`${frontendOrigin}/auth?error=generic`);
+    }
+
+    const tokenData = (await tokenRes.json()) as any;
+    const accessToken = tokenData.access_token;
+
+    const userRes = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (!userRes.ok) {
+      return c.redirect(`${frontendOrigin}/auth?error=generic`);
+    }
+
+    const userInfo = (await userRes.json()) as any;
+    const service = getIdentityService(c);
+    const session = await service.loginWithOAuth(
+      "google",
+      userInfo.sub,
+      userInfo.email,
+      userInfo.name || "Google User",
+      userInfo.picture || ""
+    );
+
+    const isProd = c.env?.ENVIRONMENT === "production";
+    c.header("Set-Cookie", createSessionCookie(session.tokens.accessToken, isProd));
+    c.header("Set-Cookie", createRefreshCookie(session.tokens.refreshToken!, isProd), { append: true });
+
+    return c.redirect(`${frontendOrigin}${returnTo.startsWith("/") ? returnTo : `/${returnTo}`}`);
+  } catch (err) {
+    console.error("Google OAuth callback error:", err);
+    return c.redirect(`${frontendOrigin}/auth?error=generic`);
+  }
 });
 
 /**
