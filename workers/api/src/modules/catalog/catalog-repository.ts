@@ -51,6 +51,8 @@ export class NeonCatalogRepository implements ICatalogRepository {
     const params: any[] = [];
     let idx = 1;
 
+    const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
     if (filter.q) {
       conditions.push(`(p.name ILIKE $${idx} OR p.description ILIKE $${idx})`);
       params.push(`%${filter.q}%`);
@@ -58,15 +60,31 @@ export class NeonCatalogRepository implements ICatalogRepository {
     }
 
     if (filter.categoryId) {
-      conditions.push(`p.category_id = $${idx}`);
-      params.push(filter.categoryId);
+      if (UUID_REGEX.test(filter.categoryId)) {
+        conditions.push(`p.category_id = $${idx}`);
+        params.push(filter.categoryId);
+        idx++;
+      } else {
+        conditions.push(`p.category_id IN (SELECT id FROM categories WHERE slug = $${idx} OR parent_id IN (SELECT id FROM categories WHERE slug = $${idx}))`);
+        params.push(filter.categoryId);
+        idx++;
+      }
+    } else if (filter.categorySlug) {
+      conditions.push(`p.category_id IN (SELECT id FROM categories WHERE slug = $${idx} OR parent_id IN (SELECT id FROM categories WHERE slug = $${idx}))`);
+      params.push(filter.categorySlug);
       idx++;
     }
 
     if (filter.shopId) {
-      conditions.push(`p.shop_id = $${idx}`);
-      params.push(filter.shopId);
-      idx++;
+      if (UUID_REGEX.test(filter.shopId)) {
+        conditions.push(`p.shop_id = $${idx}`);
+        params.push(filter.shopId);
+        idx++;
+      } else {
+        conditions.push(`p.shop_id IN (SELECT id FROM shops WHERE slug = $${idx})`);
+        params.push(filter.shopId);
+        idx++;
+      }
     }
 
     if (filter.minPrice !== undefined) {
@@ -123,6 +141,10 @@ export class NeonCatalogRepository implements ICatalogRepository {
   }
 
   async getProductById(id: string): Promise<ProductDetailRecord | null> {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+      return null;
+    }
+
     const res = await this.db.query<any>(
       `SELECT p.id, p.shop_id as "shopId", s.name as "shopName", p.category_id as "categoryId",
               p.name, p.slug, p.description, p.price, p.original_price as "originalPrice",
@@ -374,8 +396,13 @@ export class MockCatalogRepository implements ICatalogRepository {
       );
     }
 
-    if (filter.categoryId) {
-      filtered = filtered.filter((p) => p.categoryId === filter.categoryId);
+    if (filter.categoryId || filter.categorySlug) {
+      const catTarget = filter.categoryId || filter.categorySlug;
+      filtered = filtered.filter((p) => {
+        if (p.categoryId === catTarget) return true;
+        const matchingCat = this.categories.find(c => c.slug === catTarget || c.id === catTarget);
+        return Boolean(matchingCat && p.categoryId === matchingCat.id);
+      });
     }
 
     if (filter.shopId) {

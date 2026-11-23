@@ -14,11 +14,18 @@
  * All VITE_* values are **public** — they are intentionally exposed to the
  * browser by Vite. Never store secrets in VITE_* variables.
  */
+function normalizeSiteUrl(url: string | undefined, fallback: string): string {
+  if (!url || !url.trim()) return fallback;
+  const trimmed = url.trim();
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return `https://${trimmed}`;
+}
+
 export const SITE_URLS = {
-  corporate: import.meta.env.VITE_CORPORATE_URL ?? "https://velnox.live",
-  velshop: import.meta.env.VITE_VELSHOP_URL ?? "https://shop.velnox.live",
-  velseller: import.meta.env.VITE_VELSELLER_URL ?? "https://seller.velnox.live",
-  velcenter: import.meta.env.VITE_VELCENTER_URL ?? "https://center.velnox.live",
+  corporate: normalizeSiteUrl(import.meta.env.VITE_CORPORATE_URL, "https://velnox.live"),
+  velshop: normalizeSiteUrl(import.meta.env.VITE_VELSHOP_URL, "https://shop.velnox.live"),
+  velseller: normalizeSiteUrl(import.meta.env.VITE_VELSELLER_URL, "https://seller.velnox.live"),
+  velcenter: normalizeSiteUrl(import.meta.env.VITE_VELCENTER_URL, "https://center.velnox.live"),
 } as const;
 
 export type SiteId = keyof typeof SITE_URLS;
@@ -29,11 +36,12 @@ export type SiteId = keyof typeof SITE_URLS;
  * VITE_API_URL contains ONLY the backend origin — never include /api here.
  * Defaults to https://api.velnox.live in production and http://localhost:8787 for local Workers dev.
  */
-export const apiUrl: string =
-  import.meta.env.VITE_API_URL ||
-  (import.meta.env.PROD
+export const apiUrl: string = normalizeSiteUrl(
+  import.meta.env.VITE_API_URL,
+  import.meta.env.PROD
     ? "https://velnox-api.ma0979354966-js91934.workers.dev"
-    : "http://localhost:8787");
+    : "http://localhost:8787"
+);
 
 /**
  * Full API base URL including /api prefix.

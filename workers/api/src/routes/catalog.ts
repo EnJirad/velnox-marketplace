@@ -73,25 +73,50 @@ catalogRoutes.get("/categories/:slug", async (c) => {
   });
 });
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function parseProductFilter(query: Record<string, string>) {
+  return {
+    q: query.q,
+    categoryId: query.categoryId,
+    categorySlug: query.categorySlug || query.category,
+    minPrice: query.minPrice ? Number(query.minPrice) : undefined,
+    maxPrice: query.maxPrice ? Number(query.maxPrice) : undefined,
+    sort: (query.sort || query.sortBy) as any,
+    page: query.page
+      ? Number(query.page)
+      : query.offset
+        ? Math.floor(Number(query.offset) / (Number(query.limit) || 20)) + 1
+        : 1,
+    limit: query.limit ? Number(query.limit) : 20,
+    shopId: query.shopId,
+    status: query.status,
+  };
+}
+
 /**
  * GET /api/v1/products or /api/v1/catalog/products
  */
 catalogRoutes.get("/products", async (c) => {
   const query = c.req.query();
   const service = getCatalogService(c);
+  const filter = parseProductFilter(query);
+  const result = await service.listProducts(filter);
 
-  const filter = {
-    q: query.q,
-    categoryId: query.categoryId,
-    categorySlug: query.categorySlug,
-    minPrice: query.minPrice ? Number(query.minPrice) : undefined,
-    maxPrice: query.maxPrice ? Number(query.maxPrice) : undefined,
-    sort: query.sort as any,
-    page: query.page ? Number(query.page) : 1,
-    limit: query.limit ? Number(query.limit) : 20,
-    shopId: query.shopId,
-  };
+  return c.json({
+    success: true,
+    data: result.items,
+    pagination: result.pagination,
+  });
+});
 
+/**
+ * GET /api/v1/products/catalog (Frontend compatibility alias)
+ */
+catalogRoutes.get("/products/catalog", async (c) => {
+  const query = c.req.query();
+  const service = getCatalogService(c);
+  const filter = parseProductFilter(query);
   const result = await service.listProducts(filter);
 
   return c.json({
