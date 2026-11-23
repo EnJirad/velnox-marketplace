@@ -7,15 +7,17 @@ import { SESSION_COOKIE_NAME, REFRESH_COOKIE_NAME } from "@velnox/config";
 export function createSessionCookie(token: string, isProduction: boolean = false): string {
   const sameSite = isProduction ? "SameSite=None" : "SameSite=Lax";
   const secure = isProduction ? "Secure; " : "";
+  const partitioned = isProduction ? "Partitioned; " : "";
   // 15 minutes max age
-  return `${SESSION_COOKIE_NAME}=${token}; Path=/; HttpOnly; ${secure}${sameSite}; Max-Age=900`;
+  return `${SESSION_COOKIE_NAME}=${token}; Path=/; HttpOnly; ${secure}${partitioned}${sameSite}; Max-Age=900`;
 }
 
 export function createRefreshCookie(token: string, isProduction: boolean = false): string {
   const sameSite = isProduction ? "SameSite=None" : "SameSite=Lax";
   const secure = isProduction ? "Secure; " : "";
+  const partitioned = isProduction ? "Partitioned; " : "";
   // 7 days max age
-  return `${REFRESH_COOKIE_NAME}=${token}; Path=/; HttpOnly; ${secure}${sameSite}; Max-Age=604800`;
+  return `${REFRESH_COOKIE_NAME}=${token}; Path=/; HttpOnly; ${secure}${partitioned}${sameSite}; Max-Age=604800`;
 }
 
 export function createClearSessionCookies(): string[] {

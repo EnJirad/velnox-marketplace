@@ -15,6 +15,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { CUSTOMER_MEMORY_ENABLED } from "./features";
 import { apiBaseUrl as API_BASE } from "./sites";
+import { getStoredAccessToken } from "./api-client";
 
 /** Keep in sync with backend event types. */
 export type CustomerEventType =
@@ -100,8 +101,10 @@ export function IdentityMerge() {
   const attempts = useRef(0);
 
   useEffect(() => {
-    // Check if user is authenticated via session cookie
-    fetch(`${API_BASE}/auth/me`, { credentials: "include" })
+    // Check if user is authenticated via session cookie or bearer token
+    const token = getStoredAccessToken();
+    const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+    fetch(`${API_BASE}/auth/me`, { credentials: "include", headers })
       .then((res) => {
         if (res.ok) setIsAuthenticated(true);
       })

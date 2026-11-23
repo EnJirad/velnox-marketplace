@@ -19,6 +19,7 @@ import {
   type Language,
 } from "@velnox/shared/lib/i18n";
 import { useAuth } from "@velnox/shared/hooks/use-auth";
+import { refetchCurrentUser, setAuthTokens } from "@velnox/shared/lib/api-client";
 import {
   GOOGLE_AUTH_START_KEY,
   classifyGoogleError,
@@ -279,7 +280,7 @@ function Auth() {
     if (authLoading) return;
     const raw = sessionStorage.getItem(GOOGLE_AUTH_START_KEY);
     if (raw === null) return;
-    if (isAuthenticated) {
+    if (isAuthenticated || searchParams.has("token") || searchParams.has("code")) {
       sessionStorage.removeItem(GOOGLE_AUTH_START_KEY);
       return;
     }
@@ -296,7 +297,7 @@ function Auth() {
       setError(t("auth.googleCancelled"));
     }, 4000);
     return () => window.clearTimeout(timer);
-  }, [authLoading, isAuthenticated, t]);
+  }, [authLoading, isAuthenticated, searchParams, t]);
 
   /**
    * Start the Google OAuth flow.
@@ -362,7 +363,8 @@ function Auth() {
       sessionStorage.setItem(GOOGLE_AUTH_START_KEY, String(Date.now()));
       const apiBase = apiBaseUrl;
       const backendReturnTo = returnTo || "/";
-      window.location.href = `${apiBase}/auth/google?returnTo=${encodeURIComponent(backendReturnTo)}`;
+      const origin = window.location.origin;
+      window.location.href = `${apiBase}/auth/google?returnTo=${encodeURIComponent(backendReturnTo)}&origin=${encodeURIComponent(origin)}`;
     } catch (error) {
       const kind = classifyGoogleError(error);
       console.error(`[auth] Google sign-in failed (${kind})`);
@@ -408,7 +410,8 @@ function Auth() {
       sessionStorage.setItem(GOOGLE_AUTH_START_KEY, String(Date.now()));
       const apiBase = apiBaseUrl;
       const backendReturnTo = returnTo || "/";
-      window.location.href = `${apiBase}/auth/line?returnTo=${encodeURIComponent(backendReturnTo)}`;
+      const origin = window.location.origin;
+      window.location.href = `${apiBase}/auth/line?returnTo=${encodeURIComponent(backendReturnTo)}&origin=${encodeURIComponent(origin)}`;
     } catch (error) {
       console.error(`[auth] LINE sign-in failed:`, error);
       sessionStorage.removeItem(GOOGLE_AUTH_START_KEY);
@@ -449,8 +452,19 @@ function Auth() {
         const messageKey = turnstileMessageKey(code);
         throw new Error(messageKey ? t(messageKey) : (data?.error?.message || t("auth.invalidCredentials")));
       }
-      // Session cookie is set — reload to pick up auth state
-      window.location.reload();
+      if (data?.data?.tokens?.accessToken) {
+        setAuthTokens(data.data.tokens.accessToken, data.data.tokens.refreshToken);
+      }
+      await refetchCurrentUser();
+      const target =
+        returnTo?.startsWith("/") && !returnTo.startsWith("//")
+          ? returnTo
+          : roleHome(data?.data?.user?.role);
+      if (target.startsWith("/vel") || !target.startsWith("/")) {
+        window.location.assign(target);
+      } else {
+        navigate(target);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : t("auth.loginError"));
       // The token is single-use and already spent — a fresh challenge must be
@@ -498,8 +512,19 @@ function Auth() {
         const messageKey = turnstileMessageKey(code);
         throw new Error(messageKey ? t(messageKey) : (data?.error?.message || t("auth.registerError")));
       }
-      // Session cookie is set — reload to pick up auth state
-      window.location.reload();
+      if (data?.data?.tokens?.accessToken) {
+        setAuthTokens(data.data.tokens.accessToken, data.data.tokens.refreshToken);
+      }
+      await refetchCurrentUser();
+      const target =
+        returnTo?.startsWith("/") && !returnTo.startsWith("//")
+          ? returnTo
+          : roleHome(data?.data?.user?.role);
+      if (target.startsWith("/vel") || !target.startsWith("/")) {
+        window.location.assign(target);
+      } else {
+        navigate(target);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : t("auth.registerError"));
       turnstile.consume();
@@ -536,8 +561,19 @@ function Auth() {
         const messageKey = turnstileMessageKey(code);
         throw new Error(messageKey ? t(messageKey) : (data?.error?.message || t("auth.memberLoginError")));
       }
-      // Session cookie is set — reload to pick up auth state
-      window.location.reload();
+      if (data?.data?.tokens?.accessToken) {
+        setAuthTokens(data.data.tokens.accessToken, data.data.tokens.refreshToken);
+      }
+      await refetchCurrentUser();
+      const target =
+        returnTo?.startsWith("/") && !returnTo.startsWith("//")
+          ? returnTo
+          : roleHome(data?.data?.user?.role);
+      if (target.startsWith("/vel") || !target.startsWith("/")) {
+        window.location.assign(target);
+      } else {
+        navigate(target);
+      }
     } catch (err) {
       setMemberError(err instanceof Error ? err.message : t("auth.memberLoginError"));
       turnstile.consume();

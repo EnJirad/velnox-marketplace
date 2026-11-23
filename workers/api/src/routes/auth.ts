@@ -212,11 +212,17 @@ authRoutes.get("/google", async (c) => {
   const env = c.env as Bindings | undefined;
   const clientId = env?.GOOGLE_CLIENT_ID;
   const returnTo = c.req.query("returnTo") || "/";
+  const originQuery = c.req.query("origin");
   const referer = c.req.header("Referer") || "";
-  let frontendOrigin = "https://shop.velnox.live";
-  try {
-    if (referer) frontendOrigin = new URL(referer).origin;
-  } catch {}
+  let frontendOrigin = originQuery || "";
+  if (!frontendOrigin && referer) {
+    try {
+      frontendOrigin = new URL(referer).origin;
+    } catch {}
+  }
+  if (!frontendOrigin) {
+    frontendOrigin = "https://velnox-shop-3mh.pages.dev";
+  }
 
   if (!clientId) {
     return c.redirect(`${frontendOrigin}/auth?error=google_not_configured`);
@@ -308,7 +314,14 @@ authRoutes.get("/google/callback", async (c) => {
     c.header("Set-Cookie", createSessionCookie(session.tokens.accessToken, isProd));
     c.header("Set-Cookie", createRefreshCookie(session.tokens.refreshToken!, isProd), { append: true });
 
-    return c.redirect(`${frontendOrigin}${returnTo.startsWith("/") ? returnTo : `/${returnTo}`}`);
+    const targetPath = returnTo.startsWith("/") ? returnTo : `/${returnTo}`;
+    const redirectUrl = new URL(targetPath, frontendOrigin);
+    redirectUrl.searchParams.set("token", session.tokens.accessToken);
+    if (session.tokens.refreshToken) {
+      redirectUrl.searchParams.set("refresh_token", session.tokens.refreshToken);
+    }
+
+    return c.redirect(redirectUrl.toString());
   } catch (err) {
     console.error("Google OAuth callback error:", err);
     return c.redirect(`${frontendOrigin}/auth?error=generic`);
@@ -322,11 +335,17 @@ authRoutes.get("/line", async (c) => {
   const env = c.env as Bindings | undefined;
   const channelId = env?.LINE_CHANNEL_ID;
   const returnTo = c.req.query("returnTo") || "/";
+  const originQuery = c.req.query("origin");
   const referer = c.req.header("Referer") || "";
-  let frontendOrigin = "https://shop.velnox.live";
-  try {
-    if (referer) frontendOrigin = new URL(referer).origin;
-  } catch {}
+  let frontendOrigin = originQuery || "";
+  if (!frontendOrigin && referer) {
+    try {
+      frontendOrigin = new URL(referer).origin;
+    } catch {}
+  }
+  if (!frontendOrigin) {
+    frontendOrigin = "https://velnox-shop-3mh.pages.dev";
+  }
 
   if (!channelId) {
     return c.redirect(`${frontendOrigin}/auth?error=line_not_configured`);
@@ -417,7 +436,14 @@ authRoutes.get("/line/callback", async (c) => {
     c.header("Set-Cookie", createSessionCookie(session.tokens.accessToken, isProd));
     c.header("Set-Cookie", createRefreshCookie(session.tokens.refreshToken!, isProd), { append: true });
 
-    return c.redirect(`${frontendOrigin}${returnTo.startsWith("/") ? returnTo : `/${returnTo}`}`);
+    const targetPath = returnTo.startsWith("/") ? returnTo : `/${returnTo}`;
+    const redirectUrl = new URL(targetPath, frontendOrigin);
+    redirectUrl.searchParams.set("token", session.tokens.accessToken);
+    if (session.tokens.refreshToken) {
+      redirectUrl.searchParams.set("refresh_token", session.tokens.refreshToken);
+    }
+
+    return c.redirect(redirectUrl.toString());
   } catch (err) {
     console.error("LINE OAuth callback error:", err);
     return c.redirect(`${frontendOrigin}/auth?error=generic`);

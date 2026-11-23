@@ -8,6 +8,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { apiBaseUrl as API_BASE } from "./sites";
+import { getStoredAccessToken } from "./api-client";
 
 // ─── Simple in-memory GET cache (60s TTL) ──────────────────────────────────
 const _getCache = new Map<string, { data: any; expires: number }>();
@@ -82,6 +83,14 @@ async function throwApiError(res: Response, fallback: string): Promise<never> {
   throw new ApiError(res.status, typeof errMsg === "string" ? errMsg : JSON.stringify(errMsg), errCode);
 }
 
+function getAuthHeaders(extraHeaders?: Record<string, string>): Record<string, string> {
+  const token = getStoredAccessToken();
+  return {
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...extraHeaders,
+  };
+}
+
 async function apiPost(path: string, args?: any): Promise<any> {
   invalidateGetCache();
   // Strip /api prefix if present — API_BASE already includes it
@@ -89,7 +98,7 @@ async function apiPost(path: string, args?: any): Promise<any> {
   const res = await fetch(`${API_BASE}${p}`, {
     method: "POST",
     credentials: "include",
-    headers: { "Content-Type": "application/json" },
+    headers: getAuthHeaders({ "Content-Type": "application/json" }),
     body: args ? JSON.stringify(args) : undefined,
   });
   if (!res.ok) await throwApiError(res, `Request failed: ${res.status}`);
@@ -102,7 +111,10 @@ async function apiGet(path: string): Promise<any> {
   const cached = _getCache.get(path);
   if (cached && cached.expires > Date.now()) return cached.data;
   const p = path.startsWith("/api") ? path.slice(4) : path;
-  const res = await fetch(`${API_BASE}${p}`, { credentials: "include" });
+  const res = await fetch(`${API_BASE}${p}`, {
+    credentials: "include",
+    headers: getAuthHeaders(),
+  });
   if (!res.ok) await throwApiError(res, `Request failed: ${res.status}`);
   const json = await res.json();
   // Unwrap {success, data} envelope — components expect the inner payload
@@ -114,7 +126,11 @@ async function apiGet(path: string): Promise<any> {
 /** GET without the 60s in-memory cache — for chat/notifications where staleness is visible. */
 async function apiGetFresh(path: string): Promise<any> {
   const p = path.startsWith("/api") ? path.slice(4) : path;
-  const res = await fetch(`${API_BASE}${p}`, { credentials: "include", cache: "no-store" });
+  const res = await fetch(`${API_BASE}${p}`, {
+    credentials: "include",
+    cache: "no-store",
+    headers: getAuthHeaders(),
+  });
   if (!res.ok) await throwApiError(res, `Request failed: ${res.status}`);
   const json = await res.json();
   return json.data !== undefined ? json.data : json;
@@ -126,7 +142,7 @@ async function apiPut(path: string, args?: any): Promise<any> {
   const res = await fetch(`${API_BASE}${p}`, {
     method: "PUT",
     credentials: "include",
-    headers: { "Content-Type": "application/json" },
+    headers: getAuthHeaders({ "Content-Type": "application/json" }),
     body: args ? JSON.stringify(args) : undefined,
   });
   if (!res.ok) await throwApiError(res, `Request failed: ${res.status}`);
@@ -140,7 +156,7 @@ async function apiPatch(path: string, args?: any): Promise<any> {
   const res = await fetch(`${API_BASE}${p}`, {
     method: "PATCH",
     credentials: "include",
-    headers: { "Content-Type": "application/json" },
+    headers: getAuthHeaders({ "Content-Type": "application/json" }),
     body: args ? JSON.stringify(args) : undefined,
   });
   if (!res.ok) await throwApiError(res, `Request failed: ${res.status}`);
@@ -154,6 +170,7 @@ async function apiDelete(path: string): Promise<any> {
   const res = await fetch(`${API_BASE}${p}`, {
     method: "DELETE",
     credentials: "include",
+    headers: getAuthHeaders(),
   });
   if (!res.ok) await throwApiError(res, `Request failed: ${res.status}`);
   const json = await res.json();

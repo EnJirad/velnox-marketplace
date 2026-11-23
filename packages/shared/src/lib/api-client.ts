@@ -62,6 +62,70 @@ interface AuthState {
   user: ApiUser | null;
 }
 
+// ─── Token Storage & Cross-Origin Fallback ───────────────────────────────
+const ACCESS_TOKEN_KEY = "velnox_access_token";
+const REFRESH_TOKEN_KEY = "velnox_refresh_token";
+
+export function getStoredAccessToken(): string | null {
+  try {
+    return typeof localStorage !== "undefined" ? localStorage.getItem(ACCESS_TOKEN_KEY) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function getStoredRefreshToken(): string | null {
+  try {
+    return typeof localStorage !== "undefined" ? localStorage.getItem(REFRESH_TOKEN_KEY) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function setAuthTokens(accessToken: string, refreshToken?: string | null): void {
+  try {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(ACCESS_TOKEN_KEY, accessToken);
+      if (refreshToken) {
+        localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
+      }
+    }
+  } catch { /* ignore storage errors */ }
+}
+
+export function clearAuthTokens(): void {
+  try {
+    if (typeof localStorage !== "undefined") {
+      localStorage.removeItem(ACCESS_TOKEN_KEY);
+      localStorage.removeItem(REFRESH_TOKEN_KEY);
+    }
+  } catch { /* ignore */ }
+}
+
+export function checkAndConsumeUrlToken(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const url = new URL(window.location.href);
+    const token = url.searchParams.get("token");
+    const refreshToken = url.searchParams.get("refresh_token");
+    if (token) {
+      setAuthTokens(token, refreshToken);
+      try {
+        sessionStorage.removeItem("velnox.googleAuthStart");
+      } catch {}
+      url.searchParams.delete("token");
+      url.searchParams.delete("refresh_token");
+      const cleanUrl = url.pathname + (url.searchParams.toString() ? `?${url.searchParams.toString()}` : "") + url.hash;
+      window.history.replaceState({}, document.title, cleanUrl);
+      return true;
+    }
+  } catch {}
+  return false;
+}
+
+// Synchronously consume token from URL upon script execution
+checkAndConsumeUrlToken();
+
 // ─── Auth Context (singleton) ───────────────────────────────────────────────
 
 let authState: AuthState = { isLoading: true, isAuthenticated: false, user: null };
@@ -72,12 +136,79 @@ function notifyAuthListeners() {
   authListeners.forEach((l) => l());
 }
 
+async function tryRefreshToken(): Promise<boolean> {
+  const refreshToken = getStoredRefreshToken();
+  if (!refreshToken) return false;
+  try {
+    const res = await fetch(`${API_BASE}/auth/refresh`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refreshToken }),
+    });
+    if (!res.ok) {
+      clearAuthTokens();
+      return false;
+    }
+    const json = await res.json();
+    const tokens = json?.data;
+    if (tokens?.accessToken) {
+      setAuthTokens(tokens.accessToken, tokens.refreshToken);
+      return true;
+    }
+  } catch {}
+  return false;
+}
+
 async function fetchCurrentUser(): Promise<ApiUser | null> {
   try {
+    const token = getStoredAccessToken();
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
     const res = await fetch(`${API_BASE}/auth/me`, {
       credentials: "include",
+      headers,
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      if (res.status === 401 && token) {
+        const refreshed = await tryRefreshToken();
+        if (refreshed) {
+          const retryToken = getStoredAccessToken();
+          const retryHeaders: Record<string, string> = retryToken ? { Authorization: `Bearer ${retryToken}` } : {};
+          const retryRes = await fetch(`${API_BASE}/auth/me`, {
+            credentials: "include",
+            headers: retryHeaders,
+          });
+          if (retryRes.ok) {
+            const json = await retryRes.json();
+            const raw = json?.data?.user ?? json?.user ?? json;
+            if (raw?.id || raw?._id) {
+              return {
+                id: raw.id ?? raw._id,
+                _id: raw.id ?? raw._id,
+                name: raw.name ?? null,
+                email: raw.email ?? null,
+                phone: raw.phone ?? null,
+                role: raw.role ?? "customer",
+                department: raw.department ?? null,
+                avatarUrl: raw.avatar ?? raw.avatarUrl ?? null,
+                image: raw.avatar ?? raw.avatarUrl ?? null,
+                coverUrl: raw.coverUrl ?? null,
+                mustChangePassword: raw.mustChangePassword === true,
+                permissions: Array.isArray(raw.permissions)
+                  ? raw.permissions.filter((code: unknown): code is string => typeof code === "string")
+                  : [],
+                createdAt: raw.created_at ?? raw.createdAt ?? 0,
+              };
+            }
+          }
+        }
+        clearAuthTokens();
+      }
+      return null;
+    }
     const json = await res.json();
     // Backend returns { success: true, data: { user: { ... } } }
     const raw = json?.data?.user ?? json?.user ?? json;
@@ -111,6 +242,7 @@ async function fetchCurrentUser(): Promise<ApiUser | null> {
  * Uses a singleton promise so concurrent calls share the same fetch.
  */
 export async function initAuth(): Promise<void> {
+  checkAndConsumeUrlToken();
   if (authInitPromise) return authInitPromise;
 
   authInitPromise = (async () => {
@@ -177,6 +309,7 @@ export async function signInWithGoogle(_code?: string): Promise<ApiUser> {
 
 /** Sign out — invalidate server session and clear all local auth state. */
 export async function signOut(): Promise<void> {
+  clearAuthTokens();
   try {
     await fetch(`${API_BASE}/auth/logout`, {
       method: "POST",
@@ -236,13 +369,16 @@ export function useAuth() {
 export async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   // Strip /api prefix if present — API_BASE already includes it
   const p = path.startsWith("/api") ? path.slice(4) : path;
+  const token = getStoredAccessToken();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(options?.headers as Record<string, string>),
+  };
   const res = await fetch(`${API_BASE}${p}`, {
     credentials: "include",
     ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...options?.headers,
-    },
+    headers,
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({ error: "Request failed" }));
