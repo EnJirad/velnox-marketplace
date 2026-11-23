@@ -359,7 +359,7 @@ function Auth() {
       }
 
       sessionStorage.setItem(GOOGLE_AUTH_START_KEY, String(Date.now()));
-      const apiBase = apiUrl;
+      const apiBase = apiBaseUrl;
       const backendReturnTo = returnTo || "/";
       window.location.href = `${apiBase}/auth/google?returnTo=${encodeURIComponent(backendReturnTo)}`;
     } catch (error) {
@@ -541,7 +541,7 @@ function Auth() {
     <div className="w-full">
       <div
         ref={turnstileRef}
-        className="flex min-h-[65px] w-full items-center justify-center"
+        className="flex min-h-0 w-full items-center justify-center overflow-hidden"
         data-testid="turnstile-widget"
         data-state={turnstile.state}
       />

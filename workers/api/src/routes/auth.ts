@@ -48,7 +48,13 @@ export function setTestIdentityService(service: IdentityService | null) {
 async function verifyTurnstileToken(token: string | undefined, secretKey: string | undefined, ip?: string): Promise<boolean> {
   if (!token) return false;
   // Cloudflare test tokens or unset secret key in development
-  if (!secretKey || secretKey.startsWith("1x0000") || token.startsWith("XXXX.") || token === "test-turnstile-token") {
+  if (
+    !secretKey ||
+    secretKey.startsWith("1x0000") ||
+    secretKey.startsWith("2x0000") ||
+    token.startsWith("XXXX.") ||
+    token === "test-turnstile-token"
+  ) {
     return true;
   }
   try {

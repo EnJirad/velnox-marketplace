@@ -5,7 +5,7 @@
   "compatibility_date": "2024-11-01",
   "compatibility_flags": ["nodejs_compat"],
   "vars": {
-    "ENVIRONMENT": "development",
+    "ENVIRONMENT": "production",
     "APP_NAME": "Velnox Marketplace API",
     "APP_VERSION": "3.0.0",
     "R2_PUBLIC_URL_PREFIX": "https://pub-75f6f26e59df431b854fe53caedb49b6.r2.dev"

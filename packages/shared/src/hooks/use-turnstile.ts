@@ -110,7 +110,7 @@ let scriptPromise: Promise<void> | null = null;
 /** How many widgets are currently mounted. The script goes when this hits 0. */
 let scriptRefCount = 0;
 
-const DEFAULT_TEST_SITE_KEY = "1x00000000000000000000AA";
+const DEFAULT_TEST_SITE_KEY = "2x00000000000000000000AB";
 
 function siteKey(): string {
   const key = import.meta.env?.VITE_TURNSTILE_SITE_KEY;

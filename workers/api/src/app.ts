@@ -79,6 +79,7 @@ export function createApplication() {
   // Mount Unversioned /api Aliases for Full Frontend & Legacy Client Compatibility
   app.route("/api/health", healthRoutes);
   app.route("/api/auth", authRoutes);
+  app.route("/auth", authRoutes);
   app.route("/api/catalog", catalogRoutes);
   app.route("/api/seller", sellerRoutes);
   app.route("/api/media", mediaRoutes);
