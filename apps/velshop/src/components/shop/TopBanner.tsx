@@ -20,9 +20,14 @@ export function TopBanner({ onDismiss }: { onDismiss?: () => void }) {
               <Store className="size-5 text-white" />
             </span>
             <div className="min-w-0">
-              <p className="truncate text-sm font-semibold leading-tight sm:text-base">
-                {t("thaimartUi.topBanner.title", { platform: "Velnox" })}
-              </p>
+              <div className="flex items-center gap-2">
+                <p className="truncate text-sm font-semibold leading-tight sm:text-base">
+                  {t("thaimartUi.topBanner.title", { platform: "Velnox" })}
+                </p>
+                <span className="inline-flex items-center rounded-full bg-white/20 px-2 py-0.5 text-2xs font-medium tracking-wide text-white">
+                  Official
+                </span>
+              </div>
               <p className="mt-0.5 flex items-center gap-1.5 truncate text-2xs opacity-90 sm:text-xs">
                 <ShieldCheck className="size-3 shrink-0" />
                 <span className="truncate">{t("thaimartUi.topBanner.subtitle")}</span>
