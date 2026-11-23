@@ -317,6 +317,116 @@ authRoutes.get("/google/callback", async (c) => {
 });
 
 /**
+ * GET /api/v1/auth/line (LINE OAuth redirect entry point)
+ */
+authRoutes.get("/line", async (c) => {
+  const env = c.env as Bindings | undefined;
+  const channelId = env?.LINE_CHANNEL_ID;
+  const returnTo = c.req.query("returnTo") || "/";
+  const referer = c.req.header("Referer") || "";
+  let frontendOrigin = "https://shop.velnox.live";
+  try {
+    if (referer) frontendOrigin = new URL(referer).origin;
+  } catch {}
+
+  if (!channelId) {
+    return c.redirect(`${frontendOrigin}/auth?error=line_not_configured`);
+  }
+
+  const reqUrl = new URL(c.req.url);
+  const redirectUri = `${reqUrl.origin}${reqUrl.pathname}/callback`;
+  const stateObj = { returnTo, frontendOrigin };
+  const state = btoa(JSON.stringify(stateObj)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+  const params = new URLSearchParams({
+    response_type: "code",
+    client_id: channelId,
+    redirect_uri: redirectUri,
+    state,
+    scope: "profile openid email",
+  });
+
+  return c.redirect(`https://access.line.me/oauth2/v2.1/authorize?${params}`);
+});
+
+/**
+ * GET /api/v1/auth/line/callback (LINE OAuth exchange and session issuance)
+ */
+authRoutes.get("/line/callback", async (c) => {
+  const env = c.env as Bindings | undefined;
+  const channelId = env?.LINE_CHANNEL_ID;
+  const channelSecret = env?.LINE_CHANNEL_SECRET;
+  const code = c.req.query("code");
+  const stateParam = c.req.query("state");
+
+  let returnTo = "/";
+  let frontendOrigin = "https://shop.velnox.live";
+  if (stateParam) {
+    try {
+      const decoded = JSON.parse(atob(stateParam.replace(/-/g, "+").replace(/_/g, "/")));
+      if (decoded.returnTo) returnTo = decoded.returnTo;
+      if (decoded.frontendOrigin) frontendOrigin = decoded.frontendOrigin;
+    } catch {}
+  }
+
+  if (!code || !channelId || !channelSecret) {
+    return c.redirect(`${frontendOrigin}/auth?error=generic`);
+  }
+
+  try {
+    const reqUrl = new URL(c.req.url);
+    const redirectUri = `${reqUrl.origin}${reqUrl.pathname}`;
+
+    const tokenRes = await fetch("https://api.line.me/oauth2/v2.1/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "authorization_code",
+        code,
+        redirect_uri: redirectUri,
+        client_id: channelId,
+        client_secret: channelSecret,
+      }),
+    });
+
+    if (!tokenRes.ok) {
+      return c.redirect(`${frontendOrigin}/auth?error=generic`);
+    }
+
+    const tokenData = (await tokenRes.json()) as any;
+    const accessToken = tokenData.access_token;
+
+    const profileRes = await fetch("https://api.line.me/v2/profile", {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (!profileRes.ok) {
+      return c.redirect(`${frontendOrigin}/auth?error=generic`);
+    }
+
+    const profile = (await profileRes.json()) as any;
+    const service = getIdentityService(c);
+    const email = profile.email || `${profile.userId}@line.velnox.live`;
+    const session = await service.loginWithOAuth(
+      "line",
+      profile.userId,
+      email,
+      profile.displayName || "LINE User",
+      profile.pictureUrl || ""
+    );
+
+    const isProd = c.env?.ENVIRONMENT === "production";
+    c.header("Set-Cookie", createSessionCookie(session.tokens.accessToken, isProd));
+    c.header("Set-Cookie", createRefreshCookie(session.tokens.refreshToken!, isProd), { append: true });
+
+    return c.redirect(`${frontendOrigin}${returnTo.startsWith("/") ? returnTo : `/${returnTo}`}`);
+  } catch (err) {
+    console.error("LINE OAuth callback error:", err);
+    return c.redirect(`${frontendOrigin}/auth?error=generic`);
+  }
+});
+
+/**
  * POST /api/v1/auth/refresh
  */
 authRoutes.post("/refresh", async (c) => {

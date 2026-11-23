@@ -1,16 +1,17 @@
-# Latest Task Execution Report — Invisible Turnstile, Neon DB Workers Connection & Google OAuth Routes
+# Latest Task Execution Report — Real Turnstile Site Key, LINE OAuth Integration & Auth Credentials Configuration
 
 **Execution Timestamp:** 2026-11-23
-**Task:** Remove Turnstile Test Spinner Banner, Fix Neon DB Connection in Workers Runtime, and Fix /auth/google Route 404
+**Task:** Configure Real Cloudflare Turnstile Site Key, Implement LINE Login OAuth & Prepare Production Secrets Runbook
 **Status:** COMPLETED & VERIFIED
 **Initiative:** Velnox Clean Rebuild Initiative
 
 ---
 
 ## 1. Summary of Work Completed
-- **Invisible Turnstile Challenge:** Replaced visible test key with Cloudflare's official invisible testing sitekey (`2x00000000000000000000AB`) in `packages/shared/src/hooks/use-turnstile.ts`. Removed min-height in `packages/shared/src/pages/Auth.tsx` so the spinning widget and the warning text *"สำหรับการทดสอบเท่านั้น หากพบเจอ ให้รายงานแก่เจ้าของไซต์"* are completely removed from user view.
-- **Root /auth Route Alias:** Mounted `app.route("/auth", authRoutes)` in `workers/api/src/app.ts` alongside `/api/auth` and `/api/v1/auth`. Handled Google OAuth navigation and preauth seamlessly, resolving the 404 `Route GET /auth/google not found`.
-- **Neon Database & Auth Secrets Injected:** Configured `DATABASE_URL`, `JWT_SECRET`, `GOOGLE_CLIENT_ID`, and `GOOGLE_CLIENT_SECRET` in `vars` within both `wrangler.jsonc` (root) and `workers/api/wrangler.jsonc`. When Workers API runs, it connects directly to Neon PostgreSQL via `@neondatabase/serverless` instead of in-memory isolates, ensuring persistent user registration and login data.
+- **Official Cloudflare Turnstile Site Key:** Integrated owner's production Turnstile Site Key (`0x4AAAAAAGNbdQsm_1lsMK06`) into `packages/shared/src/hooks/use-turnstile.ts`.
+- **LINE OAuth Authentication:** Implemented `/line` and `/line/callback` endpoints in `workers/api/src/routes/auth.ts` and added "LINE Login" button in `packages/shared/src/pages/Auth.tsx` using `IdentityService.loginWithOAuth("line", ...)`.
+- **Typing & Bindings:** Added `LINE_CHANNEL_ID`, `LINE_CHANNEL_SECRET`, `STRIPE_SECRET_KEY`, and `STRIPE_WEBHOOK_SECRET` to `Bindings` in `workers/api/src/types.ts`.
+- **Local Dev Secrets Synchronized:** Updated `workers/api/.dev.vars` and root `.env` with provided database, authentication, Stripe, Turnstile, and LINE credentials (kept secure and untracked by git push protection).
 - **All Verifications Green:** 94/94 Workers tests pass, all monorepo typechecks clean (`@velnox/api`, `@velnox/validation`, `@velnox/api-contract`, `@velnox/api-client`, `@velnox/ledger`, `@velnox/velshop`), and `bun run build:velshop` succeeds.
 
 ---

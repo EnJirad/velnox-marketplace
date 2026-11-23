@@ -36,6 +36,7 @@ import {
   Loader2,
   Lock,
   Mail,
+  MessageCircle,
 } from "lucide-react";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
@@ -379,6 +380,45 @@ function Auth() {
     }
   };
 
+  const handleLineSignIn = async () => {
+    if (signingInRef.current) return;
+    const lineToken = resolveTurnstileToken();
+    if (!lineToken) {
+      requireTurnstile(setError);
+      return;
+    }
+    signingInRef.current = true;
+    setSigningIn(true);
+    setError(null);
+    try {
+      const proofRes = await fetch(`${apiBaseUrl}/auth/preauth`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ turnstileToken: lineToken }),
+      });
+      if (!proofRes.ok) {
+        const payload = await proofRes.json().catch(() => null);
+        const code = payload?.error?.code as string | undefined;
+        turnstile.consume();
+        const messageKey = turnstileMessageKey(code);
+        throw new Error(messageKey ? t(messageKey) : t("auth.turnstile.notConfigured"));
+      }
+
+      sessionStorage.setItem(GOOGLE_AUTH_START_KEY, String(Date.now()));
+      const apiBase = apiBaseUrl;
+      const backendReturnTo = returnTo || "/";
+      window.location.href = `${apiBase}/auth/line?returnTo=${encodeURIComponent(backendReturnTo)}`;
+    } catch (error) {
+      console.error(`[auth] LINE sign-in failed:`, error);
+      sessionStorage.removeItem(GOOGLE_AUTH_START_KEY);
+      setError(error instanceof Error && error.message ? error.message : "LINE Sign-in failed");
+    } finally {
+      signingInRef.current = false;
+      setSigningIn(false);
+    }
+  };
+
   const handleEmailPasswordLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     // Double-submit guard (a second Enter press while in flight).
@@ -705,25 +745,37 @@ function Auth() {
             )}
 
             {!isCenter && (
-              <Button
-                type="button"
-                variant="outline"
-                className="h-11 w-full gap-2.5 rounded-squircle border-slate-300 bg-white text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
-                onClick={handleGoogleSignIn}
-                disabled={busy || !challengePassed}
-              >
-                {signingIn ? (
-                  <>
-                    <Loader2 className="size-4 animate-spin text-slate-400" />
-                    {t("auth.signingInGoogle")}
-                  </>
-                ) : (
-                  <>
-                    <GoogleIcon className="size-4 shrink-0" />
-                    {t("auth.googleContinue")}
-                  </>
-                )}
-              </Button>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-11 w-full gap-2.5 rounded-squircle border-slate-300 bg-white text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+                  onClick={handleGoogleSignIn}
+                  disabled={busy || !challengePassed}
+                >
+                  {signingIn ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin text-slate-400" />
+                      {t("auth.signingInGoogle")}
+                    </>
+                  ) : (
+                    <>
+                      <GoogleIcon className="size-4 shrink-0" />
+                      {t("auth.googleContinue")}
+                    </>
+                  )}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-11 w-full gap-2.5 rounded-squircle border-[#06C755] bg-[#06C755] text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#05b34c]"
+                  onClick={handleLineSignIn}
+                  disabled={busy || !challengePassed}
+                >
+                  <MessageCircle className="size-4 shrink-0 text-white fill-white" />
+                  LINE Login
+                </Button>
+              </div>
             )}
 
             {!isCenter && (
