@@ -14,8 +14,10 @@ export interface Bindings {
   TURNSTILE_SECRET_KEY?: string;
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
+  GOOGLE_REDIRECT_URI?: string;
   LINE_CHANNEL_ID?: string;
   LINE_CHANNEL_SECRET?: string;
+  LINE_REDIRECT_URI?: string;
   STRIPE_SECRET_KEY?: string;
   STRIPE_WEBHOOK_SECRET?: string;
   R2_BUCKET?: R2Bucket;

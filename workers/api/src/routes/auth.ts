@@ -223,8 +223,8 @@ authRoutes.get("/google", async (c) => {
   }
 
   const reqUrl = new URL(c.req.url);
-  const redirectUri = `${reqUrl.origin}${reqUrl.pathname}/callback`;
-  const stateObj = { returnTo, frontendOrigin };
+  const redirectUri = env?.GOOGLE_REDIRECT_URI || `${reqUrl.origin}${reqUrl.pathname}/callback`;
+  const stateObj = { returnTo, frontendOrigin, redirectUri };
   const state = btoa(JSON.stringify(stateObj)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 
   const params = new URLSearchParams({
@@ -252,11 +252,13 @@ authRoutes.get("/google/callback", async (c) => {
 
   let returnTo = "/";
   let frontendOrigin = "https://shop.velnox.live";
+  let redirectUri = `${new URL(c.req.url).origin}${new URL(c.req.url).pathname}`;
   if (stateParam) {
     try {
       const decoded = JSON.parse(atob(stateParam.replace(/-/g, "+").replace(/_/g, "/")));
       if (decoded.returnTo) returnTo = decoded.returnTo;
       if (decoded.frontendOrigin) frontendOrigin = decoded.frontendOrigin;
+      if (decoded.redirectUri) redirectUri = decoded.redirectUri;
     } catch {}
   }
 
@@ -265,9 +267,6 @@ authRoutes.get("/google/callback", async (c) => {
   }
 
   try {
-    const reqUrl = new URL(c.req.url);
-    const redirectUri = `${reqUrl.origin}${reqUrl.pathname}`;
-
     const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -334,8 +333,8 @@ authRoutes.get("/line", async (c) => {
   }
 
   const reqUrl = new URL(c.req.url);
-  const redirectUri = `${reqUrl.origin}${reqUrl.pathname}/callback`;
-  const stateObj = { returnTo, frontendOrigin };
+  const redirectUri = env?.LINE_REDIRECT_URI || `${reqUrl.origin}${reqUrl.pathname}/callback`;
+  const stateObj = { returnTo, frontendOrigin, redirectUri };
   const state = btoa(JSON.stringify(stateObj)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 
   const params = new URLSearchParams({
@@ -361,11 +360,13 @@ authRoutes.get("/line/callback", async (c) => {
 
   let returnTo = "/";
   let frontendOrigin = "https://shop.velnox.live";
+  let redirectUri = `${new URL(c.req.url).origin}${new URL(c.req.url).pathname}`;
   if (stateParam) {
     try {
       const decoded = JSON.parse(atob(stateParam.replace(/-/g, "+").replace(/_/g, "/")));
       if (decoded.returnTo) returnTo = decoded.returnTo;
       if (decoded.frontendOrigin) frontendOrigin = decoded.frontendOrigin;
+      if (decoded.redirectUri) redirectUri = decoded.redirectUri;
     } catch {}
   }
 
@@ -374,9 +375,6 @@ authRoutes.get("/line/callback", async (c) => {
   }
 
   try {
-    const reqUrl = new URL(c.req.url);
-    const redirectUri = `${reqUrl.origin}${reqUrl.pathname}`;
-
     const tokenRes = await fetch("https://api.line.me/oauth2/v2.1/token", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
