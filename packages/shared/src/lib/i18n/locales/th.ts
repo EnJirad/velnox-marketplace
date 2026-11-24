@@ -1665,6 +1665,8 @@ export const th = {
     showPassword: "แสดงรหัสผ่าน",
     hidePassword: "ซ่อนรหัสผ่าน",
     memberLoginLabel: "เข้าสู่ระบบพนักงาน",
+    centerLoginTitle: "เข้าสู่ระบบ VelCenter",
+    centerLoginDesc: "เข้าสู่ระบบสำหรับเจ้าของระบบและทีมงาน",
     memberIdentifierPlaceholder: "รหัสพนักงานหรืออีเมล",
     memberPasswordPlaceholder: "รหัสผ่าน",
     memberSubmit: "เข้าสู่ระบบ",

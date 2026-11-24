@@ -138,16 +138,15 @@ function notifyAuthListeners() {
 
 async function tryRefreshToken(): Promise<boolean> {
   const refreshToken = getStoredRefreshToken();
-  if (!refreshToken) return false;
   try {
     const res = await fetch(`${API_BASE}/auth/refresh`, {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refreshToken }),
+      body: JSON.stringify(refreshToken ? { refreshToken } : {}),
     });
     if (!res.ok) {
-      clearAuthTokens();
+      if (refreshToken) clearAuthTokens();
       return false;
     }
     const json = await res.json();
@@ -172,7 +171,7 @@ async function fetchCurrentUser(): Promise<ApiUser | null> {
       headers,
     });
     if (!res.ok) {
-      if (res.status === 401 && token) {
+      if (res.status === 401) {
         const refreshed = await tryRefreshToken();
         if (refreshed) {
           const retryToken = getStoredAccessToken();
@@ -205,7 +204,7 @@ async function fetchCurrentUser(): Promise<ApiUser | null> {
             }
           }
         }
-        clearAuthTokens();
+        if (token) clearAuthTokens();
       }
       return null;
     }

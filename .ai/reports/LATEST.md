@@ -1,24 +1,23 @@
-# Latest Task Execution Report — VelCenter Owner Role Elevation & RBAC Constraint Alignment
+# Latest Task Execution Report — VelCenter Owner OAuth Access & Cross-Domain Session Auto-Resolution
 
 **Execution Timestamp:** 2026-11-24
-**Task:** Elevate Google account to `owner` role for initial VelCenter access and align RBAC constraints
+**Task:** Resolve VelCenter Employee Code requirement for Owner and enable Google/LINE Login & Silent Session Resolution
 **Status:** COMPLETED & VERIFIED
 **Initiative:** Velnox Clean Rebuild Initiative
 
 ---
 
 ## 1. Summary of Work Completed
-- **Neon PostgreSQL User Role Elevation:** Elevated Google OAuth account `ma0979354966.js91934@gmail.com` to `role = 'owner'` in Neon PostgreSQL. Maintained LINE account `u247143560c11a1ad878325803b19b8ad@line.velnox.live` as `customer` as instructed by the project owner.
-- **Database CHECK Constraint Modernization:** Dropped obsolete constraint and added expanded `users_role_check` allowing `'customer', 'seller', 'center_staff', 'center_admin', 'center_superadmin', 'owner', 'admin', 'staff'` in both live Neon PostgreSQL, `db/run-sqleditor.sql`, `db/schema.sql`, and `workers/api/migrations/0001_identity.sql`.
-- **Workers API Role Types & Guard Hardening:**
-  - Updated `UserRecord['role']` in `workers/api/src/modules/identity/types.ts` to include `'owner'`, `'admin'`, `'staff'`.
-  - Updated `requireRole` middleware in `workers/api/src/middleware/auth.ts` to include `'owner'` and `'staff'` in allowed types, and explicitly grant full access when `userRole === "owner"`.
+- **Enabled Google & LINE OAuth on VelCenter:** Removed `!isCenter` guard that previously hid Google and LINE login buttons on `apps/velcenter` `/auth`. Platform owners and staff can now sign in using Google or LINE OAuth directly on VelCenter without needing an employee ID or internal password.
+- **Improved VelCenter Login Header:** Updated title to `auth.centerLoginTitle` ("เข้าสู่ระบบ VelCenter") with subtitle `auth.centerLoginDesc` ("เข้าสู่ระบบสำหรับเจ้าของระบบและทีมงาน"), ensuring multi-language parity (`th`, `en`, `my`).
+- **Silent Cross-Domain Session Resolution:**
+  - In `packages/shared/src/lib/api-client.ts`, updated `tryRefreshToken()` to attempt cookie-based refresh without requiring an existing local refresh token.
+  - In `fetchCurrentUser()`, allowed HTTP 401 on initial fetch to attempt cookie refresh even when `localStorage` has no prior access token. This automatically logs in users visiting VelCenter if they already signed into Velnox on any other domain.
 
 ---
 
 ## 2. Verification Summary
-- Live Neon DB: `SELECT id, email, role FROM users` confirmed `ma0979354966.js91934@gmail.com` is `owner`.
-- `bun --filter @velnox/api test`: 94/94 PASS
-- `bun run typecheck:all`: ALL workspaces passed (0 errors across apps, packages, worker)
-- `bun run worker:build`: PASS (dist bundle generated via wrangler dry-run)
+- `bun run i18n:check`: PASS (2299 keys in exact parity across `th`, `en`, `my`)
+- `bun run typecheck:all`: PASS (0 errors across all 9 workspaces)
+- `bun --filter @velnox/velcenter build`: PASS (built in 44.79s)
 - `git diff --check`: PASS (clean)

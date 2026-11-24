@@ -746,9 +746,13 @@ function Auth() {
             </div>
 
             <CardTitle className="text-center text-lg font-bold tracking-tight">
-              {/* VelCenter is staff-only, so its title is the staff form's. */}
-              {isCenter ? t("auth.memberLoginLabel") : t(`auth.${mode}.title`)}
+              {isCenter ? t("auth.centerLoginTitle") : t(`auth.${mode}.title`)}
             </CardTitle>
+            {isCenter && (
+              <p className="mt-1 text-center text-xs text-slate-500">
+                {t("auth.centerLoginDesc")}
+              </p>
+            )}
           </CardHeader>
 
           <CardContent className="grid gap-2.5 px-4 pb-3 pt-2.5">
@@ -781,56 +785,51 @@ function Auth() {
               </div>
             )}
 
-            {!isCenter && (
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-11 w-full gap-2.5 rounded-squircle border-slate-300 bg-white text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
-                  onClick={handleGoogleSignIn}
-                  disabled={busy || !challengePassed}
-                >
-                  {signingIn ? (
-                    <>
-                      <Loader2 className="size-4 animate-spin text-slate-400" />
-                      {t("auth.signingInGoogle")}
-                    </>
-                  ) : (
-                    <>
-                      <GoogleIcon className="size-4 shrink-0" />
-                      {t("auth.googleContinue")}
-                    </>
-                  )}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-11 w-full gap-2.5 rounded-squircle border-[#06C755] bg-[#06C755] text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#05b34c]"
-                  onClick={handleLineSignIn}
-                  disabled={busy || !challengePassed}
-                >
-                  <MessageCircle className="size-4 shrink-0 text-white fill-white" />
-                  LINE Login
-                </Button>
-              </div>
-            )}
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="h-11 w-full gap-2.5 rounded-squircle border-slate-300 bg-white text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+                onClick={handleGoogleSignIn}
+                disabled={busy || !challengePassed}
+              >
+                {signingIn ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin text-slate-400" />
+                    {t("auth.signingInGoogle")}
+                  </>
+                ) : (
+                  <>
+                    <GoogleIcon className="size-4 shrink-0" />
+                    {t("auth.googleContinue")}
+                  </>
+                )}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="h-11 w-full gap-2.5 rounded-squircle border-[#06C755] bg-[#06C755] text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#05b34c]"
+                onClick={handleLineSignIn}
+                disabled={busy || !challengePassed}
+              >
+                <MessageCircle className="size-4 shrink-0 text-white fill-white" />
+                LINE Login
+              </Button>
+            </div>
 
-            {!isCenter && (
-              <div className="relative">
-                <div className="absolute inset-0 flex items-center">
-                  <span className="w-full border-t border-slate-200" />
-                </div>
-                <div className="relative flex justify-center text-2xs uppercase tracking-wide text-slate-400">
-                  <span className="bg-card px-2">{t("auth.or")}</span>
-                </div>
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t border-slate-200" />
               </div>
-            )}
+              <div className="relative flex justify-center text-2xs uppercase tracking-wide text-slate-400">
+                <span className="bg-card px-2">{t("auth.or")}</span>
+              </div>
+            </div>
 
             {isCenter ? (
-              /* ── VelCenter: staff credentials only ──────────────────────
-                 No Google sign-in and no self-registration: a staff session
-                 can only come from a member ID / email plus a password that
-                 VelCenter issued. */
+              /* ── VelCenter: staff credentials form ──────────────────────
+                 Staff without OAuth can sign in with employee ID/email + password.
+                 Owners & OAuth users sign in with Google/LINE above. */
               <form onSubmit={handleMemberLogin} className="grid gap-2.5">
                 <Input
                   type="text"

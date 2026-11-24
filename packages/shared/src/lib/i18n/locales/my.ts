@@ -1774,6 +1774,8 @@ export const my = {
     registerError: "အကောင့် ဖွင့်လို့ မရပါ — ထပ်ကြိုးစားပါ",
     invalidCredentials: "အီးမေးလ် သို့မဟုတ် စကားဝှက် မမှန်ပါ",
     memberLoginLabel: "ဝန်ထမ်း ဝင်ရောက်ရန်",
+    centerLoginTitle: "VelCenter သို့ ဝင်ရောက်ရန်",
+    centerLoginDesc: "ပလက်ဖောင်းပိုင်ရှင်နှင့် ဝန်ထမ်းများအတွက် ဝင်ရောက်ရန်",
     memberIdentifierPlaceholder: "ဝန်ထမ်းနံပါတ် သို့မဟုတ် အီးမေးလ်",
     memberPasswordPlaceholder: "စကားဝှက်",
     memberSubmit: "ဝင်ရောက်ရန်",

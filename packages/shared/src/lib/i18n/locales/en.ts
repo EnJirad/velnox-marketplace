@@ -1621,6 +1621,8 @@ export const en: Dict = {
     showPassword: "Show password",
     hidePassword: "Hide password",
     memberLoginLabel: "Employee sign in",
+    centerLoginTitle: "Sign in to VelCenter",
+    centerLoginDesc: "Sign in for platform owner and team",
     memberIdentifierPlaceholder: "Employee ID or email",
     memberPasswordPlaceholder: "Password",
     memberSubmit: "Sign in",
