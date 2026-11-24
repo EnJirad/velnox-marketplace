@@ -8,7 +8,7 @@ export interface UserRecord {
   name: string;
   avatar_url: string | null;
   phone: string | null;
-  role: "customer" | "seller" | "center_staff" | "center_admin" | "center_superadmin";
+  role: "customer" | "seller" | "center_staff" | "center_admin" | "center_superadmin" | "owner" | "admin" | "staff";
   status: "active" | "suspended" | "deactivated";
   password_hash: string | null;
   created_at: Date | string;

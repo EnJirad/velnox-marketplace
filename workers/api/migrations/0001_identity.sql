@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS users (
   name TEXT NOT NULL DEFAULT '',
   avatar_url TEXT,
   phone TEXT,
-  role TEXT NOT NULL DEFAULT 'customer' CHECK (role IN ('customer', 'seller', 'center_staff', 'center_admin', 'center_superadmin')),
+  role TEXT NOT NULL DEFAULT 'customer' CHECK (role IN ('customer', 'seller', 'center_staff', 'center_admin', 'center_superadmin', 'owner', 'admin', 'staff')),
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'suspended', 'deactivated')),
   password_hash TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

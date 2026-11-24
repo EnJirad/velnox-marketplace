@@ -3929,6 +3929,12 @@ DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'users_em
                WHERE table_schema='public' AND table_name='users' AND column_name='email') THEN
   ALTER TABLE public.users ADD CONSTRAINT users_email_key UNIQUE (email);
 END IF; END $$;
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'users_role_check') THEN
+    ALTER TABLE public.users DROP CONSTRAINT users_role_check;
+  END IF;
+  ALTER TABLE public.users ADD CONSTRAINT users_role_check CHECK (role IN ('customer', 'seller', 'center_staff', 'center_admin', 'center_superadmin', 'owner', 'admin', 'staff'));
+END $$;
 DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'customer_profiles_user_id_key')
   AND EXISTS (SELECT 1 FROM information_schema.columns
                WHERE table_schema='public' AND table_name='customer_profiles' AND column_name='user_id') THEN

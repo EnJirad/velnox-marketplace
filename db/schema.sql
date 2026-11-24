@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS users (
   avatar TEXT,
   cover_url TEXT,
   phone TEXT,
-  role TEXT NOT NULL DEFAULT 'customer',
+  role TEXT NOT NULL DEFAULT 'customer' CHECK (role IN ('customer', 'seller', 'center_staff', 'center_admin', 'center_superadmin', 'owner', 'admin', 'staff')),
   status TEXT NOT NULL DEFAULT 'active',
   department TEXT,
   password_hash TEXT,

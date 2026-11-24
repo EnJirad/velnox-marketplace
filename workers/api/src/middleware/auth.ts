@@ -56,7 +56,7 @@ export const authMiddleware: MiddlewareHandler<{ Bindings: Bindings; Variables: 
  * Role-Based Access Control (RBAC) Guard Middleware
  */
 export function requireRole(
-  ...allowedRoles: Array<"customer" | "seller" | "center_staff" | "center_admin" | "center_superadmin" | "admin">
+  ...allowedRoles: Array<"customer" | "seller" | "center_staff" | "center_admin" | "center_superadmin" | "admin" | "owner" | "staff">
 ): MiddlewareHandler<{ Bindings: Bindings; Variables: Variables }> {
   return async (c, next) => {
     const user = c.get("user");
@@ -69,6 +69,7 @@ export function requireRole(
 
     const userRole = user.role;
     const hasRole = allowedRoles.includes(userRole as any) ||
+      userRole === "owner" ||
       (allowedRoles.includes("admin") && (userRole === "center_admin" || userRole === "center_superadmin"));
 
     if (!hasRole) {
