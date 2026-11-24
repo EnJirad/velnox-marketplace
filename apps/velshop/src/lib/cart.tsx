@@ -260,7 +260,8 @@ export function CartProvider({ children }: { children: ReactNode }) {
     if (authLoading) return;
     if (!isAuthenticated) {
       mergedRef.current = false;
-      setLines([]);
+      const stored = readGuestCart(guestStorage).map(toGuestLine);
+      setLines((current) => (current.length > 0 ? current : stored));
       return;
     }
     let alive = true;

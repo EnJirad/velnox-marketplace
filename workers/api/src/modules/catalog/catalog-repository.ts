@@ -47,7 +47,7 @@ export class NeonCatalogRepository implements ICatalogRepository {
   }
 
   async getProducts(filter: ProductListFilter): Promise<{ products: ProductRecord[]; total: number }> {
-    const conditions: string[] = ["p.status = 'published'"];
+    const conditions: string[] = ["p.status = 'published'", "(s.status IS NULL OR s.status = 'active')"];
     const params: any[] = [];
     let idx = 1;
 
@@ -106,7 +106,7 @@ export class NeonCatalogRepository implements ICatalogRepository {
 
     // Count
     const countRes = await this.db.query<any>(
-      `SELECT COUNT(*)::int as count FROM products p ${whereClause}`,
+      `SELECT COUNT(*)::int as count FROM products p LEFT JOIN shops s ON p.shop_id = s.id ${whereClause}`,
       params,
     );
     const total = countRes.rows[0]?.count || 0;
@@ -154,7 +154,7 @@ export class NeonCatalogRepository implements ICatalogRepository {
               p.created_at as "createdAt", p.updated_at as "updatedAt"
        FROM products p
        LEFT JOIN shops s ON p.shop_id = s.id
-       WHERE p.id = $1`,
+       WHERE p.id = $1 AND (s.status IS NULL OR s.status = 'active')`,
       [id],
     );
 
@@ -183,7 +183,7 @@ export class NeonCatalogRepository implements ICatalogRepository {
               p.created_at as "createdAt", p.updated_at as "updatedAt"
        FROM products p
        LEFT JOIN shops s ON p.shop_id = s.id
-       WHERE p.slug = $1`,
+       WHERE p.slug = $1 AND (s.status IS NULL OR s.status = 'active')`,
       [slug],
     );
 
@@ -387,7 +387,10 @@ export class MockCatalogRepository implements ICatalogRepository {
   }
 
   async getProducts(filter: ProductListFilter): Promise<{ products: ProductRecord[]; total: number }> {
-    let filtered = Array.from(this.products.values()).filter((p) => p.status === "published");
+    let filtered = Array.from(this.products.values()).filter((p) => {
+      const shop = this.shops.get(p.shopId);
+      return p.status === "published" && (!shop || shop.status === "active");
+    });
 
     if (filter.q) {
       const q = filter.q.toLowerCase();
@@ -444,6 +447,8 @@ export class MockCatalogRepository implements ICatalogRepository {
   async getProductById(id: string): Promise<ProductDetailRecord | null> {
     const product = this.products.get(id);
     if (!product) return null;
+    const shop = this.shops.get(product.shopId);
+    if (shop && shop.status !== "active") return null;
     const variants = this.variants.get(id) || [];
     return {
       ...product,
@@ -454,6 +459,8 @@ export class MockCatalogRepository implements ICatalogRepository {
   async getProductBySlug(slug: string): Promise<ProductDetailRecord | null> {
     const product = Array.from(this.products.values()).find((p) => p.slug === slug);
     if (!product) return null;
+    const shop = this.shops.get(product.shopId);
+    if (shop && shop.status !== "active") return null;
     const variants = this.variants.get(product.id) || [];
     return {
       ...product,
