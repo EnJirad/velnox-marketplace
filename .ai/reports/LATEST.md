@@ -1,23 +1,29 @@
-# Latest Task Execution Report — VelCenter Owner OAuth Access & Cross-Domain Session Auto-Resolution
+# Latest Task Execution Report — VelCenter Admin Routes & Dashboard Counts Endpoint Implementation
 
 **Execution Timestamp:** 2026-11-24
-**Task:** Resolve VelCenter Employee Code requirement for Owner and enable Google/LINE Login & Silent Session Resolution
+**Task:** Implement VelCenter Admin Routes (`/api/admin/dashboard/counts`, `/overview`, `/market-overview`, etc.) in Cloudflare Workers API
 **Status:** COMPLETED & VERIFIED
 **Initiative:** Velnox Clean Rebuild Initiative
 
 ---
 
 ## 1. Summary of Work Completed
-- **Enabled Google & LINE OAuth on VelCenter:** Removed `!isCenter` guard that previously hid Google and LINE login buttons on `apps/velcenter` `/auth`. Platform owners and staff can now sign in using Google or LINE OAuth directly on VelCenter without needing an employee ID or internal password.
-- **Improved VelCenter Login Header:** Updated title to `auth.centerLoginTitle` ("เข้าสู่ระบบ VelCenter") with subtitle `auth.centerLoginDesc` ("เข้าสู่ระบบสำหรับเจ้าของระบบและทีมงาน"), ensuring multi-language parity (`th`, `en`, `my`).
-- **Silent Cross-Domain Session Resolution:**
-  - In `packages/shared/src/lib/api-client.ts`, updated `tryRefreshToken()` to attempt cookie-based refresh without requiring an existing local refresh token.
-  - In `fetchCurrentUser()`, allowed HTTP 401 on initial fetch to attempt cookie refresh even when `localStorage` has no prior access token. This automatically logs in users visiting VelCenter if they already signed into Velnox on any other domain.
+- **Created Admin Routes in Workers API (`workers/api/src/routes/admin.ts`):**
+  - Implemented `GET /dashboard/counts` querying clean database tables (`sellers.verification_status`, `products.status`, `shops.status`). Resolved missing `Route GET /api/admin/dashboard/counts not found`.
+  - Implemented `GET /overview` and `GET /market-overview` returning realtime marketplace KPIs (revenue, commission, order counts, product counts).
+  - Implemented `GET /verifications` and `GET /sellers` with seller verification review and management endpoints.
+  - Implemented `GET /products/moderation` and `PATCH /products/:id/moderation`.
+  - Implemented `GET & PATCH /settings`, `GET /permissions`, `GET /users`, `GET /orders`, `GET /categories`, and `GET /employees`.
+- **Mounted in App Router (`workers/api/src/app.ts`):**
+  - Mounted `adminRoutes` at `/api/v1/admin`, `/api/admin`, and `/admin`.
+  - Protected with `authMiddleware` and `requireRole("admin")` (which automatically permits `owner`).
+- **Comprehensive Domain Test Suite (`workers/api/tests/admin.test.ts`):**
+  - Added 7 unit & integration tests covering unauthenticated rejection (401), unauthorized role rejection (403 for customer), and successful 200 responses with exact data schema for `owner`.
 
 ---
 
 ## 2. Verification Summary
-- `bun run i18n:check`: PASS (2299 keys in exact parity across `th`, `en`, `my`)
+- `bun --filter @velnox/api test`: 101/101 PASS (16 test files)
 - `bun run typecheck:all`: PASS (0 errors across all 9 workspaces)
-- `bun --filter @velnox/velcenter build`: PASS (built in 44.79s)
+- `bun run worker:build`: PASS (wrangler dry-run bundle built in 9.78s)
 - `git diff --check`: PASS (clean)

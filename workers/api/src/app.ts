@@ -11,6 +11,7 @@ import { orderRoutes } from "./routes/orders.js";
 import { paymentRoutes } from "./routes/payments.js";
 import { realtimeRoutes } from "./routes/realtime.js";
 import { chatRoutes } from "./routes/chat.js";
+import { adminRoutes } from "./routes/admin.js";
 import type { Bindings, Variables } from "./types.js";
 
 export function createApplication() {
@@ -73,6 +74,7 @@ export function createApplication() {
   app.route("/api/v1/cart", cartRoutes);
   app.route("/api/v1/orders", orderRoutes);
   app.route("/api/v1/payments", paymentRoutes);
+  app.route("/api/v1/admin", adminRoutes);
   app.route("/api/v1", chatRoutes);
   app.route("/api/v1", catalogRoutes);
 
@@ -86,6 +88,8 @@ export function createApplication() {
   app.route("/api/cart", cartRoutes);
   app.route("/api/orders", orderRoutes);
   app.route("/api/payments", paymentRoutes);
+  app.route("/api/admin", adminRoutes);
+  app.route("/admin", adminRoutes);
   app.route("/api", chatRoutes);
   app.route("/api", catalogRoutes);
 
