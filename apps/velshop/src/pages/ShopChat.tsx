@@ -693,7 +693,7 @@ export default function ShopChat() {
                     }}
                     backLabel={t("chat.back")}
                     actions={
-                      realtimeState !== "open" ? (
+                      (realtimeState === "connecting" || realtimeState === "reconnecting") ? (
                         <span className="ml-auto flex items-center gap-1.5 pr-1 text-2xs font-medium text-amber-700">
                           <span className="size-1.5 animate-pulse rounded-full bg-amber-500" />
                           {t("realtime.reconnecting")}

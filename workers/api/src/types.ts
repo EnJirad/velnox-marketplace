@@ -20,6 +20,8 @@ export interface Bindings {
   LINE_REDIRECT_URI?: string;
   STRIPE_SECRET_KEY?: string;
   STRIPE_WEBHOOK_SECRET?: string;
+  STRIPE_PUBLISHABLE_KEY?: string;
+  STRIPE_MODE?: string;
   R2_BUCKET?: R2Bucket;
   R2_PUBLIC_URL_PREFIX?: string;
   REALTIME_HUB?: DurableObjectNamespace;

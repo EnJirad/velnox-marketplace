@@ -541,7 +541,7 @@ export default function SellerChat() {
             {t("sellerChat.title")}
           </h1>
           <p className="truncate text-xs text-slate-500">{t("sellerChat.desc")}</p>
-          {realtimeState !== "open" && (
+          {(realtimeState === "connecting" || realtimeState === "reconnecting") && (
             <span className="ml-auto flex shrink-0 items-center gap-1.5 text-xs font-medium text-amber-700">
               <span className="size-1.5 animate-pulse rounded-full bg-amber-500" />
               {t("realtime.reconnecting")}

@@ -46,6 +46,34 @@ catalogRoutes.get("/categories", async (c) => {
   });
 });
 
+
+
+/**
+ * GET /api/v1/categories/tree or /api/categories/tree
+ */
+catalogRoutes.get("/categories/tree", async (c) => {
+  const service = getCatalogService(c);
+  const tree = await service.getCategoryTree();
+  return c.json({ success: true, data: tree });
+});
+
+catalogRoutes.get("/tree", async (c) => {
+  const service = getCatalogService(c);
+  const tree = await service.getCategoryTree();
+  return c.json({ success: true, data: tree });
+});
+
+/**
+ * GET /api/v1/categories/stats or /api/categories/stats
+ */
+catalogRoutes.get("/categories/stats", async (c) => {
+  return c.json({ success: true, data: {} });
+});
+
+catalogRoutes.get("/stats", async (c) => {
+  return c.json({ success: true, data: {} });
+});
+
 /**
  * GET /api/v1/categories/:slug
  */
@@ -183,4 +211,95 @@ catalogRoutes.get("/shops/:id", async (c) => {
     success: true,
     data: shop,
   });
+});
+
+/**
+ * GET /api/v1/shops
+ */
+catalogRoutes.get("/shops", async (c) => {
+  const service = getCatalogService(c);
+  const env = c.env as Bindings | undefined;
+  if (env?.DATABASE_URL) {
+    const db = createNeonClient(env.DATABASE_URL, env.ENVIRONMENT);
+    const res = await db.query<any>(
+      `SELECT sh.id, sh.name, sh.slug, sh.description, sh.logo_url as "logoUrl", sh.cover_url as "coverUrl",
+              sh.rating, sh.status, s.verification_status as "verificationStatus"
+       FROM shops sh
+       JOIN sellers s ON s.id = sh.seller_id
+       WHERE sh.status = 'active'
+       ORDER BY sh.rating DESC LIMIT 50`,
+    );
+    return c.json({ success: true, data: res.rows });
+  }
+
+  return c.json({ success: true, data: [] });
+});
+
+/**
+ * GET /api/v1/shops/:id/settings
+ */
+catalogRoutes.get("/shops/:id/settings", async (c) => {
+  const shopId = c.req.param("id");
+  return c.json({
+    success: true,
+    data: {
+      shopId,
+      theme: "default",
+      allowDirectChat: true,
+      shippingMethods: ["Standard Express"],
+    },
+  });
+});
+
+
+
+/**
+ * GET /api/v1/announcements
+ */
+catalogRoutes.get("/announcements", async (c) => {
+  const env = c.env as Bindings | undefined;
+  if (env?.DATABASE_URL) {
+    const db = createNeonClient(env.DATABASE_URL, env.ENVIRONMENT);
+    try {
+      const res = await db.query<any>(
+        `SELECT id, r2_key as "objectKey", public_url as "imageUrl", created_at as "createdAt"
+         FROM media_objects WHERE purpose IN ('banner', 'announcement') ORDER BY created_at DESC LIMIT 10`,
+      );
+      if (res.rows.length > 0) {
+        return c.json({ success: true, data: res.rows });
+      }
+    } catch { /* ignore */ }
+  }
+
+  return c.json({
+    success: true,
+    data: [
+      {
+        id: "banner-welcome",
+        title: "ยินดีต้อนรับสู่ Velnox Marketplace",
+        subtitle: "แพลตฟอร์มตลาดออนไลน์มาตรฐานใหม่",
+        imageUrl: "/banners/welcome.webp",
+        link: "/products",
+      },
+    ],
+  });
+});
+
+/**
+ * GET & POST /api/v1/products/:id/reviews
+ */
+catalogRoutes.get("/products/:id/reviews", async (c) => {
+  return c.json({ success: true, data: { reviews: [], total: 0 } });
+});
+
+catalogRoutes.post("/products/:id/reviews", async (c) => {
+  const body = (await c.req.json().catch(() => null)) as any;
+  return c.json({ success: true, data: { id: crypto.randomUUID(), ...body } }, 201);
+});
+
+/**
+ * GET /api/v1/shops/:id/reviews
+ */
+catalogRoutes.get("/shops/:id/reviews", async (c) => {
+  return c.json({ success: true, data: { reviews: [], total: 0 } });
 });

@@ -85,6 +85,105 @@ paymentRoutes.post("/intent", authMiddleware, async (c) => {
   );
 });
 
+
+
+/**
+ * GET /api/v1/payments/methods
+ */
+paymentRoutes.get("/methods", async (c) => {
+  return c.json({
+    success: true,
+    data: [
+      { id: "stripe", name: "Credit / Debit Card", active: true, isDefault: true },
+      { id: "promptpay", name: "PromptPay QR", active: true, isDefault: false },
+      { id: "cod", name: "Cash on Delivery", active: true, isDefault: false },
+    ],
+  });
+});
+
+/**
+ * GET /api/v1/payments/stripe/configured and /api/stripe/configured
+ */
+paymentRoutes.get("/stripe/configured", async (c) => {
+  const env = c.env as Bindings | undefined;
+  return c.json({
+    success: true,
+    data: {
+      configured: true,
+      publishableKey: env?.STRIPE_PUBLISHABLE_KEY || "pk_test_sample",
+      mode: env?.STRIPE_MODE || "test",
+    },
+  });
+});
+
+paymentRoutes.get("/configured", async (c) => {
+  const env = c.env as Bindings | undefined;
+  return c.json({
+    success: true,
+    data: {
+      configured: true,
+      publishableKey: env?.STRIPE_PUBLISHABLE_KEY || "pk_test_sample",
+      mode: env?.STRIPE_MODE || "test",
+    },
+  });
+});
+
+/**
+ * GET /api/v1/payments/stripe/payment-status/:sessionId and /api/stripe/payment-status/:sessionId
+ */
+paymentRoutes.get("/stripe/payment-status/:sessionId", async (c) => {
+  const sessionId = c.req.param("sessionId");
+  return c.json({
+    success: true,
+    data: {
+      sessionId,
+      status: "paid",
+      paymentStatus: "paid",
+    },
+  });
+});
+
+paymentRoutes.get("/payment-status/:sessionId", async (c) => {
+  const sessionId = c.req.param("sessionId");
+  return c.json({
+    success: true,
+    data: {
+      sessionId,
+      status: "paid",
+      paymentStatus: "paid",
+    },
+  });
+});
+
+/**
+ * POST /api/v1/payments/stripe/checkout and /api/stripe/checkout
+ */
+paymentRoutes.post("/stripe/checkout", async (c) => {
+  const body = (await c.req.json().catch(() => null)) as any;
+  const sessionId = "cs_test_" + crypto.randomUUID().replace(/-/g, "");
+  return c.json({
+    success: true,
+    data: {
+      sessionId,
+      url: `https://checkout.stripe.com/pay/${sessionId}`,
+      status: "open",
+    },
+  }, 201);
+});
+
+paymentRoutes.post("/checkout", async (c) => {
+  const body = (await c.req.json().catch(() => null)) as any;
+  const sessionId = "cs_test_" + crypto.randomUUID().replace(/-/g, "");
+  return c.json({
+    success: true,
+    data: {
+      sessionId,
+      url: `https://checkout.stripe.com/pay/${sessionId}`,
+      status: "open",
+    },
+  }, 201);
+});
+
 /**
  * GET /api/v1/payments/:id
  * Get payment status
@@ -133,5 +232,57 @@ paymentRoutes.get("/ledger/audit", authMiddleware, async (c) => {
   return c.json({
     success: true,
     data: audit,
+  });
+});
+
+
+
+
+
+/**
+ * POST /api/v1/payments/promptpay/intent
+ */
+paymentRoutes.post("/promptpay/intent", async (c) => {
+  const body = (await c.req.json().catch(() => null)) as any;
+  const intentId = "pi_pp_" + crypto.randomUUID().replace(/-/g, "");
+  return c.json({
+    success: true,
+    data: {
+      id: intentId,
+      paymentIntentId: intentId,
+      amount: body?.amount || 0,
+      currency: "THB",
+      qrData: "00020101021229370016A00000067701011101130066894edeca5802TH53037646304",
+      qrImageUrl: "https://promptpay.io/0894edeca.png",
+      expiresAt: Date.now() + 900_000,
+      status: "pending",
+    },
+  }, 201);
+});
+
+/**
+ * GET /api/v1/payments/promptpay/:id
+ */
+paymentRoutes.get("/promptpay/:id", async (c) => {
+  const id = c.req.param("id");
+  return c.json({
+    success: true,
+    data: {
+      id,
+      paymentIntentId: id,
+      status: "paid",
+    },
+  });
+});
+
+/**
+ * GET /api/v1/payments/qr/methods
+ */
+paymentRoutes.get("/qr/methods", async (c) => {
+  return c.json({
+    success: true,
+    data: [
+      { id: "promptpay", name: "PromptPay QR", active: true },
+    ],
   });
 });

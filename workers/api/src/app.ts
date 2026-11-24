@@ -12,6 +12,7 @@ import { paymentRoutes } from "./routes/payments.js";
 import { realtimeRoutes, handleWebSocketRequest } from "./routes/realtime.js";
 import { chatRoutes } from "./routes/chat.js";
 import { adminRoutes } from "./routes/admin.js";
+import { customerRoutes } from "./routes/customer.js";
 import type { Bindings, Variables } from "./types.js";
 
 export function createApplication() {
@@ -77,7 +78,9 @@ export function createApplication() {
   app.route("/api/v1/cart", cartRoutes);
   app.route("/api/v1/orders", orderRoutes);
   app.route("/api/v1/payments", paymentRoutes);
+  app.route("/api/v1/stripe", paymentRoutes);
   app.route("/api/v1/admin", adminRoutes);
+  app.route("/api/v1/customer", customerRoutes);
   app.route("/api/v1", chatRoutes);
   app.route("/api/v1", catalogRoutes);
 
@@ -91,10 +94,13 @@ export function createApplication() {
   app.route("/api/upload", mediaRoutes);
   app.route("/upload", mediaRoutes);
   app.route("/api/seller/evidence", mediaRoutes);
-  app.route("/api/seller/products", mediaRoutes);
   app.route("/api/cart", cartRoutes);
   app.route("/api/orders", orderRoutes);
   app.route("/api/payments", paymentRoutes);
+  app.route("/api/stripe", paymentRoutes);
+  app.route("/stripe", paymentRoutes);
+  app.route("/api/customer", customerRoutes);
+  app.route("/customer", customerRoutes);
   app.route("/api/admin", adminRoutes);
   app.route("/admin", adminRoutes);
   app.route("/api", chatRoutes);

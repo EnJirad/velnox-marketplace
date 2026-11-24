@@ -1,35 +1,33 @@
-# Latest Task Execution Report — VelCenter Realtime Reconnecting Banner & Media Upload Resolution
+# Latest Task Execution Report — Full Ecosystem Connection & Repair Across All 4 Velnox Apps
 
 **Execution Timestamp:** 2026-11-24
-**Task:** Resolve VelCenter Realtime Reconnecting State & Media/Icon/Banner Upload Failure
+**Task:** Full-Ecosystem Audit, Endpoint Wiring & Fixes across VelShop, VelSeller, VelCenter, VelNox & Workers API
 **Status:** COMPLETED & VERIFIED
 **Initiative:** Velnox Clean Rebuild Initiative
 
 ---
 
 ## 1. Summary of Work Completed
-- **Resolved Realtime WebSocket Connection & Reconnecting State:**
-  - **Root Cause:** In `workers/api/src/app.ts`, `app.route("/ws", realtimeRoutes)` combined with `realtimeRoutes.get("/ws", ...)` caused the route to mount at `/ws/ws` instead of `/ws`, resulting in `404 Route GET /ws not found` for incoming client WebSocket upgrades. Furthermore, cross-domain browser WebSockets do not always pass session cookies.
-  - **Fix:**
-    1. Mounted root `/ws` and `/api/ws` directly on `app` and exposed `realtimeRoutes.get("/", handleWebSocketRequest)` alongside `realtimeRoutes.get("/ws", handleWebSocketRequest)`.
-    2. Made upgrade header verification case-insensitive (`c.req.header("Upgrade")?.toLowerCase() !== "websocket"`).
-    3. In `packages/shared/src/lib/chat-socket.ts`, updated `wsEndpoint()` to append `?token=${encodeURIComponent(token)}` from `getStoredAccessToken()`, ensuring authenticated WebSockets succeed seamlessly across all cross-domain boundaries.
-    4. In `apps/velcenter/src/pages/Center.tsx`, updated the realtime reconnection banner condition from `realtimeState !== "open"` to `(realtimeState === "connecting" || realtimeState === "reconnecting")`, eliminating false-positive warnings while idle or connecting.
-
-- **Resolved Media & Image Upload in VelCenter:**
-  - **Root Cause:** VelCenter components (`CategoriesManagement.tsx`, `MarketingBanners.tsx`, `ChatManagement.tsx`, `EvidenceUploader.tsx`) call `POST /api/upload/presign`, `PUT /api/upload/raw/:key`, and `POST /api/upload/confirm`. These endpoints were missing in the Cloudflare Workers API, causing 404 errors.
-  - **Fix:**
-    1. Implemented `POST /presign`, `POST /upload-intent`, `POST /image-upload-intent`, `PUT /raw/:key{.+}`, and `POST /confirm` in `workers/api/src/routes/media.ts` and `workers/api/src/modules/media/media-service.ts`.
-    2. Mapped `/api/upload`, `/upload`, `/api/v1/upload`, `/api/seller/evidence`, and `/api/seller/products` in `workers/api/src/app.ts`.
-    3. Updated database constraint `media_objects_purpose_check` in Neon DB to support all media purposes (`banner`, `category_icon`, `announcement`, `marketing`, `general`, etc.).
-    4. Ensured backward and forward database schema synchronization across `db/schema.sql` and `db/run-sqleditor.sql` (Rule §4).
-    5. Added unit tests for presign, raw binary PUT, and confirm flows in `workers/api/tests/media.test.ts`.
+- **Connected Customer & Storefront Subsystems (`apps/velshop` ⟷ `workers/api`):**
+  - Implemented `workers/api/src/routes/customer.ts` handling customer profile management, account summary badge counts, avatar uploads (upload-intent, binary raw PUT, confirm), full address CRUD in Neon PostgreSQL, cart item addition and quantity updates, shipping quotes, checkout processing, order history, package tracking, cancellation, and wishlist toggle.
+- **Enhanced Seller Operations Subsystems (`apps/velseller` ⟷ `workers/api`):**
+  - Updated `workers/api/src/routes/seller.ts` with seller verification status, KYC submission, evidence upload intent/confirm flow, order fulfillment and status patching, income/settlement reporting, reorder suggestions, product stock/status updates, product creation with strict RBAC (`requireRole("seller", "admin")`), and seller goals.
+- **Storefront & Catalog Routing Fixes (`apps/velnox` & `apps/velshop` ⟷ `workers/api`):**
+  - Re-ordered route definitions in `workers/api/src/routes/catalog.ts` so static routes (`/categories/tree`, `/tree`, `/categories/stats`, `/stats`) take precedence over parameterized wildcard `/:slug`.
+  - Mounted public unversioned aliases for `/api/shops`, `/api/products`, `/api/categories`, and `/api/announcements`.
+- **Payment & Stripe Integration Fixes:**
+  - In `workers/api/src/routes/payments.ts`, prioritized public routes (`/methods`, `/stripe/configured`, `/configured`, `/stripe/checkout`, `/checkout`, `/payment-status`) above parameterized `/:id` route, eliminating 401 Unauthorized errors on public payment config endpoints.
+- **Realtime WebSocket Consistency Across All Frontends:**
+  - Fixed banner display conditions in `apps/velshop/src/pages/ShopChat.tsx` and `apps/velseller/src/pages/SellerChat.tsx` to match `apps/velcenter/src/pages/Center.tsx`.
+  - Appended `?token=${token}` query parameter to browser WebSockets to ensure authenticated connection in cross-domain environments.
+- **Automated Integration Test Suite:**
+  - Added `workers/api/tests/customer.test.ts` providing 9 new end-to-end integration test suites covering the entire customer and seller lifecycle.
 
 ---
 
 ## 2. Verification Summary
-- `bun --filter @velnox/api test`: 103/103 PASS (16 test files)
-- `bun run typecheck:all`: PASS (0 errors across all 9 workspaces: velshop, velseller, velcenter, velnox, validation, api-contract, api-client, ledger, @velnox/api)
-- `bun run build:velcenter`: PASS (Vite 7 production build completed in 40.87s)
-- `bun run worker:build`: PASS (wrangler dry-run bundle built in 13.43s)
+- `bun --filter @velnox/api test`: 112/112 PASS (17 test files, 483 assertions, 0 failures)
+- `bun run typecheck:all`: PASS (0 errors across all 9 monorepo workspaces)
+- `bun run build:apps`: PASS (All 4 frontends built successfully with Vite 7: `velshop`, `velseller`, `velcenter`, `velnox`)
+- `bun run worker:build`: PASS (`wrangler deploy --dry-run` successfully bundled Workers API)
 - `git diff --check`: PASS (clean)
