@@ -67,8 +67,8 @@ async function resolveWebSocketUser(
 /**
  * GET /ws or /api/v1/realtime/ws — WebSocket Connection Upgrade
  */
-async function handleWebSocketRequest(c: any): Promise<Response> {
-  const upgradeHeader = c.req.header("Upgrade");
+export async function handleWebSocketRequest(c: any): Promise<Response> {
+  const upgradeHeader = c.req.header("Upgrade")?.toLowerCase();
   if (upgradeHeader !== "websocket") {
     return c.text("Expected Upgrade: websocket", 426);
   }
@@ -97,6 +97,7 @@ async function handleWebSocketRequest(c: any): Promise<Response> {
   return fallbackHub.fetch(new Request(targetUrl.toString(), c.req.raw));
 }
 
+realtimeRoutes.get("/", handleWebSocketRequest);
 realtimeRoutes.get("/ws", handleWebSocketRequest);
 
 /**

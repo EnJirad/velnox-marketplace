@@ -1182,7 +1182,7 @@ export default function Center() {
           </p>
           {/* Subtle transport state — no badge while live, no blocking error
               while reconnecting (REST still works). */}
-          {realtimeState !== "open" && (
+          {(realtimeState === "connecting" || realtimeState === "reconnecting") && (
             <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 ring-1 ring-inset ring-amber-600/15">
               <span className="size-1.5 animate-pulse rounded-full bg-amber-500" />
               {t("center.realtime.reconnecting")}

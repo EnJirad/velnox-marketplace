@@ -106,4 +106,76 @@ describe("Media & Cloudflare R2 Upload Tests", () => {
     expect(json.success).toBe(false);
     expect(json.error.code).toBe("NOT_FOUND");
   });
+
+  it("POST /api/upload/presign, PUT /raw, POST /confirm flow succeeds for categories and banners", async () => {
+    const authHeader = await createAuthHeader("user-media-admin");
+
+    // 1. Presign for category icon
+    const presignRes = await app.request("/api/upload/presign", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: authHeader,
+      },
+      body: JSON.stringify({
+        filename: "electronics-icon.svg",
+        contentType: "image/svg+xml",
+        folder: "categories",
+        referenceId: "cat-123",
+      }),
+    });
+
+    expect(presignRes.status).toBe(200);
+    const presignJson = (await presignRes.json()) as any;
+    expect(presignJson.success).toBe(true);
+    expect(presignJson.data.objectKey).toBe("categories/cat-123/icon.svg");
+    expect(presignJson.data.uploadUrl).toContain("/api/upload/raw/categories/cat-123/icon.svg");
+    expect(presignJson.data.publicUrl).toContain("https://pub-75f6f26e59df431b854fe53caedb49b6.r2.dev/categories/cat-123/icon.svg");
+
+    // 2. Direct binary upload via PUT /raw
+    const svgBytes = new TextEncoder().encode("<svg><circle r='10'/></svg>");
+    const rawRes = await app.request(`/api/upload/raw/${presignJson.data.objectKey}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "image/svg+xml",
+      },
+      body: svgBytes,
+    });
+
+    expect(rawRes.status).toBe(200);
+    const rawJson = (await rawRes.json()) as any;
+    expect(rawJson.success).toBe(true);
+    expect(rawJson.data.objectKey).toBe(presignJson.data.objectKey);
+    expect(rawJson.data.size).toBe(svgBytes.length);
+
+    // 3. Confirm upload
+    const confirmRes = await app.request("/api/upload/confirm", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: authHeader,
+      },
+      body: JSON.stringify({
+        objectKey: presignJson.data.objectKey,
+        folder: "categories",
+        referenceId: "cat-123",
+      }),
+    });
+
+    expect(confirmRes.status).toBe(200);
+    const confirmJson = (await confirmRes.json()) as any;
+    expect(confirmJson.success).toBe(true);
+    expect(confirmJson.data.objectKey).toBe(presignJson.data.objectKey);
+    expect(confirmJson.data.publicUrl).toBe(presignJson.data.publicUrl);
+  });
+
+  it("GET /ws route is properly mounted and returns 426 when not upgraded", async () => {
+    const res = await app.request("/ws", {
+      method: "GET",
+    });
+
+    expect(res.status).toBe(426);
+    const text = await res.text();
+    expect(text).toContain("Expected Upgrade: websocket");
+  });
 });

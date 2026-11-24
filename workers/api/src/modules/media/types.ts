@@ -4,7 +4,12 @@ export type MediaPurpose =
   | "shop_cover"
   | "avatar"
   | "verification_doc"
-  | "chat_attachment";
+  | "chat_attachment"
+  | "banner"
+  | "category_icon"
+  | "announcement"
+  | "marketing"
+  | "general";
 
 export interface MediaObject {
   id: string;
@@ -25,10 +30,43 @@ export interface UploadFileInput {
   fileName?: string;
 }
 
+export interface GenerateUploadIntentInput {
+  userId: string;
+  filename: string;
+  contentType: string;
+  folder?: string;
+  purpose?: string;
+  referenceId?: string;
+  shopId?: string;
+  conversationId?: string;
+  categoryId?: string;
+  origin?: string;
+}
+
+export interface UploadIntentResult {
+  uploadUrl: string;
+  publicUrl: string;
+  cdnUrl: string;
+  objectKey: string;
+}
+
+export interface ConfirmUploadInput {
+  userId: string;
+  objectKey: string;
+  folder?: string;
+  referenceId?: string;
+  purpose?: string;
+}
+
 export const ALLOWED_MIME_TYPES = new Set([
   "image/jpeg",
   "image/png",
   "image/webp",
+  "image/svg+xml",
+  "image/avif",
+  "image/gif",
+  "video/mp4",
+  "video/webm",
 ]);
 
-export const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
+export const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB

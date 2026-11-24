@@ -76,6 +76,18 @@ CREATE TABLE IF NOT EXISTS media (
 CREATE INDEX IF NOT EXISTS idx_media_key ON media (key);
 CREATE INDEX IF NOT EXISTS idx_media_owner ON media (uploaded_by);
 CREATE INDEX IF NOT EXISTS idx_media_owner_key ON media (uploaded_by, key);
+CREATE TABLE IF NOT EXISTS media_objects (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  purpose TEXT NOT NULL CHECK (purpose IN ('product_image', 'shop_logo', 'shop_cover', 'avatar', 'verification_doc', 'chat_attachment', 'banner', 'category_icon', 'announcement', 'marketing', 'general')),
+  r2_key TEXT NOT NULL UNIQUE,
+  content_type TEXT NOT NULL,
+  file_size_bytes INT NOT NULL,
+  public_url TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_media_objects_user_id ON media_objects (user_id);
+CREATE INDEX IF NOT EXISTS idx_media_objects_r2_key ON media_objects (r2_key);
 CREATE TABLE IF NOT EXISTS categories (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   name TEXT NOT NULL,

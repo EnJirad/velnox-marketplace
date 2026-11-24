@@ -31,6 +31,7 @@
  * re-reads it from the API; `onChatReconnect` exists so a consumer can do that
  * once the transport comes back after a drop.
  */
+import { getStoredAccessToken } from "./api-client";
 import { apiUrl } from "./sites";
 
 /** Connection states the UI may render ("closed" = deliberately disconnected). */
@@ -38,7 +39,9 @@ export type ChatSocketState = "idle" | "connecting" | "open" | "reconnecting" | 
 
 /** WebSocket endpoint derived from the backend origin (VITE_API_URL is origin-only). */
 function wsEndpoint(): string {
-  return apiUrl.replace(/\/+$/, "").replace(/^http/, "ws") + "/ws";
+  const base = apiUrl.replace(/\/+$/, "").replace(/^http/, "ws") + "/ws";
+  const token = getStoredAccessToken();
+  return token ? `${base}?token=${encodeURIComponent(token)}` : base;
 }
 
 type EventHandler = (data: any, meta: { channel: string }) => void;

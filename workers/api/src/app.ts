@@ -9,7 +9,7 @@ import { mediaRoutes } from "./routes/media.js";
 import { cartRoutes } from "./routes/cart.js";
 import { orderRoutes } from "./routes/orders.js";
 import { paymentRoutes } from "./routes/payments.js";
-import { realtimeRoutes } from "./routes/realtime.js";
+import { realtimeRoutes, handleWebSocketRequest } from "./routes/realtime.js";
 import { chatRoutes } from "./routes/chat.js";
 import { adminRoutes } from "./routes/admin.js";
 import type { Bindings, Variables } from "./types.js";
@@ -61,6 +61,8 @@ export function createApplication() {
   app.route("/", healthRoutes);
 
   // Mount Realtime WebSockets & Coordination
+  app.get("/ws", handleWebSocketRequest);
+  app.get("/api/ws", handleWebSocketRequest);
   app.route("/ws", realtimeRoutes);
   app.route("/api/v1/realtime", realtimeRoutes);
   app.route("/api/realtime", realtimeRoutes);
@@ -71,6 +73,7 @@ export function createApplication() {
   app.route("/api/v1/catalog", catalogRoutes);
   app.route("/api/v1/seller", sellerRoutes);
   app.route("/api/v1/media", mediaRoutes);
+  app.route("/api/v1/upload", mediaRoutes);
   app.route("/api/v1/cart", cartRoutes);
   app.route("/api/v1/orders", orderRoutes);
   app.route("/api/v1/payments", paymentRoutes);
@@ -85,6 +88,10 @@ export function createApplication() {
   app.route("/api/catalog", catalogRoutes);
   app.route("/api/seller", sellerRoutes);
   app.route("/api/media", mediaRoutes);
+  app.route("/api/upload", mediaRoutes);
+  app.route("/upload", mediaRoutes);
+  app.route("/api/seller/evidence", mediaRoutes);
+  app.route("/api/seller/products", mediaRoutes);
   app.route("/api/cart", cartRoutes);
   app.route("/api/orders", orderRoutes);
   app.route("/api/payments", paymentRoutes);
