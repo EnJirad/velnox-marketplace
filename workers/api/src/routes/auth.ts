@@ -211,7 +211,10 @@ authRoutes.post("/preauth", async (c) => {
 authRoutes.get("/google", async (c) => {
   const env = c.env as Bindings | undefined;
   const clientId = env?.GOOGLE_CLIENT_ID;
-  const returnTo = c.req.query("returnTo") || "/";
+  let returnTo = c.req.query("returnTo") || "/";
+  if (returnTo.startsWith("/auth")) {
+    returnTo = "/";
+  }
   const originQuery = c.req.query("origin");
   const referer = c.req.header("Referer") || "";
   let frontendOrigin = originQuery || "";
@@ -334,7 +337,10 @@ authRoutes.get("/google/callback", async (c) => {
 authRoutes.get("/line", async (c) => {
   const env = c.env as Bindings | undefined;
   const channelId = env?.LINE_CHANNEL_ID;
-  const returnTo = c.req.query("returnTo") || "/";
+  let returnTo = c.req.query("returnTo") || "/";
+  if (returnTo.startsWith("/auth")) {
+    returnTo = "/";
+  }
   const originQuery = c.req.query("origin");
   const referer = c.req.header("Referer") || "";
   let frontendOrigin = originQuery || "";
@@ -509,7 +515,7 @@ authRoutes.get("/me", authMiddleware, async (c) => {
   const service = getIdentityService(c);
   const user = await service.getMe(authUser.sub);
 
-  return c.json({ success: true, data: user }, 200);
+  return c.json({ success: true, data: { ...user, user } }, 200);
 });
 
 /**

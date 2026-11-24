@@ -19,7 +19,7 @@ import {
   type Language,
 } from "@velnox/shared/lib/i18n";
 import { useAuth } from "@velnox/shared/hooks/use-auth";
-import { refetchCurrentUser, setAuthTokens } from "@velnox/shared/lib/api-client";
+import { getStoredAccessToken, refetchCurrentUser, setAuthTokens } from "@velnox/shared/lib/api-client";
 import {
   GOOGLE_AUTH_START_KEY,
   classifyGoogleError,
@@ -229,7 +229,7 @@ function Auth() {
   useEffect(() => {
     if (authLoading || !isAuthenticated) return;
     const target =
-      returnTo?.startsWith("/") && !returnTo.startsWith("//")
+      returnTo?.startsWith("/") && !returnTo.startsWith("//") && !returnTo.startsWith("/auth")
         ? returnTo
         : roleHome(user?.role);
     // Cross-app entry URLs (e.g. a legacy /velseller/... path or another
@@ -280,7 +280,8 @@ function Auth() {
     if (authLoading) return;
     const raw = sessionStorage.getItem(GOOGLE_AUTH_START_KEY);
     if (raw === null) return;
-    if (isAuthenticated || searchParams.has("token") || searchParams.has("code")) {
+    const hasToken = getStoredAccessToken() !== null;
+    if (isAuthenticated || hasToken || searchParams.has("token") || searchParams.has("code")) {
       sessionStorage.removeItem(GOOGLE_AUTH_START_KEY);
       return;
     }

@@ -183,7 +183,7 @@ async function fetchCurrentUser(): Promise<ApiUser | null> {
           });
           if (retryRes.ok) {
             const json = await retryRes.json();
-            const raw = json?.data?.user ?? json?.user ?? json;
+            const raw = json?.data?.user ?? json?.data ?? json?.user ?? json;
             if (raw?.id || raw?._id) {
               return {
                 id: raw.id ?? raw._id,
@@ -210,8 +210,8 @@ async function fetchCurrentUser(): Promise<ApiUser | null> {
       return null;
     }
     const json = await res.json();
-    // Backend returns { success: true, data: { user: { ... } } }
-    const raw = json?.data?.user ?? json?.user ?? json;
+    // Backend returns { success: true, data: user } or { success: true, data: { user } }
+    const raw = json?.data?.user ?? json?.data ?? json?.user ?? json;
     if (!raw?.id && !raw?._id) return null;
     return {
       id: raw.id ?? raw._id,
@@ -242,7 +242,10 @@ async function fetchCurrentUser(): Promise<ApiUser | null> {
  * Uses a singleton promise so concurrent calls share the same fetch.
  */
 export async function initAuth(): Promise<void> {
-  checkAndConsumeUrlToken();
+  const tokenConsumed = checkAndConsumeUrlToken();
+  if (tokenConsumed) {
+    authInitPromise = null;
+  }
   if (authInitPromise) return authInitPromise;
 
   authInitPromise = (async () => {
@@ -348,8 +351,9 @@ export function useAuth() {
   const [state, setState] = useState<AuthState>(authState);
 
   useEffect(() => {
-    // If auth hasn't been initialized yet, fetch now (singleton)
-    if (authState.isLoading) {
+    // If auth hasn't been initialized yet, or token exists but not authenticated, fetch now
+    const hasToken = getStoredAccessToken() !== null;
+    if (authState.isLoading || (!authState.isAuthenticated && hasToken)) {
       initAuth().then(() => setState({ ...authState }));
     }
     return onAuthChange(() => setState({ ...authState }));

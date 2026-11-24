@@ -1,22 +1,18 @@
-# Latest Task Execution Report — Cross-Origin OAuth Session Persistence
+# Latest Task Execution Report — Auth Me Schema Alignment & Post-Login Bounce Fix
 
-**Execution Timestamp:** 2026-11-23
-**Task:** Resolve Post-Login Bounce & "การเข้าสู่ระบบถูกยกเลิก" Error on Google, LINE, and Password Login
+**Execution Timestamp:** 2026-11-24
+**Task:** Resolve Post-Login Bounce to `/auth` and "การเข้าสู่ระบบถูกยกเลิก"
 **Status:** COMPLETED & VERIFIED
 **Initiative:** Velnox Clean Rebuild Initiative
 
 ---
 
 ## 1. Summary of Work Completed
-- **Root Cause Eliminated:** Identified that cross-domain separation (`pages.dev` ↔ `workers.dev`) resulted in browser third-party cookie blocking, causing `/auth/me` to return 401 and triggering the cancellation timer in `Auth.tsx`.
-- **Dual Session Transmission (Bearer Token Bridge):**
-  - Updated `workers/api/src/routes/auth.ts` to redirect OAuth callbacks back to the exact originating frontend with `?token=${accessToken}&refresh_token=${refreshToken}`.
-  - Implemented token consumption and Bearer storage in `packages/shared/src/lib/api-client.ts` and `api-routes.ts`.
-  - Added URL parameter sanitization (`window.history.replaceState`) and immediate removal of `GOOGLE_AUTH_START_KEY` upon token arrival.
-  - Added automatic token refresh via `POST /auth/refresh` on 401 responses.
-- **Frontend Form Login Persistence:** Updated `Auth.tsx` password login, password registration, and staff member login to capture tokens from the API response envelope and transition directly into authenticated state.
-- **Cookie Security Modernization:** Added `Partitioned;` attribute in `workers/api/src/core/security/cookies.ts` for CHIPs (Cookies Having Independent Partitioned State).
-- **Origin Parameter Forwarding:** Added explicit `origin` query param from frontend when starting OAuth flows to guarantee redirect back to active host.
+- **Fixed `fetchCurrentUser()` Schema Resolution:** Added `json?.data` into the data extraction chain in `packages/shared/src/lib/api-client.ts`. Previously, `{ success: true, data: { id, email } }` from the Workers API skipped straight to `json` (envelope), resulting in `undefined` id and returning `null`.
+- **Backend Dual-Envelope Support:** Updated `workers/api/src/routes/auth.ts` `/me` endpoint to return `{ success: true, data: { ...user, user } }` satisfying both direct property readers and nested `.user` readers.
+- **Prevented `/auth` Self-Redirect Loop:** Normalized `returnTo` in `/google`, `/line`, and `Auth.tsx` so that redirect targets starting with `/auth` automatically redirect to the home page or dashboard instead of bouncing back to the login page.
+- **Reset Auth Singleton Promise on Token Consumption:** In `initAuth()`, invalidates `authInitPromise` when a token is extracted from the URL query so the user is immediately fetched and authenticated.
+- **Immediate Cancellation Timer Clearance:** Updated `Auth.tsx` to clear `GOOGLE_AUTH_START_KEY` immediately when a token exists in `localStorage`.
 
 ---
 
@@ -25,5 +21,5 @@
 - `bun run typecheck:worker`: PASS (0 errors)
 - `bun run typecheck:packages`: PASS (0 errors)
 - `bun --filter @velnox/velshop typecheck`: PASS (0 errors)
-- `bun run build:velshop`: PASS (built in 45.10s)
+- `bun run build:velshop`: PASS (built in 1m 9s)
 - `git diff --check`: PASS (clean)
