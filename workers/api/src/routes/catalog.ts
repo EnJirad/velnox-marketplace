@@ -344,11 +344,12 @@ catalogRoutes.get("/announcements", async (c) => {
       const sql = neon(env.DATABASE_URL);
       const rows = await sql`SELECT value FROM platform_settings WHERE key = 'shop_announcements'`;
       if (rows.length > 0 && rows[0].value) {
-        const items = JSON.parse(rows[0].value);
-        if (Array.isArray(items) && items.length > 0) {
-          const activeItems = items.filter((item) => item && item.active !== false);
+        const raw = JSON.parse(rows[0].value);
+        const items: any[] = Array.isArray(raw) ? raw : Array.isArray(raw?.items) ? raw.items : [];
+        if (items.length > 0) {
+          const activeItems = items.filter((item: any) => item && item.active !== false);
           if (activeItems.length > 0) {
-            return c.json({ success: true, data: activeItems });
+            return c.json({ success: true, data: activeItems, items: activeItems });
           }
         }
       }
@@ -357,21 +358,24 @@ catalogRoutes.get("/announcements", async (c) => {
     }
   }
 
+  const defaultBanners = [
+    {
+      id: "banner-welcome",
+      title: "ยินดีต้อนรับสู่ Velnox Marketplace",
+      subtitle: "แพลตฟอร์มตลาดออนไลน์มาตรฐานใหม่",
+      imageUrl: "/banners/welcome.webp",
+      ctaUrl: "/products",
+      ctaLabel: "เลือกซื้อสินค้า",
+      active: true,
+      placement: "home_hero",
+      type: "announcement",
+    },
+  ];
+
   return c.json({
     success: true,
-    data: [
-      {
-        id: "banner-welcome",
-        title: "ยินดีต้อนรับสู่ Velnox Marketplace",
-        subtitle: "แพลตฟอร์มตลาดออนไลน์มาตรฐานใหม่",
-        imageUrl: "/banners/welcome.webp",
-        ctaUrl: "/products",
-        ctaLabel: "เลือกซื้อสินค้า",
-        active: true,
-        placement: "home_hero",
-        type: "announcement",
-      },
-    ],
+    data: defaultBanners,
+    items: defaultBanners,
   });
 });
 

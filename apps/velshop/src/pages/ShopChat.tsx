@@ -132,7 +132,12 @@ export default function ShopChat() {
     setError(false);
     try {
       const res = await myConversations();
-      setConversations((res ?? []) as Conversation[]);
+      const items = Array.isArray(res)
+        ? res
+        : Array.isArray((res as any)?.items)
+          ? (res as any).items
+          : [];
+      setConversations(items as Conversation[]);
     } catch (err) {
       // A failed load is an ERROR, never an empty inbox.
       console.error("Load conversations error:", err);
@@ -282,7 +287,8 @@ export default function ShopChat() {
   }, []);
 
   // ── Open a conversation thread ──────────────────────────────────────
-  const supportConvs = conversations?.filter((c) => c.isSupport) ?? [];
+  const safeConvs = Array.isArray(conversations) ? conversations : [];
+  const supportConvs = safeConvs.filter((c) => c.isSupport);
 
   const openConversation = useCallback(
     async (conv: Conversation) => {
@@ -502,13 +508,14 @@ export default function ShopChat() {
 
   // ── Derived inbox ───────────────────────────────────────────────────
   const unreadTotal = useMemo(
-    () => (conversations ?? []).reduce((sum, c) => sum + Math.max(0, c.unreadCount), 0),
+    () => (Array.isArray(conversations) ? conversations : []).reduce((sum, c) => sum + Math.max(0, c.unreadCount), 0),
     [conversations],
   );
 
   const visibleConversations = useMemo(() => {
     const needle = search.trim().toLowerCase();
-    return (conversations ?? [])
+    const list = Array.isArray(conversations) ? conversations : [];
+    return list
       .filter((c) => {
         // Velnox Support is its OWN entry, never mixed into the commerce inbox:
         // All/Unread show buyer↔seller threads only, the Support tab shows the

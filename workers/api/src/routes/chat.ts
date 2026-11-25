@@ -36,7 +36,7 @@ chatRoutes.get("/customer/conversations", authMiddleware, async (c) => {
   const user = c.get("user");
   const service = getChatService(c);
   const items = await service.listCustomerConversations(user.sub);
-  return c.json({ success: true, data: { items } });
+  return c.json({ success: true, data: items, items });
 });
 
 /**
@@ -159,7 +159,7 @@ chatRoutes.get("/seller/conversations", authMiddleware, async (c) => {
   const user = c.get("user");
   const service = getChatService(c);
   const items = await service.listSellerConversations(user.sub);
-  return c.json({ success: true, data: { items } });
+  return c.json({ success: true, data: items, items });
 });
 
 /**

@@ -33,7 +33,7 @@ describe("Phase 7: Chat & Notifications Domain Tests", () => {
     expect(res.status).toBe(200);
     const json = (await res.json()) as any;
     expect(json.success).toBe(true);
-    expect(Array.isArray(json.data.items)).toBe(true);
+    expect(Array.isArray(json.data) || Array.isArray(json.data?.items)).toBe(true);
   });
 
   it("Customer: POST /api/v1/customer/support/conversation gets or creates company support thread", async () => {
@@ -110,7 +110,7 @@ describe("Phase 7: Chat & Notifications Domain Tests", () => {
     expect(res.status).toBe(200);
     const json = (await res.json()) as any;
     expect(json.success).toBe(true);
-    expect(Array.isArray(json.data.items)).toBe(true);
+    expect(Array.isArray(json.data) || Array.isArray(json.data?.items)).toBe(true);
     expect(json.data.items.length).toBeGreaterThan(0);
   });
 

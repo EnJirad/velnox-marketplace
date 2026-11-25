@@ -57,9 +57,13 @@ export function MobileTabBar({
     <nav
       aria-label={t("nav.ariaMobile")}
       className={cn(
-        "pointer-events-none fixed inset-x-0 bottom-0 z-50 flex justify-center px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]",
+        "pointer-events-none fixed inset-x-0 bottom-0 z-50 flex justify-center px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]",
         until === "lg" ? "lg:hidden" : "md:hidden",
       )}
+      style={{
+        transform: "translateZ(0)",
+        WebkitTransform: "translateZ(0)",
+      }}
     >
       <div className="pointer-events-auto flex h-[4.25rem] w-full max-w-md items-stretch rounded-2xl border border-slate-200/80 bg-white/95 shadow-overlay backdrop-blur">
         {items.map((item) => {

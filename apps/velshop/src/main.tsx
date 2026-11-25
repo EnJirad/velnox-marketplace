@@ -198,8 +198,8 @@ createRoot(document.getElementById("root")!).render(
           <Route path="*" element={<NotFound />} />
         </Routes>
       </SiteSuspense>
-      <ShopTabBar />
       </div>
+      <ShopTabBar />
       </CookieConsentProvider>
     </CartProvider>
     </BrowserRouter>

@@ -122,7 +122,12 @@ export default function SellerChat() {
     setError(false);
     try {
       const res = await myConversations();
-      setConversations((res ?? []) as Conversation[]);
+      const items = Array.isArray(res)
+        ? res
+        : Array.isArray((res as any)?.items)
+          ? (res as any).items
+          : [];
+      setConversations(items as Conversation[]);
     } catch (err) {
       // A failed load is an ERROR, never an empty inbox.
       console.error("Load conversations error:", err);
@@ -478,18 +483,19 @@ export default function SellerChat() {
 
   // ── Derived inbox: All / Unread / Support (= the Velnox company thread) ──
   const unreadTotal = useMemo(
-    () => (conversations ?? []).reduce((sum, c) => sum + Math.max(0, c.unreadCount), 0),
+    () => (Array.isArray(conversations) ? conversations : []).reduce((sum, c) => sum + Math.max(0, c.unreadCount), 0),
     [conversations],
   );
 
   const hasCompanyThread = useMemo(
-    () => (conversations ?? []).some((c) => c.type === "SELLER_COMPANY"),
+    () => (Array.isArray(conversations) ? conversations : []).some((c) => c.type === "SELLER_COMPANY"),
     [conversations],
   );
 
   const visibleConversations = useMemo(() => {
     const needle = search.trim().toLowerCase();
-    return (conversations ?? [])
+    const list = Array.isArray(conversations) ? conversations : [];
+    return list
       .filter((c) => {
         // The Velnox Support thread is its own inbox, not a customer thread.
         if (filter === "support") return c.type === "SELLER_COMPANY";

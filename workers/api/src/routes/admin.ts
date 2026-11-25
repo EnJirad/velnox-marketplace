@@ -702,28 +702,30 @@ adminRoutes.patch("/settings", requireRole("admin"), async (c) => {
 adminRoutes.get("/announcements", requireRole("admin"), async (c) => {
   const env = c.env as Bindings | undefined;
   if (!env?.DATABASE_URL) {
-    return c.json({ success: true, data: [] });
+    return c.json({ success: true, data: [], items: [] });
   }
   try {
     const sql = neon(env.DATABASE_URL);
     const rows = await sql`SELECT value FROM platform_settings WHERE key = 'shop_announcements'`;
     if (rows.length > 0 && rows[0].value) {
-      const items = JSON.parse(rows[0].value);
-      return c.json({ success: true, data: Array.isArray(items) ? items : [] });
+      const raw = JSON.parse(rows[0].value);
+      const items = Array.isArray(raw) ? raw : Array.isArray(raw?.items) ? raw.items : [];
+      return c.json({ success: true, data: items, items });
     }
   } catch (err) {
     console.error("[admin] get announcements error:", err);
   }
-  return c.json({ success: true, data: [] });
+  return c.json({ success: true, data: [], items: [] });
 });
 
 adminRoutes.put("/announcements", requireRole("admin"), async (c) => {
-  const body = (await c.req.json().catch(() => [])) || [];
+  const body = (await c.req.json().catch(() => [])) as any;
+  const items = Array.isArray(body) ? body : Array.isArray(body?.items) ? body.items : [];
   const env = c.env as Bindings | undefined;
   if (env?.DATABASE_URL) {
     try {
       const sql = neon(env.DATABASE_URL);
-      const jsonStr = JSON.stringify(body);
+      const jsonStr = JSON.stringify(items);
       await sql`
         INSERT INTO platform_settings (key, value, updated_at)
         VALUES ('shop_announcements', ${jsonStr}, NOW())
@@ -733,7 +735,7 @@ adminRoutes.put("/announcements", requireRole("admin"), async (c) => {
       console.error("[admin] put announcements error:", err);
     }
   }
-  return c.json({ success: true, data: body });
+  return c.json({ success: true, data: items, items });
 });
 
 /**

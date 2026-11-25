@@ -1,5 +1,6 @@
 import { ProductCard } from "@/components/shop/ProductCard";
 import { AnnouncementCarousel, type Announcement } from "@/components/shop/AnnouncementCarousel";
+import { HomePromoStrip, type PromoStripBanner } from "@/components/shop/HomePromoStrip";
 import { CategoryStrip } from "@/components/shop/CategoryStrip";
 import { TopBanner } from "@/components/shop/TopBanner";
 import { ShopHeader } from "@/components/shop/ShopHeader";
@@ -211,7 +212,8 @@ export default function ShopHome() {
   );
 
   const announcements = useMemo<Announcement[]>(() => {
-    const remote = (announcementsData.data ?? []) as any[];
+    const raw = announcementsData.data;
+    const remote = (Array.isArray(raw) ? raw : (raw as any)?.items ?? []) as any[];
     const published: Announcement[] = remote
       // home_hero placement (the v1 default) drives the carousel
       .filter((row) => row && (row.placement ?? "home_hero") === "home_hero")
@@ -256,6 +258,22 @@ export default function ShopHome() {
     }
     return fallback;
   }, [announcementsData.data, products, t]);
+
+  const stripBanners = useMemo<PromoStripBanner[]>(() => {
+    const raw = announcementsData.data;
+    const remote = (Array.isArray(raw) ? raw : (raw as any)?.items ?? []) as any[];
+    return remote
+      .filter((row) => row && row.placement === "home_strip")
+      .map((row) => ({
+        id: String(row.id ?? row.title ?? row.imageUrl ?? "strip"),
+        title: typeof row.title === "string" ? row.title.trim() : "",
+        subtitle: typeof row.subtitle === "string" ? row.subtitle.trim() : "",
+        imageUrl: typeof row.imageUrl === "string" && row.imageUrl ? row.imageUrl : null,
+        href: typeof row.ctaUrl === "string" && row.ctaUrl ? row.ctaUrl : undefined,
+        ctaLabel: typeof row.ctaLabel === "string" && row.ctaLabel ? row.ctaLabel : null,
+      }))
+      .filter((b) => b.title || b.subtitle || b.imageUrl);
+  }, [announcementsData.data]);
 
   const handleCategory = (id: StoreProductCategory) => {
     track("CATEGORY_VIEW", { entityId: id, value: id, context: { label: catNameMap.get(id) ?? PRODUCT_CATEGORY_META[id]?.label ?? id } });
@@ -336,6 +354,9 @@ export default function ShopHome() {
           allLabel={t("thaimartUi.categoryStrip.all")}
         />
       )}
+
+      {/* Promo Strip — optional home_strip placement below category strip */}
+      {stripBanners.length > 0 && <HomePromoStrip banners={stripBanners} />}
 
       {/* Single Featured Rail — Popular products (best sellers) */}
       {!productsData.loading && popularProducts.length > 0 && (
