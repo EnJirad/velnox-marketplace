@@ -127,7 +127,14 @@ async function checkApiHealth(apiUrl: string): Promise<CheckResult> {
     };
   }
 
-  if (result.status === 200 && (result.json?.status === "healthy" || result.json?.data?.status === "healthy")) {
+  const isHealthy =
+    result.status === 200 &&
+    (result.json?.status === "healthy" ||
+      result.json?.status === "ok" ||
+      result.json?.data?.status === "healthy" ||
+      result.json?.data?.status === "ok");
+
+  if (isHealthy) {
     return {
       name: "API Health Endpoint",
       target: url,
