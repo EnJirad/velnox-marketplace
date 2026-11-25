@@ -8,7 +8,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { apiBaseUrl as API_BASE } from "./sites";
-import { getStoredAccessToken } from "./api-client";
+import { getStoredAccessToken, tryRefreshToken } from "./api-client";
 
 // ─── Simple in-memory GET cache (60s TTL) ──────────────────────────────────
 const _getCache = new Map<string, { data: any; expires: number }>();
@@ -91,14 +91,42 @@ function getAuthHeaders(extraHeaders?: Record<string, string>): Record<string, s
   };
 }
 
+let _refreshPromise: Promise<boolean> | null = null;
+
+async function doRefreshToken(): Promise<boolean> {
+  if (!_refreshPromise) {
+    _refreshPromise = tryRefreshToken().finally(() => {
+      _refreshPromise = null;
+    });
+  }
+  return _refreshPromise;
+}
+
+/**
+ * Perform a fetch with automatic token refresh on HTTP 401.
+ * Retries once with the newly refreshed access token before propagating an error.
+ */
+async function authedFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  const headers = getAuthHeaders(init.headers as Record<string, string>);
+  let res = await fetch(url, { ...init, credentials: "include", headers });
+  if (res.status === 401) {
+    const refreshed = await doRefreshToken();
+    if (refreshed) {
+      const retryHeaders = getAuthHeaders(init.headers as Record<string, string>);
+      res = await fetch(url, { ...init, credentials: "include", headers: retryHeaders });
+    }
+  }
+  return res;
+}
+
 async function apiPost(path: string, args?: any): Promise<any> {
   invalidateGetCache();
   // Strip /api prefix if present — API_BASE already includes it
   const p = path.startsWith("/api") ? path.slice(4) : path;
-  const res = await fetch(`${API_BASE}${p}`, {
+  const res = await authedFetch(`${API_BASE}${p}`, {
     method: "POST",
     credentials: "include",
-    headers: getAuthHeaders({ "Content-Type": "application/json" }),
+    headers: { "Content-Type": "application/json" },
     body: args ? JSON.stringify(args) : undefined,
   });
   if (!res.ok) await throwApiError(res, `Request failed: ${res.status}`);
@@ -111,9 +139,8 @@ async function apiGet(path: string): Promise<any> {
   const cached = _getCache.get(path);
   if (cached && cached.expires > Date.now()) return cached.data;
   const p = path.startsWith("/api") ? path.slice(4) : path;
-  const res = await fetch(`${API_BASE}${p}`, {
+  const res = await authedFetch(`${API_BASE}${p}`, {
     credentials: "include",
-    headers: getAuthHeaders(),
   });
   if (!res.ok) await throwApiError(res, `Request failed: ${res.status}`);
   const json = await res.json();
@@ -126,10 +153,9 @@ async function apiGet(path: string): Promise<any> {
 /** GET without the 60s in-memory cache — for chat/notifications where staleness is visible. */
 async function apiGetFresh(path: string): Promise<any> {
   const p = path.startsWith("/api") ? path.slice(4) : path;
-  const res = await fetch(`${API_BASE}${p}`, {
+  const res = await authedFetch(`${API_BASE}${p}`, {
     credentials: "include",
     cache: "no-store",
-    headers: getAuthHeaders(),
   });
   if (!res.ok) await throwApiError(res, `Request failed: ${res.status}`);
   const json = await res.json();
@@ -139,10 +165,10 @@ async function apiGetFresh(path: string): Promise<any> {
 async function apiPut(path: string, args?: any): Promise<any> {
   invalidateGetCache();
   const p = path.startsWith("/api") ? path.slice(4) : path;
-  const res = await fetch(`${API_BASE}${p}`, {
+  const res = await authedFetch(`${API_BASE}${p}`, {
     method: "PUT",
     credentials: "include",
-    headers: getAuthHeaders({ "Content-Type": "application/json" }),
+    headers: { "Content-Type": "application/json" },
     body: args ? JSON.stringify(args) : undefined,
   });
   if (!res.ok) await throwApiError(res, `Request failed: ${res.status}`);
@@ -153,10 +179,10 @@ async function apiPut(path: string, args?: any): Promise<any> {
 async function apiPatch(path: string, args?: any): Promise<any> {
   invalidateGetCache();
   const p = path.startsWith("/api") ? path.slice(4) : path;
-  const res = await fetch(`${API_BASE}${p}`, {
+  const res = await authedFetch(`${API_BASE}${p}`, {
     method: "PATCH",
     credentials: "include",
-    headers: getAuthHeaders({ "Content-Type": "application/json" }),
+    headers: { "Content-Type": "application/json" },
     body: args ? JSON.stringify(args) : undefined,
   });
   if (!res.ok) await throwApiError(res, `Request failed: ${res.status}`);
@@ -167,10 +193,9 @@ async function apiPatch(path: string, args?: any): Promise<any> {
 async function apiDelete(path: string): Promise<any> {
   invalidateGetCache();
   const p = path.startsWith("/api") ? path.slice(4) : path;
-  const res = await fetch(`${API_BASE}${p}`, {
+  const res = await authedFetch(`${API_BASE}${p}`, {
     method: "DELETE",
     credentials: "include",
-    headers: getAuthHeaders(),
   });
   if (!res.ok) await throwApiError(res, `Request failed: ${res.status}`);
   const json = await res.json();

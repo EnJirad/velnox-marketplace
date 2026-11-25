@@ -136,7 +136,7 @@ function notifyAuthListeners() {
   authListeners.forEach((l) => l());
 }
 
-async function tryRefreshToken(): Promise<boolean> {
+export async function tryRefreshToken(): Promise<boolean> {
   const refreshToken = getStoredRefreshToken();
   try {
     const res = await fetch(`${API_BASE}/auth/refresh`, {

@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { authMiddleware, requireRole } from "../middleware/auth.js";
 import { neon } from "@neondatabase/serverless";
+import { hashPassword } from "../core/security/password.js";
 import type { Bindings, Variables } from "../types.js";
 
 export const adminRoutes = new Hono<{ Bindings: Bindings; Variables: Variables }>();
@@ -341,6 +342,7 @@ adminRoutes.patch("/products/:productId/moderation", requireRole("admin"), async
  * GET & PATCH /settings — Platform settings
  */
 adminRoutes.get("/settings", requireRole("admin"), async (c) => {
+  const user = c.get("user");
   const env = c.env as Bindings | undefined;
   const defaults = {
     commissionRate: 0.03,
@@ -348,20 +350,46 @@ adminRoutes.get("/settings", requireRole("admin"), async (c) => {
     maxUploadBytes: 10485760,
     allowedUploadTypes: ["image/jpeg", "image/png", "image/webp"],
   };
-  if (!env?.DATABASE_URL) {
-    return c.json({ success: true, data: defaults });
-  }
-  try {
-    const sql = neon(env.DATABASE_URL);
-    const rows = await sql`SELECT key, value FROM platform_settings WHERE key = 'platform_config'`;
-    if (rows.length > 0 && rows[0].value) {
-      const parsed = JSON.parse(rows[0].value);
-      return c.json({ success: true, data: { ...defaults, ...parsed } });
+  let settingsRows: Array<{ key: string; value: string }> = [];
+  const settingsMap: Record<string, string> = {};
+  if (env?.DATABASE_URL) {
+    try {
+      const sql = neon(env.DATABASE_URL);
+      const rows = await sql`SELECT key, value FROM platform_settings`;
+      settingsRows = rows.map((r: any) => ({ key: r.key, value: String(r.value ?? "") }));
+      for (const s of settingsRows) {
+        settingsMap[s.key] = s.value;
+      }
+    } catch (err) {
+      console.error("[admin] get settings error:", err);
     }
-  } catch (err) {
-    console.error("[admin] get settings error:", err);
   }
-  return c.json({ success: true, data: defaults });
+  const meta = {
+    moderation: {
+      approvalMode: settingsMap["product_approval_mode"] || "manual",
+      productVerificationEnabled: true,
+    },
+    commission: {
+      sellerRate: 0.03,
+      returnCoverage: 7,
+      currency: "THB",
+      editable: false,
+    },
+    media: {
+      maxUploadBytes: 10485760,
+      allowedTypes: ["image/jpeg", "image/png", "image/webp"],
+    },
+    role: user?.role || "admin",
+  };
+  return c.json({
+    success: true,
+    data: {
+      settings: settingsRows,
+      meta,
+      ...defaults,
+      ...settingsMap,
+    },
+  });
 });
 
 adminRoutes.patch("/settings", requireRole("admin"), async (c) => {
@@ -370,12 +398,21 @@ adminRoutes.patch("/settings", requireRole("admin"), async (c) => {
   if (env?.DATABASE_URL) {
     try {
       const sql = neon(env.DATABASE_URL);
-      const jsonStr = JSON.stringify(body);
-      await sql`
-        INSERT INTO platform_settings (key, value, updated_at)
-        VALUES ('platform_config', ${jsonStr}, NOW())
-        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
-      `;
+      if (body.key && body.value !== undefined) {
+        await sql`
+          INSERT INTO platform_settings (key, value, updated_at)
+          VALUES (${body.key}, ${String(body.value)}, NOW())
+          ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+        `;
+      } else {
+        for (const [k, v] of Object.entries(body)) {
+          await sql`
+            INSERT INTO platform_settings (key, value, updated_at)
+            VALUES (${k}, ${typeof v === "string" ? v : JSON.stringify(v)}, NOW())
+            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+          `;
+        }
+      }
     } catch (err) {
       console.error("[admin] patch settings error:", err);
     }
@@ -454,11 +491,22 @@ adminRoutes.get("/users", requireRole("admin"), async (c) => {
   try {
     const rawSegment = c.req.query("segment") || "all";
     const users = await sql`
-      SELECT id, email, name, role, status, created_at
+      SELECT id, email, name, avatar, role, department, status, created_at
       FROM users
       ORDER BY created_at DESC
       LIMIT 200
     `;
+    const formattedUsers = users.map((u: any) => ({
+      _id: u.id,
+      id: u.id,
+      email: u.email,
+      name: u.name,
+      avatarUrl: u.avatar,
+      role: u.role,
+      department: u.department,
+      status: u.status,
+      createdAt: u.created_at ? new Date(u.created_at).getTime() : Date.now(),
+    }));
     const counts = await sql`
       SELECT
         COUNT(*) FILTER (WHERE role IN ('owner', 'admin', 'staff', 'center_staff', 'center_admin', 'center_superadmin'))::int AS staff,
@@ -476,12 +524,76 @@ adminRoutes.get("/users", requireRole("admin"), async (c) => {
           customer: Number(cRow.customer ?? 0),
           seller: Number(cRow.seller ?? 0),
         },
-        users,
+        users: formattedUsers,
       },
     });
   } catch (err) {
     console.error("[admin] users error:", err);
     return c.json({ success: true, data: { segment: "all", counts: { staff: 0, customer: 0, seller: 0 }, users: [] } });
+  }
+});
+
+/**
+ * PATCH /users/:userId/access — Update user access and role
+ */
+adminRoutes.patch("/users/:userId/access", requireRole("admin"), async (c) => {
+  const userId = c.req.param("userId");
+  const body = (await c.req.json().catch(() => ({}))) || {};
+  const { role, department } = body;
+  const allowedRoles = ["customer", "seller", "staff", "admin", "owner", "center_staff", "center_admin", "center_superadmin"];
+  if (role && !allowedRoles.includes(role)) {
+    return c.json({ success: false, error: { code: "VALIDATION_ERROR", message: "Invalid role" } }, 400);
+  }
+  const env = c.env as Bindings | undefined;
+  if (!env?.DATABASE_URL) {
+    return c.json({ success: true, data: { id: userId, _id: userId, role: role || "customer", department: department || null } });
+  }
+  try {
+    const sql = neon(env.DATABASE_URL);
+    const updated = await sql`
+      UPDATE users
+      SET role = COALESCE(${role || null}, role),
+          department = COALESCE(${department || null}, department),
+          updated_at = NOW()
+      WHERE id = ${userId}
+      RETURNING id, email, name, avatar, role, department, status, updated_at
+    `;
+    if (updated.length === 0) {
+      return c.json({ success: false, error: { code: "NOT_FOUND", message: "User not found" } }, 404);
+    }
+    const u = updated[0];
+    return c.json({ success: true, data: { ...u, _id: u.id, avatarUrl: u.avatar } });
+  } catch (err: any) {
+    console.error("[admin] update user access error:", err);
+    return c.json({ success: false, error: { code: "INTERNAL_ERROR", message: err?.message || "Failed to update user access" } }, 500);
+  }
+});
+
+/**
+ * PATCH /staff — Update staff profile (department, permissions)
+ */
+adminRoutes.patch("/staff", requireRole("admin"), async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) || {};
+  const { userId, department } = body;
+  if (!userId) {
+    return c.json({ success: false, error: { code: "VALIDATION_ERROR", message: "userId is required" } }, 400);
+  }
+  const env = c.env as Bindings | undefined;
+  if (!env?.DATABASE_URL) {
+    return c.json({ success: true, data: { userId, updated: true } });
+  }
+  try {
+    const sql = neon(env.DATABASE_URL);
+    await sql`
+      UPDATE users
+      SET department = COALESCE(${department || null}, department),
+          updated_at = NOW()
+      WHERE id = ${userId}
+    `;
+    return c.json({ success: true, data: { userId, updated: true } });
+  } catch (err: any) {
+    console.error("[admin] update staff profile error:", err);
+    return c.json({ success: false, error: { code: "INTERNAL_ERROR", message: err?.message || "Failed to update staff" } }, 500);
   }
 });
 
@@ -664,15 +776,133 @@ adminRoutes.get("/employees", requireRole("admin"), async (c) => {
   const sql = neon(env.DATABASE_URL);
   try {
     const employees = await sql`
-      SELECT id, email, name, role, department, status, created_at
+      SELECT id, email, name, role, department, status, password_hash, must_change_password, created_at
       FROM users
       WHERE role IN ('owner', 'admin', 'staff', 'center_staff', 'center_admin', 'center_superadmin')
       ORDER BY created_at DESC
     `;
-    return c.json({ success: true, data: employees });
+    const data = employees.map((r: any) => ({
+      userId: r.id,
+      neonId: r.id,
+      id: r.id,
+      email: r.email,
+      name: r.name,
+      role: r.role,
+      department: r.department,
+      employeeId: null,
+      permissions: [],
+      active: r.status === "active",
+      mustChangePassword: r.must_change_password ?? false,
+      passwordAuth: Boolean(r.password_hash),
+      createdAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(),
+    }));
+    return c.json({ success: true, data });
   } catch (err) {
     console.error("[admin] employees error:", err);
     return c.json({ success: true, data: [] });
+  }
+});
+
+/**
+ * POST /employees — Create staff employee account
+ */
+adminRoutes.post("/employees", requireRole("admin"), async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) || {};
+  const { name, email, department, role, password } = body;
+  if (!email || !name) {
+    return c.json({ success: false, error: { code: "VALIDATION_ERROR", message: "Email and name are required" } }, 400);
+  }
+  const employeeRole = role && ["staff", "admin", "center_staff", "center_admin"].includes(role) ? role : "staff";
+  const tempPassword = password && password.length >= 8
+    ? password
+    : "vel" + Array.from({ length: 8 }, () => Math.floor(Math.random() * 10)).join("");
+  const passwordHash = await hashPassword(tempPassword);
+  const env = c.env as Bindings | undefined;
+  if (!env?.DATABASE_URL) {
+    return c.json({ success: true, data: { id: crypto.randomUUID(), email, name, role: employeeRole, tempPassword } }, 201);
+  }
+  try {
+    const sql = neon(env.DATABASE_URL);
+    const rows = await sql`
+      INSERT INTO users (email, name, role, department, password_hash, must_change_password, status)
+      VALUES (${email.trim().toLowerCase()}, ${name.trim()}, ${employeeRole}, ${department || "general"}, ${passwordHash}, TRUE, 'active')
+      ON CONFLICT (email) DO UPDATE
+        SET name = EXCLUDED.name,
+            role = EXCLUDED.role,
+            department = EXCLUDED.department,
+            password_hash = EXCLUDED.password_hash,
+            must_change_password = TRUE,
+            status = 'active',
+            updated_at = NOW()
+      RETURNING id, email, name, role, department
+    `;
+    const user = rows[0];
+    return c.json({ success: true, data: { id: user.id, email: user.email, name: user.name, role: user.role, tempPassword } }, 201);
+  } catch (err: any) {
+    console.error("[admin] create employee error:", err);
+    return c.json({ success: false, error: { code: "INTERNAL_ERROR", message: err?.message || "Failed to create employee" } }, 500);
+  }
+});
+
+/**
+ * POST /employees/:id/reset-password — Reset employee password
+ */
+adminRoutes.post("/employees/:id/reset-password", requireRole("admin"), async (c) => {
+  const employeeId = c.req.param("id");
+  const body = (await c.req.json().catch(() => ({}))) || {};
+  const password = body.password || ("vel" + Array.from({ length: 6 }, () => Math.floor(Math.random() * 10)).join(""));
+  if (password.length < 8) {
+    return c.json({ success: false, error: { code: "VALIDATION_ERROR", message: "Password must be at least 8 characters" } }, 400);
+  }
+  const passwordHash = await hashPassword(password);
+  const env = c.env as Bindings | undefined;
+  if (!env?.DATABASE_URL) {
+    return c.json({ success: true, data: { success: true, tempPassword: password, email: "employee@velnox.com" } });
+  }
+  try {
+    const sql = neon(env.DATABASE_URL);
+    const rows = await sql`
+      UPDATE users
+      SET password_hash = ${passwordHash},
+          must_change_password = TRUE,
+          updated_at = NOW()
+      WHERE id = ${employeeId}
+      RETURNING id, email
+    `;
+    if (rows.length === 0) {
+      return c.json({ success: false, error: { code: "NOT_FOUND", message: "Employee not found" } }, 404);
+    }
+    return c.json({ success: true, data: { success: true, tempPassword: password, email: rows[0].email } });
+  } catch (err: any) {
+    console.error("[admin] reset employee password error:", err);
+    return c.json({ success: false, error: { code: "INTERNAL_ERROR", message: err?.message || "Failed to reset password" } }, 500);
+  }
+});
+
+/**
+ * PATCH /employees/:id/active — Toggle active status
+ */
+adminRoutes.patch("/employees/:id/active", requireRole("admin"), async (c) => {
+  const employeeId = c.req.param("id");
+  const body = (await c.req.json().catch(() => ({}))) || {};
+  const active = body.active !== false;
+  const status = active ? "active" : "suspended";
+  const env = c.env as Bindings | undefined;
+  if (!env?.DATABASE_URL) {
+    return c.json({ success: true, data: { id: employeeId, active } });
+  }
+  try {
+    const sql = neon(env.DATABASE_URL);
+    await sql`
+      UPDATE users
+      SET status = ${status},
+          updated_at = NOW()
+      WHERE id = ${employeeId}
+    `;
+    return c.json({ success: true, data: { id: employeeId, active } });
+  } catch (err: any) {
+    console.error("[admin] toggle employee active error:", err);
+    return c.json({ success: false, error: { code: "INTERNAL_ERROR", message: err?.message || "Failed to toggle status" } }, 500);
   }
 });
 

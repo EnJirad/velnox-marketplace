@@ -227,4 +227,184 @@ describe("Admin & VelCenter Domain Tests", () => {
     expect(json.success).toBe(true);
     expect(json.data.status).toBe("published");
   });
+
+  it("GET & PATCH /api/admin/settings returns settings rows and platform meta", async () => {
+    const authHeader = await createAuthHeader("user-admin-1", "admin", "admin@velnox.live");
+    const getRes = await app.request("/api/admin/settings", {
+      method: "GET",
+      headers: { Authorization: authHeader },
+    });
+    expect(getRes.status).toBe(200);
+    const getJson = (await getRes.json()) as any;
+    expect(getJson.success).toBe(true);
+    expect(Array.isArray(getJson.data.settings)).toBe(true);
+    expect(getJson.data.meta).toBeDefined();
+    expect(getJson.data.meta.moderation).toBeDefined();
+
+    const patchRes = await app.request("/api/admin/settings", {
+      method: "PATCH",
+      headers: {
+        Authorization: authHeader,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ key: "product_approval_mode", value: "auto" }),
+    });
+    expect(patchRes.status).toBe(200);
+    const patchJson = (await patchRes.json()) as any;
+    expect(patchJson.success).toBe(true);
+  });
+
+  it("PATCH /api/admin/users/:userId/access updates user role and department", async () => {
+    const authHeader = await createAuthHeader("user-admin-1", "admin", "admin@velnox.live");
+    const res = await app.request("/api/admin/users/target-user-123/access", {
+      method: "PATCH",
+      headers: {
+        Authorization: authHeader,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ role: "staff", department: "operations" }),
+    });
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as any;
+    expect(json.success).toBe(true);
+    expect(json.data.role).toBe("staff");
+  });
+
+  it("PATCH /api/admin/staff updates staff profile", async () => {
+    const authHeader = await createAuthHeader("user-admin-1", "admin", "admin@velnox.live");
+    const res = await app.request("/api/admin/staff", {
+      method: "PATCH",
+      headers: {
+        Authorization: authHeader,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ userId: "staff-user-123", department: "marketing" }),
+    });
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as any;
+    expect(json.success).toBe(true);
+    expect(json.data.updated).toBe(true);
+  });
+
+  it("GET, POST, reset-password, active /api/admin/employees handles employee lifecycle", async () => {
+    const authHeader = await createAuthHeader("user-admin-1", "admin", "admin@velnox.live");
+    // GET employees
+    const listRes = await app.request("/api/admin/employees", {
+      method: "GET",
+      headers: { Authorization: authHeader },
+    });
+    expect(listRes.status).toBe(200);
+    const listJson = (await listRes.json()) as any;
+    expect(listJson.success).toBe(true);
+    expect(Array.isArray(listJson.data)).toBe(true);
+
+    // POST create employee
+    const createRes = await app.request("/api/admin/employees", {
+      method: "POST",
+      headers: {
+        Authorization: authHeader,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name: "Test Staff",
+        email: "staff.test@velnox.com",
+        department: "operations",
+        role: "staff",
+      }),
+    });
+    expect(createRes.status).toBe(201);
+    const createJson = (await createRes.json()) as any;
+    expect(createJson.success).toBe(true);
+    expect(createJson.data.tempPassword).toBeDefined();
+
+    // POST reset password
+    const resetRes = await app.request("/api/admin/employees/staff-test-id/reset-password", {
+      method: "POST",
+      headers: {
+        Authorization: authHeader,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ password: "newpassword123" }),
+    });
+    expect(resetRes.status).toBe(200);
+    const resetJson = (await resetRes.json()) as any;
+    expect(resetJson.success).toBe(true);
+    expect(resetJson.data.tempPassword).toBe("newpassword123");
+
+    // PATCH active toggle
+    const activeRes = await app.request("/api/admin/employees/staff-test-id/active", {
+      method: "PATCH",
+      headers: {
+        Authorization: authHeader,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ active: false }),
+    });
+    expect(activeRes.status).toBe(200);
+    const activeJson = (await activeRes.json()) as any;
+    expect(activeJson.success).toBe(true);
+    expect(activeJson.data.active).toBe(false);
+  });
+
+  it("VelCenter Chat Endpoints: /api/center/chat/* handles company chat lifecycle", async () => {
+    const authHeader = await createAuthHeader("user-admin-1", "admin", "admin@velnox.live");
+
+    // Unread counts
+    const unreadRes = await app.request("/api/center/chat/unread", {
+      method: "GET",
+      headers: { Authorization: authHeader },
+    });
+    expect(unreadRes.status).toBe(200);
+    const unreadJson = (await unreadRes.json()) as any;
+    expect(unreadJson.success).toBe(true);
+    expect(unreadJson.data.support).toBeDefined();
+
+    // Staff list
+    const staffRes = await app.request("/api/center/chat/staff", {
+      method: "GET",
+      headers: { Authorization: authHeader },
+    });
+    expect(staffRes.status).toBe(200);
+    const staffJson = (await staffRes.json()) as any;
+    expect(staffJson.success).toBe(true);
+    expect(Array.isArray(staffJson.data.items)).toBe(true);
+
+    // Conversations list
+    const convRes = await app.request("/api/center/chat/conversations?type=support", {
+      method: "GET",
+      headers: { Authorization: authHeader },
+    });
+    expect(convRes.status).toBe(200);
+    const convJson = (await convRes.json()) as any;
+    expect(convJson.success).toBe(true);
+    expect(Array.isArray(convJson.data.items)).toBe(true);
+
+    // Send company message
+    const sendRes = await app.request("/api/center/chat/conversations/conv-test-123/messages", {
+      method: "POST",
+      headers: {
+        Authorization: authHeader,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ content: "Hello from support" }),
+    });
+    expect(sendRes.status).toBe(201);
+    const sendJson = (await sendRes.json()) as any;
+    expect(sendJson.success).toBe(true);
+    expect(sendJson.data.message).toBeDefined();
+
+    // Create internal conversation
+    const roomRes = await app.request("/api/center/chat/internal/conversations", {
+      method: "POST",
+      headers: {
+        Authorization: authHeader,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ title: "Operations Room" }),
+    });
+    expect(roomRes.status).toBe(201);
+    const roomJson = (await roomRes.json()) as any;
+    expect(roomJson.success).toBe(true);
+    expect(roomJson.data.title).toBe("Operations Room");
+  });
 });

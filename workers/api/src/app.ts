@@ -104,6 +104,7 @@ export function createApplication() {
   app.route("/api/admin", adminRoutes);
   app.route("/admin", adminRoutes);
   app.route("/api", chatRoutes);
+  app.route("/", chatRoutes);
   app.route("/api", catalogRoutes);
 
   // Default root index endpoint
