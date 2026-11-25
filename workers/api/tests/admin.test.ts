@@ -407,4 +407,126 @@ describe("Admin & VelCenter Domain Tests", () => {
     expect(roomJson.success).toBe(true);
     expect(roomJson.data.title).toBe("Operations Room");
   });
+
+  it("GET & PATCH /api/admin/orders handles paginated orders and status update", async () => {
+    const authHeader = await createAuthHeader("user-admin-1", "admin", "admin@velnox.live");
+    const getRes = await app.request("/api/admin/orders?limit=10&offset=0", {
+      method: "GET",
+      headers: { Authorization: authHeader },
+    });
+    expect(getRes.status).toBe(200);
+    const getJson = (await getRes.json()) as any;
+    expect(getJson.success).toBe(true);
+    expect(Array.isArray(getJson.data.orders)).toBe(true);
+    expect(getJson.data.pagination).toBeDefined();
+
+    const patchRes = await app.request("/api/admin/orders/ord-12345/status", {
+      method: "PATCH",
+      headers: {
+        Authorization: authHeader,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ status: "shipped", trackingNumber: "TH123456789", trackingCarrier: "thaipost" }),
+    });
+    expect(patchRes.status).toBe(200);
+    const patchJson = (await patchRes.json()) as any;
+    expect(patchJson.success).toBe(true);
+    expect(patchJson.data.status).toBe("shipped");
+  });
+
+  it("GET /api/admin/products/moderation & moderation-detail return formatted schemas", async () => {
+    const authHeader = await createAuthHeader("user-admin-1", "admin", "admin@velnox.live");
+    const listRes = await app.request("/api/admin/products/moderation?status=all", {
+      method: "GET",
+      headers: { Authorization: authHeader },
+    });
+    expect(listRes.status).toBe(200);
+    const listJson = (await listRes.json()) as any;
+    expect(listJson.success).toBe(true);
+    expect(Array.isArray(listJson.data.products)).toBe(true);
+
+    const detailRes = await app.request("/api/admin/products/prod-123/moderation-detail", {
+      method: "GET",
+      headers: { Authorization: authHeader },
+    });
+    expect(detailRes.status).toBe(200);
+    const detailJson = (await detailRes.json()) as any;
+    expect(detailJson.success).toBe(true);
+    expect(detailJson.data.product).toBeDefined();
+    expect(detailJson.data.inventory).toBeDefined();
+    expect(detailJson.data.shop).toBeDefined();
+  });
+
+  it("Seller Verifications Decision, Application Detail & Revoke endpoints", async () => {
+    const authHeader = await createAuthHeader("user-admin-1", "admin", "admin@velnox.live");
+    // Decision
+    const decisionRes = await app.request("/api/admin/verifications/seller/sel-123", {
+      method: "PATCH",
+      headers: {
+        Authorization: authHeader,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ action: "approved", note: "Verified documents match" }),
+    });
+    expect(decisionRes.status).toBe(200);
+    const decisionJson = (await decisionRes.json()) as any;
+    expect(decisionJson.success).toBe(true);
+    expect(decisionJson.data.status).toBe("verified");
+
+    // Application Detail
+    const appRes = await app.request("/api/admin/sellers/sel-123/application", {
+      method: "GET",
+      headers: { Authorization: authHeader },
+    });
+    expect(appRes.status).toBe(200);
+    const appJson = (await appRes.json()) as any;
+    expect(appJson.success).toBe(true);
+    expect(appJson.data.seller).toBeDefined();
+    expect(appJson.data.applicant).toBeDefined();
+    expect(appJson.data.store).toBeDefined();
+
+    // Revoke
+    const revokeRes = await app.request("/api/admin/sellers/sel-123/revoke", {
+      method: "POST",
+      headers: {
+        Authorization: authHeader,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ reason: "Policy violation" }),
+    });
+    expect(revokeRes.status).toBe(200);
+    const revokeJson = (await revokeRes.json()) as any;
+    expect(revokeJson.success).toBe(true);
+    expect(revokeJson.data.revoked).toBe(true);
+  });
+
+  it("Tracking Endpoints and Memory Insights respond cleanly", async () => {
+    const authHeader = await createAuthHeader("user-admin-1", "admin", "admin@velnox.live");
+    // Tracking search
+    const trackSearch = await app.request("/api/admin/tracking/search", {
+      method: "GET",
+      headers: { Authorization: authHeader },
+    });
+    expect(trackSearch.status).toBe(200);
+    const searchJson = (await trackSearch.json()) as any;
+    expect(searchJson.success).toBe(true);
+    expect(Array.isArray(searchJson.data.items)).toBe(true);
+
+    // Tracking health
+    const trackHealth = await app.request("/api/admin/tracking/health", {
+      method: "GET",
+      headers: { Authorization: authHeader },
+    });
+    expect(trackHealth.status).toBe(200);
+    const healthJson = (await trackHealth.json()) as any;
+    expect(healthJson.success).toBe(true);
+    expect(healthJson.data.status).toBe("healthy");
+
+    // Memory insights
+    const insightsRes = await app.request("/api/memory/insights", { method: "GET" });
+    expect(insightsRes.status).toBe(200);
+    const insightsJson = (await insightsRes.json()) as any;
+    expect(insightsJson.success).toBe(true);
+    expect(Array.isArray(insightsJson.data.topSearches)).toBe(true);
+  });
 });

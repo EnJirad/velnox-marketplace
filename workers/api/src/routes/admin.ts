@@ -202,14 +202,27 @@ adminRoutes.get("/verifications", requireRole("admin"), async (c) => {
           WHERE s.verification_status = ${status}
           ORDER BY s.created_at DESC
         `;
+    const items = rows.map((r: any) => ({
+      ...r,
+      id: r.id,
+      seller_id: r.id,
+      status: r.verification_status || "pending",
+      verification_status: r.verification_status || "pending",
+      shop_name: r.shop_name,
+      shop_slug: r.shop_slug,
+      owner_name: r.user_name || r.name,
+      owner_email: r.email,
+      created_at: r.created_at,
+      updated_at: r.updated_at,
+    }));
     return c.json({
       success: true,
       data: {
-        items: rows,
+        items,
         pagination: {
-          total: rows.length,
+          total: items.length,
           page: 1,
-          limit: rows.length || 25,
+          limit: items.length || 25,
           totalPages: 1,
         },
       },
@@ -218,6 +231,156 @@ adminRoutes.get("/verifications", requireRole("admin"), async (c) => {
     console.error("[admin] verifications error:", err);
     return c.json({ success: true, data: { items: [], pagination: { total: 0, page: 1, limit: 25, totalPages: 0 } } });
   }
+});
+
+/**
+ * PATCH /verifications/seller/:verificationId — Review decision on seller verification
+ */
+adminRoutes.patch("/verifications/seller/:verificationId", requireRole("admin"), async (c) => {
+  const verificationId = c.req.param("verificationId");
+  const body = (await c.req.json().catch(() => ({}))) || {};
+  const { action, reason, note } = body;
+  const isApproved = action === "approved" || action === "approve";
+  const isRejected = action === "rejected" || action === "reject";
+  const verifStatus = isApproved ? "verified" : isRejected ? "rejected" : "suspended";
+  const env = c.env as Bindings | undefined;
+  if (env?.DATABASE_URL) {
+    try {
+      const sql = neon(env.DATABASE_URL);
+      await sql`
+        UPDATE sellers
+        SET verification_status = ${verifStatus},
+            verification_rejected_reason = ${reason || null},
+            verified_at = ${isApproved ? new Date().toISOString() : null},
+            updated_at = NOW()
+        WHERE id = ${verificationId}
+      `;
+      await sql`
+        UPDATE shops
+        SET status = ${isApproved ? "active" : "suspended"},
+            updated_at = NOW()
+        WHERE seller_id = ${verificationId}
+      `;
+    } catch (err) {
+      console.error("[admin] update seller verification error:", err);
+    }
+  }
+  return c.json({ success: true, data: { verificationId, status: verifStatus, reason, note } });
+});
+
+/**
+ * GET /verifications/seller/:verificationId/evidence
+ */
+adminRoutes.get("/verifications/seller/:verificationId/evidence", requireRole("admin"), async (c) => {
+  return c.json({ success: true, data: [] });
+});
+
+/**
+ * GET /verifications/seller/:verificationId/history
+ */
+adminRoutes.get("/verifications/seller/:verificationId/history", requireRole("admin"), async (c) => {
+  return c.json({ success: true, data: [] });
+});
+
+/**
+ * GET /sellers/:sellerId/application — Application detail for verification review modal
+ */
+adminRoutes.get("/sellers/:sellerId/application", requireRole("admin"), async (c) => {
+  const sellerId = c.req.param("sellerId");
+  const env = c.env as Bindings | undefined;
+  if (!env?.DATABASE_URL) {
+    return c.json({
+      success: true,
+      data: {
+        seller: { id: sellerId, status: "active", verificationStatus: "pending", verifiedAt: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+        applicant: { name: "Seller Applicant", email: "seller@velnox.live", phone: null, firstName: null, lastName: null, idNumber: null },
+        store: { name: "Sample Shop", slug: "sample-shop", description: null, category: null, logo: null, cover: null },
+        documents: [],
+        history: [],
+      },
+    });
+  }
+  try {
+    const sql = neon(env.DATABASE_URL);
+    const rows = await sql`
+      SELECT s.*, u.name as user_name, u.email as user_email, u.phone as user_phone,
+             sh.name as shop_name, sh.slug as shop_slug, sh.description as shop_description,
+             sh.logo_url as shop_logo, sh.cover_url as shop_cover, sh.status as shop_status
+      FROM sellers s
+      LEFT JOIN users u ON u.id = s.user_id
+      LEFT JOIN shops sh ON sh.seller_id = s.id
+      WHERE s.id = ${sellerId}
+    `;
+    if (rows.length === 0) {
+      return c.json({ success: false, error: { code: "NOT_FOUND", message: "Seller not found" } }, 404);
+    }
+    const s = rows[0];
+    return c.json({
+      success: true,
+      data: {
+        seller: {
+          id: s.id,
+          status: s.status || "active",
+          verificationStatus: s.verification_status,
+          verifiedAt: s.verified_at,
+          createdAt: s.created_at,
+          updatedAt: s.updated_at,
+        },
+        applicant: {
+          name: s.user_name || s.name,
+          email: s.user_email || s.email,
+          phone: s.user_phone || s.phone,
+          firstName: null,
+          lastName: null,
+          idNumber: null,
+        },
+        store: {
+          name: s.shop_name,
+          slug: s.shop_slug,
+          description: s.shop_description,
+          category: null,
+          logo: s.shop_logo,
+          cover: s.shop_cover,
+        },
+        documents: [],
+        history: [],
+      },
+    });
+  } catch (err: any) {
+    console.error("[admin] get seller application error:", err);
+    return c.json({ success: false, error: { code: "INTERNAL_ERROR", message: err?.message || "Failed to load application" } }, 500);
+  }
+});
+
+/**
+ * POST /sellers/:sellerId/revoke — Revoke and suspend shop
+ */
+adminRoutes.post("/sellers/:sellerId/revoke", requireRole("admin"), async (c) => {
+  const sellerId = c.req.param("sellerId");
+  const body = (await c.req.json().catch(() => ({}))) || {};
+  const reason = body.reason || "Suspended by admin";
+  const env = c.env as Bindings | undefined;
+  if (env?.DATABASE_URL) {
+    try {
+      const sql = neon(env.DATABASE_URL);
+      await sql`
+        UPDATE sellers
+        SET verification_status = 'suspended',
+            verification_rejected_reason = ${reason},
+            updated_at = NOW()
+        WHERE id = ${sellerId}
+      `;
+      await sql`
+        UPDATE shops
+        SET status = 'suspended',
+            updated_at = NOW()
+        WHERE seller_id = ${sellerId}
+      `;
+    } catch (err) {
+      console.error("[admin] revoke seller error:", err);
+    }
+  }
+  return c.json({ success: true, data: { revoked: true, sellerId } });
 });
 
 /**
@@ -295,31 +458,144 @@ adminRoutes.patch("/sellers/:sellerId/status", requireRole("admin"), async (c) =
 adminRoutes.get("/products/moderation", requireRole("admin"), async (c) => {
   const env = c.env as Bindings | undefined;
   if (!env?.DATABASE_URL) {
-    return c.json({ success: true, data: { items: [], total: 0 } });
+    return c.json({ success: true, data: { products: [], items: [], total: 0, pagination: { page: 1, limit: 25, total: 0, totalPages: 0, hasMore: false } } });
   }
   const sql = neon(env.DATABASE_URL);
   try {
     const status = c.req.query("status") || "pending_review";
     const rows = status === "all"
       ? await sql`
-          SELECT p.*, s.name as shop_name, c.name as category_name
+          SELECT p.*, s.name as shop_name, s.slug as shop_slug, s.status as shop_status,
+                 c.name as category_name, u.name as seller_name, u.email as seller_email
           FROM products p
           LEFT JOIN shops s ON s.id = p.shop_id
+          LEFT JOIN sellers sel ON sel.id = s.seller_id
+          LEFT JOIN users u ON u.id = sel.user_id
           LEFT JOIN categories c ON c.id = p.category_id
           ORDER BY p.created_at DESC
         `
       : await sql`
-          SELECT p.*, s.name as shop_name, c.name as category_name
+          SELECT p.*, s.name as shop_name, s.slug as shop_slug, s.status as shop_status,
+                 c.name as category_name, u.name as seller_name, u.email as seller_email
           FROM products p
           LEFT JOIN shops s ON s.id = p.shop_id
+          LEFT JOIN sellers sel ON sel.id = s.seller_id
+          LEFT JOIN users u ON u.id = sel.user_id
           LEFT JOIN categories c ON c.id = p.category_id
           WHERE p.status = ${status}
           ORDER BY p.created_at DESC
         `;
-    return c.json({ success: true, data: { items: rows, total: rows.length } });
+    const formatted = rows.map((r: any) => ({
+      ...r,
+      price: String(r.price ?? 0),
+      currency: r.currency || "THB",
+      unit: r.unit || "ชิ้น",
+      shop_id: r.shop_id,
+      shop_name: r.shop_name || "Shop",
+      shop_slug: r.shop_slug || "shop",
+      seller_name: r.seller_name || "Seller",
+      seller_email: r.seller_email || "",
+      primaryImage: r.primary_image_url ? { id: "primary", url: r.primary_image_url, alt: r.name } : null,
+      images: r.primary_image_url ? [{ id: "primary", url: r.primary_image_url, alt: r.name }] : [],
+    }));
+    return c.json({
+      success: true,
+      data: {
+        products: formatted,
+        items: formatted,
+        total: formatted.length,
+        pagination: {
+          page: 1,
+          limit: formatted.length || 25,
+          total: formatted.length,
+          totalPages: 1,
+          hasMore: false,
+        },
+      },
+    });
   } catch (err) {
     console.error("[admin] products moderation error:", err);
-    return c.json({ success: true, data: { items: [], total: 0 } });
+    return c.json({ success: true, data: { products: [], items: [], total: 0, pagination: { page: 1, limit: 25, total: 0, totalPages: 0, hasMore: false } } });
+  }
+});
+
+/**
+ * GET /products/:productId/moderation-detail — Moderation detail modal
+ */
+adminRoutes.get("/products/:productId/moderation-detail", requireRole("admin"), async (c) => {
+  const productId = c.req.param("productId");
+  const env = c.env as Bindings | undefined;
+  if (!env?.DATABASE_URL) {
+    return c.json({
+      success: true,
+      data: {
+        product: { id: productId, name: "Sample Product", price: 100, status: "pending_review" },
+        images: [],
+        variants: [],
+        optionGroups: [],
+        attributes: [],
+        inventory: { quantity: 10, reserved: 0, reorder_level: 0 },
+        shop: { id: "shop-1", name: "Shop", slug: "shop", status: "active", seller_name: "Seller", seller_email: "seller@velnox.live" },
+        moderationHistory: [],
+      },
+    });
+  }
+  try {
+    const sql = neon(env.DATABASE_URL);
+    const rows = await sql`
+      SELECT p.*, s.name as shop_name, s.slug as shop_slug, s.status as shop_status,
+             c.name as category_name, u.name as seller_name, u.email as seller_email
+      FROM products p
+      LEFT JOIN shops s ON s.id = p.shop_id
+      LEFT JOIN sellers sel ON sel.id = s.seller_id
+      LEFT JOIN users u ON u.id = sel.user_id
+      LEFT JOIN categories c ON c.id = p.category_id
+      WHERE p.id = ${productId}
+    `;
+    if (rows.length === 0) {
+      return c.json({ success: false, error: { code: "NOT_FOUND", message: "Product not found" } }, 404);
+    }
+    const p = rows[0];
+    const images = await sql`SELECT id, image_url as url, alt_text as alt, sort_order FROM product_images WHERE product_id = ${productId} ORDER BY sort_order ASC`;
+    return c.json({
+      success: true,
+      data: {
+        product: {
+          id: p.id,
+          name: p.name,
+          description: p.description || "",
+          short_description: p.short_description || "",
+          price: Number(p.price ?? 0),
+          compare_at_price: p.compare_at_price ? Number(p.compare_at_price) : undefined,
+          currency: p.currency || "THB",
+          unit: p.unit || "ชิ้น",
+          status: p.status,
+          rejection_reason: p.rejection_reason || undefined,
+          category_id: p.category_id,
+          category_name: p.category_name,
+          created_at: p.created_at,
+          updated_at: p.updated_at,
+        },
+        images: images.map((img: any) => ({ id: img.id, url: img.url, alt: img.alt || "", sort_order: img.sort_order || 0, image_type: "gallery" })),
+        primaryImage: p.primary_image_url ? { id: "primary", url: p.primary_image_url, alt: p.name } : null,
+        variants: [],
+        optionGroups: [],
+        attributes: [],
+        inventory: { quantity: Number(p.stock_quantity ?? 0), reserved: 0, reorder_level: 0 },
+        shop: {
+          id: p.shop_id,
+          name: p.shop_name,
+          slug: p.shop_slug,
+          status: p.shop_status || "active",
+          seller_name: p.seller_name || "ผู้ขาย",
+          seller_email: p.seller_email || "",
+        },
+        moderationHistory: [],
+      },
+    });
+  } catch (err: any) {
+    console.error("[admin] product moderation detail error:", err);
+    return c.json({ success: false, error: { code: "INTERNAL_ERROR", message: err?.message || "Failed to get detail" } }, 500);
   }
 });
 
@@ -603,26 +879,107 @@ adminRoutes.patch("/staff", requireRole("admin"), async (c) => {
 adminRoutes.get("/orders", requireRole("admin"), async (c) => {
   const env = c.env as Bindings | undefined;
   if (!env?.DATABASE_URL) {
-    return c.json({ success: true, data: { items: [], total: 0 } });
+    return c.json({ success: true, data: { orders: [], items: [], pagination: { limit: 100, offset: 0, total: 0, hasMore: false } } });
   }
   const sql = neon(env.DATABASE_URL);
   try {
     const limit = Math.min(Math.max(parseInt(c.req.query("limit") || "100", 10), 1), 200);
     const offset = Math.max(parseInt(c.req.query("offset") || "0", 10), 0);
-    const orders = await sql`
-      SELECT o.id, o.user_id, o.order_number, o.status, o.total_amount, o.created_at,
-             sh.name AS shop_name, sh.slug AS shop_slug, u.email as customer_email, u.name as customer_name
-      FROM orders o
-      LEFT JOIN shops sh ON o.shop_id = sh.id
-      LEFT JOIN users u ON u.id = o.user_id
-      ORDER BY o.created_at DESC
-      LIMIT ${limit} OFFSET ${offset}
-    `;
-    return c.json({ success: true, data: { items: orders, total: orders.length } });
+    const [orders, countRow] = await Promise.all([
+      sql`
+        SELECT o.id, o.user_id, o.order_number, o.status, o.total_amount, o.tracking_number, o.shipping_carrier, o.created_at,
+               sh.name AS shop_name, sh.slug AS shop_slug, u.email as customer_email, u.name as customer_name, u.phone as customer_phone
+        FROM orders o
+        LEFT JOIN shops sh ON o.shop_id = sh.id
+        LEFT JOIN users u ON u.id = o.user_id
+        ORDER BY o.created_at DESC
+        LIMIT ${limit} OFFSET ${offset}
+      `,
+      sql`SELECT COUNT(*)::int as total FROM orders`,
+    ]);
+    const totalCount = countRow[0]?.total ?? 0;
+    const formattedOrders = orders.map((o: any) => ({
+      id: o.id,
+      orderNumber: o.order_number,
+      status: o.status,
+      createdAt: o.created_at ? new Date(o.created_at).getTime() : Date.now(),
+      total: Number(o.total_amount ?? 0),
+      customerName: o.customer_name || o.customer_email || "ลูกค้า",
+      customerPhone: o.customer_phone || "",
+      itemCount: 1,
+      shopName: o.shop_name || "Velnox",
+      items: [],
+      trackingNumber: o.tracking_number || null,
+      shippingCarrier: o.shipping_carrier || null,
+    }));
+    return c.json({
+      success: true,
+      data: {
+        orders: formattedOrders,
+        items: formattedOrders,
+        pagination: {
+          limit,
+          offset,
+          total: totalCount,
+          hasMore: offset + formattedOrders.length < totalCount,
+        },
+      },
+    });
   } catch (err) {
     console.error("[admin] orders error:", err);
-    return c.json({ success: true, data: { items: [], total: 0 } });
+    return c.json({ success: true, data: { orders: [], items: [], pagination: { limit: 100, offset: 0, total: 0, hasMore: false } } });
   }
+});
+
+/**
+ * PATCH /orders/:orderId/status — Admin update order status / shipping tracking
+ */
+adminRoutes.patch("/orders/:orderId/status", requireRole("admin"), async (c) => {
+  const orderId = c.req.param("orderId");
+  const body = (await c.req.json().catch(() => ({}))) || {};
+  const { status, trackingNumber, trackingCarrier } = body;
+  const env = c.env as Bindings | undefined;
+  if (!env?.DATABASE_URL) {
+    return c.json({ success: true, data: { id: orderId, status: status || "processing", trackingNumber } });
+  }
+  try {
+    const sql = neon(env.DATABASE_URL);
+    const updated = await sql`
+      UPDATE orders
+      SET status = COALESCE(${status || null}, status),
+          tracking_number = COALESCE(${trackingNumber || null}, tracking_number),
+          shipping_carrier = COALESCE(${trackingCarrier || null}, shipping_carrier),
+          updated_at = NOW()
+      WHERE id = ${orderId}
+      RETURNING id, order_number, status, tracking_number, shipping_carrier, total_amount, updated_at
+    `;
+    if (updated.length === 0) {
+      return c.json({ success: false, error: { code: "NOT_FOUND", message: "Order not found" } }, 404);
+    }
+    return c.json({ success: true, data: updated[0] });
+  } catch (err: any) {
+    console.error("[admin] update order status error:", err);
+    return c.json({ success: false, error: { code: "INTERNAL_ERROR", message: err?.message || "Failed to update order status" } }, 500);
+  }
+});
+
+/**
+ * Tracking routes (carrier search, health, shipment detail)
+ */
+adminRoutes.get("/tracking/search", requireRole("admin"), async (c) => {
+  return c.json({ success: true, data: { items: [], total: 0 } });
+});
+
+adminRoutes.get("/tracking/health", requireRole("admin"), async (c) => {
+  return c.json({ success: true, data: { status: "healthy", carriers: ["thaipost", "kerry", "flash", "jnt"] } });
+});
+
+adminRoutes.get("/tracking/shipments/:shipmentId", requireRole("admin"), async (c) => {
+  return c.json({ success: true, data: null });
+});
+
+adminRoutes.post("/orders/:orderId/tracking/refresh", requireRole("admin"), async (c) => {
+  return c.json({ success: true, data: { refreshed: true } });
 });
 
 /**

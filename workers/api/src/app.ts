@@ -107,6 +107,23 @@ export function createApplication() {
   app.route("/", chatRoutes);
   app.route("/api", catalogRoutes);
 
+  // Market Insights (Privacy-safe aggregate interest for Center)
+  const insightsHandler = (c: any) => {
+    return c.json({
+      success: true,
+      data: {
+        topSearches: [],
+        topCategories: [],
+        popularProducts: [],
+        eventCount: 0,
+        windowDays: 7,
+      },
+    });
+  };
+  app.get("/api/memory/insights", insightsHandler);
+  app.get("/memory/insights", insightsHandler);
+  app.get("/api/v1/memory/insights", insightsHandler);
+
   // Default root index endpoint
   app.get("/", (c) => {
     return c.json({
