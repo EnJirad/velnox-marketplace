@@ -234,8 +234,6 @@ export function CorporateHome() {
                 <a
                   key={app.title}
                   href={app.href}
-                  target={app.href.startsWith("http") ? "_blank" : undefined}
-                  rel={app.href.startsWith("http") ? "noreferrer" : undefined}
                   className="group rounded-2xl border border-slate-200 bg-background p-6 transition-[transform,border-color,box-shadow] hover:-translate-y-0.5 hover:border-emerald-200 hover:shadow-md"
                 >
                   <div className="flex items-center justify-between">

@@ -106,4 +106,25 @@ describe("Catalog Domain Tests (Categories, Products, Shops)", () => {
     expect(json.data.slug).toBe("velnox-official");
     expect(json.data.status).toBe("active");
   });
+
+  it("GET /api/categories/stats returns array of category tree nodes", async () => {
+    const res = await app.request("/api/categories/stats");
+    expect(res.status).toBe(200);
+
+    const json = (await res.json()) as any;
+    expect(json.success).toBe(true);
+    expect(Array.isArray(json.data)).toBe(true);
+    expect(json.data.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("GET /api/announcements returns marketing banners envelope", async () => {
+    const res = await app.request("/api/announcements");
+    expect(res.status).toBe(200);
+
+    const json = (await res.json()) as any;
+    expect(json.success).toBe(true);
+    expect(Array.isArray(json.data)).toBe(true);
+    expect(json.data.length).toBeGreaterThanOrEqual(1);
+    expect(json.data[0].id).toBeDefined();
+  });
 });

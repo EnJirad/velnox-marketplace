@@ -38,8 +38,6 @@ export function TopBanner({ onDismiss }: { onDismiss?: () => void }) {
           <div className="flex shrink-0 items-center gap-2">
             <a
               href={SITE_URLS.velseller}
-              target="_blank"
-              rel="noopener noreferrer"
               className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full bg-white px-3.5 py-2 text-xs font-bold text-emerald-700 transition-colors hover:bg-emerald-50"
             >
               <BadgeCheck className="size-4" />

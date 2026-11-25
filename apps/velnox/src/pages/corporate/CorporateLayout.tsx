@@ -40,8 +40,6 @@ function FooterLink({ to, external, children }: { to: string; external?: boolean
       <a
         href={to}
         className={cn(cls, "inline-flex items-center gap-1")}
-        target="_blank"
-        rel="noopener noreferrer"
       >
         {children}
         <ArrowUpRight className="size-3.5" />

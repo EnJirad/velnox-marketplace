@@ -1,24 +1,33 @@
-# Latest Task Execution Report — Launch Readiness Core Fixes: Guest Cart & Suspended Shop Catalog Guard
+# Latest Task Execution Report — Login Single-Tab Navigation & VelCenter-to-VelShop Single Database Sync
 
-**Execution Timestamp:** 2026-11-24
-**Task:** Launch Readiness Track 1 & 2 — Guest Cart Persistence and Catalog Shop Suspension Guard
+**Execution Timestamp:** 2026-11-25
+**Task:** Login Single-Tab Navigation & VelCenter-to-VelShop Unified Database Sync (Categories, Announcements, Platform Settings, Product Moderation)
 **Status:** COMPLETED & VERIFIED
 **Initiative:** Velnox Clean Rebuild Initiative
 
 ---
 
 ## 1. Summary of Work Completed
-- **Guest Cart Persistence Across Auth State Checks (`apps/velshop/src/lib/cart.tsx`):**
-  - **Issue:** Previously, when a guest visited or refreshed the page, once the authentication check finished (`authLoading = false`, `isAuthenticated = false`), the effect called `setLines([])`, which in turn triggered the storage sync effect to write an empty array to `localStorage` (`velnox.guestCart.v1`). As a result, guest cart items were wiped on refresh or redirect.
-  - **Fix:** Updated the non-authenticated branch to maintain existing in-memory cart lines or rehydrate from `localStorage` (`setLines((current) => (current.length > 0 ? current : stored))`), guaranteeing that guest cart items persist reliably across page navigations and refreshes until login merge.
-- **Catalog Shop Status Guard (`workers/api/src/modules/catalog/catalog-repository.ts`):**
-  - **Issue:** Catalog product queries and count queries (`getProducts`, `getProductById`, `getProductBySlug`) only checked `p.status = 'published'`, allowing products from suspended or inactive shops to be visible in search, category listings, and product details.
-  - **Fix:** Added `(s.status IS NULL OR s.status = 'active')` with `LEFT JOIN shops s ON p.shop_id = s.id` across list, count, and detail queries in both `NeonCatalogRepository` and `MockCatalogRepository`. Suspended shops' products are now automatically excluded from the public catalog.
+- **Login & Ecosystem Single-Tab Navigation:**
+  - Removed `target="_blank"` from cross-portal and ecosystem navigation (`apps/velnox/src/pages/corporate/CorporateHome.tsx`, `CorporateLayout.tsx`, `StaticPage.tsx`, and `apps/velshop/src/components/shop/TopBanner.tsx`).
+  - Ensured that authentication entry points and redirects across all 4 applications (VelShop, VelSeller, VelCenter, VelNox) execute within the same browser tab without spawning new windows or tabs.
+- **VelCenter Category Management & Neon PostgreSQL Synchronization:**
+  - **Issue:** VelCenter category CRUD calls (`POST /api/admin/categories`, `PATCH /api/admin/categories/:id`, `DELETE /api/admin/categories/:id`) previously failed with 404 because the Workers API lacked write endpoints for categories. Furthermore, the `categories` table in Neon PostgreSQL was missing extended metadata columns (`icon`, `image_url`, `description`, `names`, `description_names`, `updated_at`).
+  - **Fix:** Applied database migration adding all missing columns to `categories` in Neon PostgreSQL and backfilled icons from `icon_url`. Implemented full category CRUD in `workers/api/src/routes/admin.ts`.
+- **Marketing Banners & Announcements Single-Database Persistence:**
+  - **Issue:** VelCenter's announcement editor (`PUT /api/admin/announcements`) did not persist banners to the database, and `catalogRoutes.get("/announcements")` queried unrelated media records instead of platform settings.
+  - **Fix:** Created the `platform_settings` table in Neon PostgreSQL. Wired `adminRoutes` (`GET /settings`, `PATCH /settings`, `GET /announcements`, `PUT /announcements`) and `catalogRoutes` (`GET /announcements`) to the `platform_settings` table (`shop_announcements` and `platform_config`). Any banner created or modified in VelCenter is now instantly rendered on the VelShop storefront.
+- **Storefront Category Tree & Stats Connection:**
+  - **Issue:** `catalogRoutes.get("/categories/stats")` previously returned `{ success: true, data: {} }`, causing VelShop's category directory (`ShopCategories.tsx`) to render 0 categories.
+  - **Fix:** Implemented `fetchCategoryTreeWithStats` in `workers/api/src/routes/catalog.ts`, querying Neon PostgreSQL and returning the full hierarchical tree with accurate `productCount` values.
+- **Product Moderation Status Synchronization:**
+  - **Issue:** VelCenter product approval previously set `status = 'active'`, whereas VelShop catalog filters strictly for `status = 'published'`.
+  - **Fix:** Updated `adminRoutes.patch("/products/:productId/moderation")` to set `status = 'published'` on approval, immediately making approved products visible across VelShop.
 
 ---
 
 ## 2. Verification Summary
-- `bun --filter @velnox/api test`: 112/112 PASS (17 test files, 483 assertions, 0 failures)
-- `bun --filter @velnox/velshop typecheck`: PASS (0 errors)
+- `bun --filter @velnox/api test`: 117/117 PASS (17 test files, 510 assertions, 0 failures)
+- `bun run typecheck`: PASS across all 4 apps (`@velnox/velshop`, `@velnox/velseller`, `@velnox/velcenter`, `@velnox/velnox`)
+- `bun --filter @velnox/api typecheck`: PASS (0 errors)
 - `git diff --check`: PASS (clean)
-- `git push origin main`: Pushed commit `0a20d565accbb90cfcb56bb3db316f42319236c5` (local == remote verified)

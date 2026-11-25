@@ -328,7 +328,7 @@ adminRoutes.get("/products/moderation", requireRole("admin"), async (c) => {
 adminRoutes.patch("/products/:productId/moderation", requireRole("admin"), async (c) => {
   const productId = c.req.param("productId");
   const body = (await c.req.json().catch(() => ({}))) || {};
-  const status = body.status === "approved" ? "active" : body.status === "rejected" ? "rejected" : body.status || "active";
+  const status = body.status === "approved" ? "published" : body.status === "rejected" ? "delisted" : body.status || "published";
   const env = c.env as Bindings | undefined;
   if (env?.DATABASE_URL) {
     const sql = neon(env.DATABASE_URL);
@@ -341,19 +341,45 @@ adminRoutes.patch("/products/:productId/moderation", requireRole("admin"), async
  * GET & PATCH /settings — Platform settings
  */
 adminRoutes.get("/settings", requireRole("admin"), async (c) => {
-  return c.json({
-    success: true,
-    data: {
-      commissionRate: 0.03,
-      returnCoverageDays: 7,
-      maxUploadBytes: 10485760,
-      allowedUploadTypes: ["image/jpeg", "image/png", "image/webp"],
-    },
-  });
+  const env = c.env as Bindings | undefined;
+  const defaults = {
+    commissionRate: 0.03,
+    returnCoverageDays: 7,
+    maxUploadBytes: 10485760,
+    allowedUploadTypes: ["image/jpeg", "image/png", "image/webp"],
+  };
+  if (!env?.DATABASE_URL) {
+    return c.json({ success: true, data: defaults });
+  }
+  try {
+    const sql = neon(env.DATABASE_URL);
+    const rows = await sql`SELECT key, value FROM platform_settings WHERE key = 'platform_config'`;
+    if (rows.length > 0 && rows[0].value) {
+      const parsed = JSON.parse(rows[0].value);
+      return c.json({ success: true, data: { ...defaults, ...parsed } });
+    }
+  } catch (err) {
+    console.error("[admin] get settings error:", err);
+  }
+  return c.json({ success: true, data: defaults });
 });
 
 adminRoutes.patch("/settings", requireRole("admin"), async (c) => {
   const body = (await c.req.json().catch(() => ({}))) || {};
+  const env = c.env as Bindings | undefined;
+  if (env?.DATABASE_URL) {
+    try {
+      const sql = neon(env.DATABASE_URL);
+      const jsonStr = JSON.stringify(body);
+      await sql`
+        INSERT INTO platform_settings (key, value, updated_at)
+        VALUES ('platform_config', ${jsonStr}, NOW())
+        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+      `;
+    } catch (err) {
+      console.error("[admin] patch settings error:", err);
+    }
+  }
   return c.json({ success: true, data: body });
 });
 
@@ -361,11 +387,39 @@ adminRoutes.patch("/settings", requireRole("admin"), async (c) => {
  * GET & PUT /announcements — Storefront announcements
  */
 adminRoutes.get("/announcements", requireRole("admin"), async (c) => {
+  const env = c.env as Bindings | undefined;
+  if (!env?.DATABASE_URL) {
+    return c.json({ success: true, data: [] });
+  }
+  try {
+    const sql = neon(env.DATABASE_URL);
+    const rows = await sql`SELECT value FROM platform_settings WHERE key = 'shop_announcements'`;
+    if (rows.length > 0 && rows[0].value) {
+      const items = JSON.parse(rows[0].value);
+      return c.json({ success: true, data: Array.isArray(items) ? items : [] });
+    }
+  } catch (err) {
+    console.error("[admin] get announcements error:", err);
+  }
   return c.json({ success: true, data: [] });
 });
 
 adminRoutes.put("/announcements", requireRole("admin"), async (c) => {
   const body = (await c.req.json().catch(() => [])) || [];
+  const env = c.env as Bindings | undefined;
+  if (env?.DATABASE_URL) {
+    try {
+      const sql = neon(env.DATABASE_URL);
+      const jsonStr = JSON.stringify(body);
+      await sql`
+        INSERT INTO platform_settings (key, value, updated_at)
+        VALUES ('shop_announcements', ${jsonStr}, NOW())
+        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+      `;
+    } catch (err) {
+      console.error("[admin] put announcements error:", err);
+    }
+  }
   return c.json({ success: true, data: body });
 });
 
@@ -460,7 +514,7 @@ adminRoutes.get("/orders", requireRole("admin"), async (c) => {
 });
 
 /**
- * GET /categories — Categories catalog for admin
+ * GET, POST, PATCH, DELETE /categories — Categories catalog for admin
  */
 adminRoutes.get("/categories", requireRole("admin"), async (c) => {
   const env = c.env as Bindings | undefined;
@@ -469,12 +523,134 @@ adminRoutes.get("/categories", requireRole("admin"), async (c) => {
   }
   const sql = neon(env.DATABASE_URL);
   try {
-    const rows = await sql`SELECT * FROM categories ORDER BY sort_order ASC, name ASC`;
+    const rows = await sql`
+      SELECT c.id, c.name, c.slug,
+             COALESCE(c.icon, c.icon_url) as icon,
+             COALESCE(c.image_url, c.icon_url) as image_url,
+             c.parent_id, c.sort_order, c.description, c.is_active,
+             c.names, c.description_names,
+             c.created_at, c.updated_at,
+             COUNT(p.id)::int as product_count
+      FROM categories c
+      LEFT JOIN products p ON p.category_id = c.id::text OR p.category_id = c.slug
+      GROUP BY c.id
+      ORDER BY c.sort_order ASC, c.name ASC
+    `;
     return c.json({ success: true, data: rows });
   } catch (err) {
     console.error("[admin] categories error:", err);
     return c.json({ success: true, data: [] });
   }
+});
+
+adminRoutes.post("/categories", requireRole("admin"), async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) || {};
+  const name = (body.name || "").trim();
+  if (!name) {
+    return c.json({ success: false, error: { code: "BAD_REQUEST", message: "Category name is required" } }, 400);
+  }
+  const id = body.id || crypto.randomUUID();
+  const slug = (body.slug || "").trim() || name.toLowerCase().replace(/[^a-z0-9\s-]/g, "").replace(/\s+/g, "-") || `cat-${Date.now()}`;
+  const icon = body.icon || null;
+  const imageUrl = body.image_url || icon || null;
+  const parentId = body.parent_id || null;
+  const sortOrder = Number(body.sort_order ?? 0);
+  const description = body.description ? String(body.description).trim() : null;
+  const isActive = body.is_active !== undefined ? Boolean(body.is_active) : true;
+  const names = body.names ? JSON.stringify(body.names) : "{}";
+  const descriptionNames = body.description_names ? JSON.stringify(body.description_names) : "{}";
+
+  const env = c.env as Bindings | undefined;
+  if (!env?.DATABASE_URL) {
+    return c.json({
+      success: true,
+      data: { id, name, slug, icon, image_url: imageUrl, parent_id: parentId, sort_order: sortOrder, description, is_active: isActive },
+    }, 201);
+  }
+  try {
+    const sql = neon(env.DATABASE_URL);
+    const [created] = await sql`
+      INSERT INTO categories (id, name, slug, icon, icon_url, image_url, parent_id, sort_order, description, is_active, names, description_names, updated_at)
+      VALUES (${id}, ${name}, ${slug}, ${icon}, ${icon || imageUrl}, ${imageUrl}, ${parentId}, ${sortOrder}, ${description}, ${isActive}, ${names}::jsonb, ${descriptionNames}::jsonb, NOW())
+      ON CONFLICT (id) DO UPDATE SET
+        name = EXCLUDED.name,
+        slug = EXCLUDED.slug,
+        icon = EXCLUDED.icon,
+        icon_url = EXCLUDED.icon_url,
+        image_url = EXCLUDED.image_url,
+        parent_id = EXCLUDED.parent_id,
+        sort_order = EXCLUDED.sort_order,
+        description = EXCLUDED.description,
+        is_active = EXCLUDED.is_active,
+        updated_at = NOW()
+      RETURNING id, name, slug, icon, image_url, parent_id, sort_order, description, is_active, created_at, updated_at
+    `;
+    return c.json({ success: true, data: created || { id, name, slug } }, 201);
+  } catch (err: any) {
+    console.error("[admin] create category error:", err);
+    return c.json({ success: false, error: { code: "INTERNAL_ERROR", message: err?.message || "Failed to create category" } }, 500);
+  }
+});
+
+adminRoutes.patch("/categories/:categoryId", requireRole("admin"), async (c) => {
+  const categoryId = c.req.param("categoryId");
+  const body = (await c.req.json().catch(() => ({}))) || {};
+  const env = c.env as Bindings | undefined;
+  if (!env?.DATABASE_URL) {
+    return c.json({ success: true, data: { id: categoryId, ...body } });
+  }
+  try {
+    const sql = neon(env.DATABASE_URL);
+    const existing = await sql`SELECT * FROM categories WHERE id = ${categoryId}`;
+    if (existing.length === 0) {
+      return c.json({ success: false, error: { code: "NOT_FOUND", message: "Category not found" } }, 404);
+    }
+    const current = existing[0];
+    const name = body.name !== undefined ? String(body.name).trim() : current.name;
+    const slug = body.slug !== undefined ? String(body.slug).trim() : current.slug;
+    const icon = body.icon !== undefined ? body.icon : current.icon;
+    const imageUrl = body.image_url !== undefined ? body.image_url : (icon || current.image_url);
+    const parentId = body.parent_id !== undefined ? (body.parent_id || null) : current.parent_id;
+    const sortOrder = body.sort_order !== undefined ? Number(body.sort_order) : current.sort_order;
+    const description = body.description !== undefined ? (body.description ? String(body.description).trim() : null) : current.description;
+    const isActive = body.is_active !== undefined ? Boolean(body.is_active) : current.is_active;
+
+    const [updated] = await sql`
+      UPDATE categories
+      SET name = ${name},
+          slug = ${slug},
+          icon = ${icon},
+          icon_url = ${icon || imageUrl},
+          image_url = ${imageUrl},
+          parent_id = ${parentId},
+          sort_order = ${sortOrder},
+          description = ${description},
+          is_active = ${isActive},
+          updated_at = NOW()
+      WHERE id = ${categoryId}
+      RETURNING id, name, slug, icon, image_url, parent_id, sort_order, description, is_active, created_at, updated_at
+    `;
+    return c.json({ success: true, data: updated || { id: categoryId, name, slug } });
+  } catch (err: any) {
+    console.error("[admin] update category error:", err);
+    return c.json({ success: false, error: { code: "INTERNAL_ERROR", message: err?.message || "Failed to update category" } }, 500);
+  }
+});
+
+adminRoutes.delete("/categories/:categoryId", requireRole("admin"), async (c) => {
+  const categoryId = c.req.param("categoryId");
+  const env = c.env as Bindings | undefined;
+  if (env?.DATABASE_URL) {
+    try {
+      const sql = neon(env.DATABASE_URL);
+      await sql`UPDATE categories SET parent_id = NULL WHERE parent_id = ${categoryId}`;
+      await sql`DELETE FROM categories WHERE id = ${categoryId}`;
+    } catch (err: any) {
+      console.error("[admin] delete category error:", err);
+      return c.json({ success: false, error: { code: "INTERNAL_ERROR", message: err?.message || "Failed to delete category" } }, 500);
+    }
+  }
+  return c.json({ success: true, data: { id: categoryId, deleted: true } });
 });
 
 /**

@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { createSuccessEnvelope } from "@velnox/api-contract";
+import { neon } from "@neondatabase/serverless";
 import { createNeonClient } from "../core/database/db-client.js";
 import {
   type ICatalogRepository,
@@ -35,9 +36,67 @@ export function setTestCatalogService(service: CatalogService | null) {
 }
 
 /**
+ * Helper to fetch full category tree with real product counts from Neon DB
+ */
+async function fetchCategoryTreeWithStats(env?: Bindings): Promise<any[]> {
+  if (env?.DATABASE_URL) {
+    try {
+      const sql = neon(env.DATABASE_URL);
+      const rows = await sql`
+        SELECT c.id, c.name, c.slug,
+               COALESCE(c.icon, c.icon_url) as icon,
+               COALESCE(c.image_url, c.icon_url) as "imageUrl",
+               c.parent_id as "parentId",
+               c.sort_order as "sortOrder",
+               c.is_active as "isActive",
+               COUNT(p.id)::int as "productCount"
+        FROM categories c
+        LEFT JOIN products p ON (p.category_id = c.id::text OR p.category_id = c.slug) AND (p.status = 'published' OR p.status = 'active')
+        WHERE c.is_active = TRUE
+        GROUP BY c.id
+        ORDER BY c.sort_order ASC, c.name ASC
+      `;
+      const nodeMap = new Map<string, any>();
+      const roots: any[] = [];
+      for (const r of rows) {
+        nodeMap.set(r.id, {
+          id: r.id,
+          name: r.name,
+          slug: r.slug,
+          icon: r.icon,
+          imageUrl: r.imageUrl,
+          parentId: r.parentId,
+          sortOrder: r.sortOrder,
+          isActive: r.isActive,
+          productCount: r.productCount || 0,
+          children: [],
+        });
+      }
+      for (const r of rows) {
+        const node = nodeMap.get(r.id);
+        if (r.parentId && nodeMap.has(r.parentId)) {
+          nodeMap.get(r.parentId).children.push(node);
+        } else {
+          roots.push(node);
+        }
+      }
+      return roots;
+    } catch (err) {
+      console.error("[catalog] category tree with stats error:", err);
+    }
+  }
+  return [];
+}
+
+/**
  * GET /api/v1/categories or /api/v1/catalog/categories
  */
 catalogRoutes.get("/categories", async (c) => {
+  const env = c.env as Bindings | undefined;
+  const dbTree = await fetchCategoryTreeWithStats(env);
+  if (dbTree.length > 0) {
+    return c.json({ success: true, data: dbTree });
+  }
   const service = getCatalogService(c);
   const tree = await service.getCategoryTree();
   return c.json({
@@ -46,18 +105,26 @@ catalogRoutes.get("/categories", async (c) => {
   });
 });
 
-
-
 /**
  * GET /api/v1/categories/tree or /api/categories/tree
  */
 catalogRoutes.get("/categories/tree", async (c) => {
+  const env = c.env as Bindings | undefined;
+  const dbTree = await fetchCategoryTreeWithStats(env);
+  if (dbTree.length > 0) {
+    return c.json({ success: true, data: dbTree });
+  }
   const service = getCatalogService(c);
   const tree = await service.getCategoryTree();
   return c.json({ success: true, data: tree });
 });
 
 catalogRoutes.get("/tree", async (c) => {
+  const env = c.env as Bindings | undefined;
+  const dbTree = await fetchCategoryTreeWithStats(env);
+  if (dbTree.length > 0) {
+    return c.json({ success: true, data: dbTree });
+  }
   const service = getCatalogService(c);
   const tree = await service.getCategoryTree();
   return c.json({ success: true, data: tree });
@@ -67,11 +134,25 @@ catalogRoutes.get("/tree", async (c) => {
  * GET /api/v1/categories/stats or /api/categories/stats
  */
 catalogRoutes.get("/categories/stats", async (c) => {
-  return c.json({ success: true, data: {} });
+  const env = c.env as Bindings | undefined;
+  const dbTree = await fetchCategoryTreeWithStats(env);
+  if (dbTree.length > 0) {
+    return c.json({ success: true, data: dbTree });
+  }
+  const service = getCatalogService(c);
+  const tree = await service.getCategoryTree();
+  return c.json({ success: true, data: tree });
 });
 
 catalogRoutes.get("/stats", async (c) => {
-  return c.json({ success: true, data: {} });
+  const env = c.env as Bindings | undefined;
+  const dbTree = await fetchCategoryTreeWithStats(env);
+  if (dbTree.length > 0) {
+    return c.json({ success: true, data: dbTree });
+  }
+  const service = getCatalogService(c);
+  const tree = await service.getCategoryTree();
+  return c.json({ success: true, data: tree });
 });
 
 /**
@@ -259,16 +340,21 @@ catalogRoutes.get("/shops/:id/settings", async (c) => {
 catalogRoutes.get("/announcements", async (c) => {
   const env = c.env as Bindings | undefined;
   if (env?.DATABASE_URL) {
-    const db = createNeonClient(env.DATABASE_URL, env.ENVIRONMENT);
     try {
-      const res = await db.query<any>(
-        `SELECT id, r2_key as "objectKey", public_url as "imageUrl", created_at as "createdAt"
-         FROM media_objects WHERE purpose IN ('banner', 'announcement') ORDER BY created_at DESC LIMIT 10`,
-      );
-      if (res.rows.length > 0) {
-        return c.json({ success: true, data: res.rows });
+      const sql = neon(env.DATABASE_URL);
+      const rows = await sql`SELECT value FROM platform_settings WHERE key = 'shop_announcements'`;
+      if (rows.length > 0 && rows[0].value) {
+        const items = JSON.parse(rows[0].value);
+        if (Array.isArray(items) && items.length > 0) {
+          const activeItems = items.filter((item) => item && item.active !== false);
+          if (activeItems.length > 0) {
+            return c.json({ success: true, data: activeItems });
+          }
+        }
       }
-    } catch { /* ignore */ }
+    } catch (err) {
+      console.error("[catalog] announcements error:", err);
+    }
   }
 
   return c.json({
@@ -279,7 +365,11 @@ catalogRoutes.get("/announcements", async (c) => {
         title: "ยินดีต้อนรับสู่ Velnox Marketplace",
         subtitle: "แพลตฟอร์มตลาดออนไลน์มาตรฐานใหม่",
         imageUrl: "/banners/welcome.webp",
-        link: "/products",
+        ctaUrl: "/products",
+        ctaLabel: "เลือกซื้อสินค้า",
+        active: true,
+        placement: "home_hero",
+        type: "announcement",
       },
     ],
   });

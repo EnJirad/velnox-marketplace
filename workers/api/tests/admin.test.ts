@@ -108,4 +108,123 @@ describe("Admin & VelCenter Domain Tests", () => {
     expect(Array.isArray(json.data)).toBe(true);
     expect(json.data.length).toBeGreaterThan(0);
   });
+
+  it("POST, PATCH, DELETE /api/admin/categories handles full CRUD for admin", async () => {
+    const authHeader = await createAuthHeader("user-admin-1", "admin", "admin@velnox.live");
+
+    // 1. Create Category
+    const createRes = await app.request("/api/admin/categories", {
+      method: "POST",
+      headers: {
+        Authorization: authHeader,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name: "Test Smart Gadgets",
+        slug: "test-smart-gadgets",
+        icon: "smartphone",
+        image_url: "https://pub-75f6f26e59df431b854fe53caedb49b6.r2.dev/categories/icon.svg",
+        description: "Innovative smart gadgets for everyone",
+        sort_order: 10,
+        is_active: true,
+      }),
+    });
+
+    expect(createRes.status).toBe(201);
+    const createJson = (await createRes.json()) as any;
+    expect(createJson.success).toBe(true);
+    expect(createJson.data.name).toBe("Test Smart Gadgets");
+    const categoryId = createJson.data.id;
+    expect(categoryId).toBeDefined();
+
+    // 2. Patch Category
+    const patchRes = await app.request(`/api/admin/categories/${categoryId}`, {
+      method: "PATCH",
+      headers: {
+        Authorization: authHeader,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name: "Updated Smart Gadgets",
+        sort_order: 12,
+      }),
+    });
+
+    expect(patchRes.status).toBe(200);
+    const patchJson = (await patchRes.json()) as any;
+    expect(patchJson.success).toBe(true);
+    expect(patchJson.data.name).toBe("Updated Smart Gadgets");
+
+    // 3. Delete Category
+    const deleteRes = await app.request(`/api/admin/categories/${categoryId}`, {
+      method: "DELETE",
+      headers: { Authorization: authHeader },
+    });
+
+    expect(deleteRes.status).toBe(200);
+    const deleteJson = (await deleteRes.json()) as any;
+    expect(deleteJson.success).toBe(true);
+    expect(deleteJson.data.deleted).toBe(true);
+  });
+
+  it("GET & PUT /api/admin/announcements persists marketing banners", async () => {
+    const authHeader = await createAuthHeader("user-admin-1", "admin", "admin@velnox.live");
+
+    const bannersPayload = [
+      {
+        id: "banner-test-1",
+        type: "promotion",
+        zone: "home",
+        placement: "home_hero",
+        slot: 1,
+        title: "Flash Sale Velnox",
+        subtitle: "Up to 50% discount",
+        imageUrl: "https://pub-75f6f26e59df431b854fe53caedb49b6.r2.dev/banners/sale.webp",
+        ctaLabel: "Shop Now",
+        ctaUrl: "/products?sale=true",
+        active: true,
+        sortOrder: 1,
+      },
+    ];
+
+    const putRes = await app.request("/api/admin/announcements", {
+      method: "PUT",
+      headers: {
+        Authorization: authHeader,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(bannersPayload),
+    });
+
+    expect(putRes.status).toBe(200);
+    const putJson = (await putRes.json()) as any;
+    expect(putJson.success).toBe(true);
+
+    const getRes = await app.request("/api/admin/announcements", {
+      method: "GET",
+      headers: { Authorization: authHeader },
+    });
+
+    expect(getRes.status).toBe(200);
+    const getJson = (await getRes.json()) as any;
+    expect(getJson.success).toBe(true);
+    expect(Array.isArray(getJson.data)).toBe(true);
+  });
+
+  it("PATCH /api/admin/products/:productId/moderation sets approved product status to published", async () => {
+    const authHeader = await createAuthHeader("user-admin-1", "admin", "admin@velnox.live");
+    const res = await app.request("/api/admin/products/prod-test-123/moderation", {
+      method: "PATCH",
+      headers: {
+        Authorization: authHeader,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ status: "approved" }),
+    });
+
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as any;
+    expect(json.success).toBe(true);
+    expect(json.data.status).toBe("published");
+  });
 });

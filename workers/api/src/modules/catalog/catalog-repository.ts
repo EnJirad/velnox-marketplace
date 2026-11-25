@@ -25,11 +25,11 @@ export class NeonCatalogRepository implements ICatalogRepository {
   async getCategories(): Promise<CategoryRecord[]> {
     const res = await this.db.query<any>(
       `SELECT id, parent_id as "parentId", name, name_th as "nameTh", name_en as "nameEn",
-              name_my as "nameMy", slug, level, icon_url as "iconUrl", sort_order as "sortOrder",
+              name_my as "nameMy", slug, COALESCE(level, 1) as level, COALESCE(icon, icon_url) as "iconUrl", sort_order as "sortOrder",
               is_active as "isActive", created_at as "createdAt"
        FROM categories
        WHERE is_active = TRUE
-       ORDER BY level ASC, sort_order ASC, name ASC`,
+       ORDER BY sort_order ASC, name ASC`,
     );
     return res.rows;
   }
@@ -37,7 +37,7 @@ export class NeonCatalogRepository implements ICatalogRepository {
   async getCategoryBySlug(slug: string): Promise<CategoryRecord | null> {
     const res = await this.db.query<any>(
       `SELECT id, parent_id as "parentId", name, name_th as "nameTh", name_en as "nameEn",
-              name_my as "nameMy", slug, level, icon_url as "iconUrl", sort_order as "sortOrder",
+              name_my as "nameMy", slug, COALESCE(level, 1) as level, COALESCE(icon, icon_url) as "iconUrl", sort_order as "sortOrder",
               is_active as "isActive", created_at as "createdAt"
        FROM categories
        WHERE slug = $1 AND is_active = TRUE`,
