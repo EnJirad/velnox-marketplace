@@ -6,6 +6,7 @@ import type {
   ShopRecord,
   UpdateProductInput,
   UpdateShopInput,
+  VerificationStatus,
 } from "./types.js";
 import type { ProductDetailRecord, ProductRecord, ProductVariantRecord } from "../catalog/types.js";
 
@@ -25,25 +26,69 @@ export class NeonSellerRepository implements ISellerRepository {
 
   async getSellerByUserId(userId: string): Promise<SellerProfileRecord | null> {
     const res = await this.db.query<any>(
-      `SELECT id, user_id as "userId", business_name as "businessName", business_type as "businessType",
-              tax_id as "taxId", id_card_number as "idCardNumber", verification_status as "verificationStatus",
-              verification_rejected_reason as "verificationRejectedReason", verified_at as "verifiedAt",
-              created_at as "createdAt", updated_at as "updatedAt"
-       FROM sellers WHERE user_id = $1`,
+      `SELECT s.id, s.user_id as "userId", s.status, s.verification_status as "verificationStatus",
+              s.verified_at as "verifiedAt", s.created_at as "createdAt", s.updated_at as "updatedAt",
+              ss.settings as "sellerSettings"
+       FROM sellers s
+       LEFT JOIN seller_settings ss ON ss.seller_id = s.id
+       WHERE s.user_id = $1`,
       [userId],
     );
-    return res.rows[0] || null;
+    if (res.rows.length === 0) return null;
+    const r = res.rows[0];
+    const settings = typeof r.sellerSettings === "object" && r.sellerSettings !== null ? r.sellerSettings : {};
+    return {
+      id: r.id,
+      userId: r.userId,
+      businessName: settings.businessName || settings.shopName || "Seller Store",
+      businessType: settings.businessType || "individual",
+      taxId: settings.taxId || null,
+      idCardNumber: settings.idNumber || settings.idCardNumber || null,
+      verificationStatus: r.verificationStatus || "unverified",
+      status: r.status || "pending",
+      verificationRejectedReason: settings.rejectionReason || null,
+      verifiedAt: r.verifiedAt || null,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
+    };
   }
 
   async getShopBySellerId(sellerId: string): Promise<ShopRecord | null> {
     const res = await this.db.query<any>(
-      `SELECT id, seller_id as "sellerId", name, slug, description, logo_url as "logoUrl",
-              cover_url as "coverUrl", status, rating, review_count as "reviewCount",
+      `SELECT id, seller_id as "sellerId", name, slug, description, category,
+              logo as "logoUrl", cover as "coverUrl", status, rating,
+              product_count as "reviewCount", phone,
+              address_line1 as "line1", subdistrict, district, city, postal_code as "postalCode", country,
               created_at as "createdAt", updated_at as "updatedAt"
        FROM shops WHERE seller_id = $1`,
       [sellerId],
     );
-    return res.rows[0] || null;
+    if (res.rows.length === 0) return null;
+    const r = res.rows[0];
+    return {
+      id: r.id,
+      sellerId: r.sellerId,
+      name: r.name,
+      slug: r.slug,
+      description: r.description || "",
+      category: r.category || null,
+      phone: r.phone || null,
+      address: {
+        line1: r.line1 || null,
+        subdistrict: r.subdistrict || null,
+        district: r.district || null,
+        city: r.city || null,
+        postalCode: r.postalCode || null,
+        country: r.country || "TH",
+      },
+      logoUrl: r.logoUrl || null,
+      coverUrl: r.coverUrl || null,
+      status: r.status || "active",
+      rating: Number(r.rating || 0),
+      reviewCount: Number(r.reviewCount || 0),
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
+    };
   }
 
   async createSellerAndShop(
@@ -51,25 +96,184 @@ export class NeonSellerRepository implements ISellerRepository {
     input: ApplySellerInput,
   ): Promise<{ seller: SellerProfileRecord; shop: ShopRecord }> {
     return this.db.transaction(async (tx: IDatabaseClient) => {
-      const sellerId = crypto.randomUUID();
-      const shopId = crypto.randomUUID();
       const now = new Date().toISOString();
 
-      // 1. Insert seller
-      await tx.query(
-        `INSERT INTO sellers (id, user_id, business_name, business_type, tax_id, id_card_number, verification_status, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, 'unverified', $7, $7)`,
-        [sellerId, userId, input.businessName, input.businessType, input.taxId || null, input.idCardNumber || null, now],
+      // Check if seller row already exists for this user
+      const existingSellerRes = await tx.query<any>(
+        `SELECT id, status, verification_status FROM sellers WHERE user_id = $1`,
+        [userId],
       );
 
-      // 2. Insert shop
-      await tx.query(
-        `INSERT INTO shops (id, seller_id, name, slug, description, status, rating, review_count, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, 'active', 0.0, 0, $6, $6)`,
-        [shopId, sellerId, input.shopName, input.shopSlug, input.shopDescription || "", now],
+      let sellerId: string;
+      let previousStatus = "none";
+      const hasEvidence = Boolean(
+        input.idCardFrontUrl ||
+        input.idCardBackUrl ||
+        input.selfieUrl ||
+        (Array.isArray(input.identityEvidence) && input.identityEvidence.length > 0)
+      );
+      const verificationStatus: VerificationStatus = hasEvidence ? "pending" : "unverified";
+      const sellerStatus = "pending";
+
+      if (existingSellerRes.rows.length > 0) {
+        sellerId = existingSellerRes.rows[0].id;
+        previousStatus = existingSellerRes.rows[0].status || "none";
+        await tx.query(
+          `UPDATE sellers SET status = $1, verification_status = $2, updated_at = $3 WHERE id = $4`,
+          [sellerStatus, verificationStatus, now, sellerId],
+        );
+      } else {
+        sellerId = crypto.randomUUID();
+        await tx.query(
+          `INSERT INTO sellers (id, user_id, status, verification_status, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $5)`,
+          [sellerId, userId, sellerStatus, verificationStatus, now],
+        );
+      }
+
+      // Upsert shop
+      const shopAddr = input.shopAddress || {};
+      const shopName = input.shopName.trim();
+      const shopCategory = input.shopCategory?.trim() || null;
+      const shopDescription = input.shopDescription?.trim() || "";
+      const shopPhone = input.phone?.trim() || null;
+
+      let baseSlug = (input.shopSlug?.trim() || shopName)
+        .toLowerCase()
+        .replace(/[^a-z0-9\s-]/g, "")
+        .replace(/\s+/g, "-")
+        .replace(/-+/g, "-")
+        .substring(0, 100);
+      if (!baseSlug) baseSlug = `shop-${Date.now()}`;
+
+      const existingShopRes = await tx.query<any>(
+        `SELECT id, slug FROM shops WHERE seller_id = $1`,
+        [sellerId],
       );
 
-      // 3. Update user role to seller
+      let shopId: string;
+      let slug = baseSlug;
+
+      if (existingShopRes.rows.length > 0) {
+        shopId = existingShopRes.rows[0].id;
+        slug = existingShopRes.rows[0].slug || baseSlug;
+        await tx.query(
+          `UPDATE shops
+           SET name = $1, description = $2, category = $3,
+               address_line1 = $4, subdistrict = $5, district = $6,
+               city = $7, postal_code = $8, country = $9, phone = $10,
+               updated_at = $11
+           WHERE id = $12`,
+          [
+            shopName,
+            shopDescription,
+            shopCategory,
+            shopAddr.line1?.trim() || null,
+            shopAddr.subdistrict?.trim() || null,
+            shopAddr.district?.trim() || null,
+            shopAddr.city?.trim() || null,
+            shopAddr.postalCode?.trim() || null,
+            shopAddr.country?.trim() || "TH",
+            shopPhone,
+            now,
+            shopId,
+          ],
+        );
+      } else {
+        shopId = crypto.randomUUID();
+        let finalSlug = slug;
+        let suffix = 1;
+        while (true) {
+          const slugConflict = await tx.query<any>(
+            `SELECT id FROM shops WHERE slug = $1`,
+            [finalSlug],
+          );
+          if (slugConflict.rows.length === 0) break;
+          finalSlug = `${slug}-${suffix++}`;
+        }
+        slug = finalSlug;
+
+        await tx.query(
+          `INSERT INTO shops (id, seller_id, name, slug, description, category,
+                              address_line1, subdistrict, district, city, postal_code,
+                              country, phone, status, rating, product_count, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'active', 0.0, 0, $14, $14)`,
+          [
+            shopId,
+            sellerId,
+            shopName,
+            slug,
+            shopDescription,
+            shopCategory,
+            shopAddr.line1?.trim() || null,
+            shopAddr.subdistrict?.trim() || null,
+            shopAddr.district?.trim() || null,
+            shopAddr.city?.trim() || null,
+            shopAddr.postalCode?.trim() || null,
+            shopAddr.country?.trim() || "TH",
+            shopPhone,
+            now,
+          ],
+        );
+      }
+
+      // Persist applicant info + documents in seller_settings
+      const settingsPayload: Record<string, unknown> = {
+        shopName,
+        businessName: input.businessName || shopName,
+        businessType: input.businessType || "individual",
+        firstName: input.firstName?.trim() || null,
+        lastName: input.lastName?.trim() || null,
+        phone: shopPhone,
+        idNumber: input.idNumber?.trim() || input.idCardNumber?.trim() || null,
+        idCardFrontUrl: input.idCardFrontUrl || null,
+        idCardBackUrl: input.idCardBackUrl || null,
+        selfieUrl: input.selfieUrl || null,
+        identityEvidence: input.identityEvidence || [],
+        submittedAt: now,
+      };
+
+      await tx.query(
+        `INSERT INTO seller_settings (seller_id, settings, updated_at)
+         VALUES ($1, $2::jsonb, $3)
+         ON CONFLICT (seller_id)
+         DO UPDATE SET settings = COALESCE(seller_settings.settings, '{}'::jsonb) || $2::jsonb, updated_at = $3`,
+        [sellerId, JSON.stringify(settingsPayload), now],
+      );
+
+      // Record seller verification submission with evidence if provided
+      const evidenceList: string[] = [];
+      if (input.idCardFrontUrl) evidenceList.push(input.idCardFrontUrl);
+      if (input.idCardBackUrl) evidenceList.push(input.idCardBackUrl);
+      if (input.selfieUrl) evidenceList.push(input.selfieUrl);
+      if (Array.isArray(input.identityEvidence)) {
+        for (const url of input.identityEvidence) {
+          if (url && !evidenceList.includes(url)) evidenceList.push(url);
+        }
+      }
+
+      if (evidenceList.length > 0) {
+        await tx.query(
+          `INSERT INTO seller_verifications (seller_id, status, verification_type, evidence_urls, submitted_at, created_at, updated_at)
+           VALUES ($1, 'pending', 'identity', $2::jsonb, $3, $3, $3)
+           ON CONFLICT (seller_id) WHERE status = 'pending'
+           DO UPDATE SET evidence_urls = $2::jsonb, submitted_at = $3, updated_at = $3`,
+          [sellerId, JSON.stringify(evidenceList), now],
+        );
+      }
+
+      // Audit review history
+      try {
+        await tx.query(
+          `INSERT INTO seller_review_history (seller_id, previous_status, new_status, action, reviewer_id, created_at)
+           VALUES ($1, $2, 'pending', $3, $4, $5)`,
+          [sellerId, previousStatus, previousStatus === "none" ? "submitted" : "resubmitted", userId, now],
+        );
+      } catch {
+        // non-fatal
+      }
+
+      // Update user role to seller
       await tx.query(
         `UPDATE users SET role = 'seller', updated_at = $1 WHERE id = $2`,
         [now, userId],
@@ -78,11 +282,12 @@ export class NeonSellerRepository implements ISellerRepository {
       const seller: SellerProfileRecord = {
         id: sellerId,
         userId,
-        businessName: input.businessName,
-        businessType: input.businessType,
+        businessName: input.businessName || shopName,
+        businessType: input.businessType || "individual",
         taxId: input.taxId || null,
-        idCardNumber: input.idCardNumber || null,
-        verificationStatus: "unverified",
+        idCardNumber: input.idNumber || input.idCardNumber || null,
+        verificationStatus,
+        status: sellerStatus,
         createdAt: now,
         updatedAt: now,
       };
@@ -90,9 +295,9 @@ export class NeonSellerRepository implements ISellerRepository {
       const shop: ShopRecord = {
         id: shopId,
         sellerId,
-        name: input.shopName,
-        slug: input.shopSlug,
-        description: input.shopDescription || "",
+        name: shopName,
+        slug,
+        description: shopDescription,
         status: "active",
         rating: 0,
         reviewCount: 0,
@@ -118,11 +323,11 @@ export class NeonSellerRepository implements ISellerRepository {
       params.push(input.description);
     }
     if (input.logoUrl !== undefined) {
-      updates.push(`logo_url = $${idx++}`);
+      updates.push(`logo = $${idx++}`);
       params.push(input.logoUrl);
     }
     if (input.coverUrl !== undefined) {
-      updates.push(`cover_url = $${idx++}`);
+      updates.push(`cover = $${idx++}`);
       params.push(input.coverUrl);
     }
 
@@ -130,14 +335,19 @@ export class NeonSellerRepository implements ISellerRepository {
     const query = `
       UPDATE shops SET ${updates.join(", ")}
       WHERE id = $${idx}
-      RETURNING id, seller_id as "sellerId", name, slug, description, logo_url as "logoUrl",
-                cover_url as "coverUrl", status, rating, review_count as "reviewCount",
-                created_at as "createdAt", updated_at as "updatedAt"
+      RETURNING id, seller_id as "sellerId", name, slug, description,
+                logo as "logoUrl", cover as "coverUrl", status, rating,
+                product_count as "reviewCount", created_at as "createdAt", updated_at as "updatedAt"
     `;
 
     const res = await this.db.query<any>(query, params);
     if (res.rows.length === 0) throw new Error("Shop not found");
-    return res.rows[0];
+    const r = res.rows[0];
+    return {
+      ...r,
+      rating: Number(r.rating || 0),
+      reviewCount: Number(r.reviewCount || 0),
+    };
   }
 
   async createProduct(shopId: string, input: CreateProductInput): Promise<ProductDetailRecord> {
@@ -332,14 +542,23 @@ export class MockSellerRepository implements ISellerRepository {
     const shopId = crypto.randomUUID();
     const now = new Date().toISOString();
 
+    const hasEvidence = Boolean(
+      input.idCardFrontUrl ||
+      input.idCardBackUrl ||
+      input.selfieUrl ||
+      (Array.isArray(input.identityEvidence) && input.identityEvidence.length > 0)
+    );
+    const verificationStatus: VerificationStatus = hasEvidence ? "pending" : "unverified";
+
     const seller: SellerProfileRecord = {
       id: sellerId,
       userId,
-      businessName: input.businessName,
-      businessType: input.businessType,
+      businessName: input.businessName || input.shopName,
+      businessType: input.businessType || "individual",
       taxId: input.taxId || null,
-      idCardNumber: input.idCardNumber || null,
-      verificationStatus: "unverified",
+      idCardNumber: input.idNumber || input.idCardNumber || null,
+      verificationStatus,
+      status: "pending",
       createdAt: now,
       updatedAt: now,
     };
@@ -348,8 +567,11 @@ export class MockSellerRepository implements ISellerRepository {
       id: shopId,
       sellerId,
       name: input.shopName,
-      slug: input.shopSlug,
+      slug: input.shopSlug || `shop-${Date.now()}`,
       description: input.shopDescription || "",
+      category: input.shopCategory || null,
+      phone: input.phone || null,
+      address: input.shopAddress || null,
       status: "active",
       rating: 0,
       reviewCount: 0,

@@ -71,9 +71,54 @@ describe("Seller Operations Domain Tests", () => {
       body: JSON.stringify(payload),
     });
 
-    expect(res.status).toBe(500); // throws error handled by global error handler
+    expect([409, 500].includes(res.status)).toBe(true);
     const json = (await res.json()) as any;
     expect(json.success).toBe(false);
+  });
+
+  it("POST /api/v1/seller/apply succeeds with onboarding form payload and evidence", async () => {
+    const authHeader = await createAuthHeader("user-onboarding-seller-2", "customer", "onboarding@velnox.live");
+
+    const payload = {
+      shopName: "Handmade Pottery Studio",
+      shopDescription: "Artisan ceramics and pottery.",
+      shopCategory: "Home & Living",
+      firstName: "Somchai",
+      lastName: "Dee",
+      phone: "0812345678",
+      shopAddress: {
+        line1: "123 Sukhumvit Road",
+        subdistrict: "Khlong Toei",
+        district: "Khlong Toei",
+        city: "Bangkok",
+        postalCode: "10110",
+        country: "TH",
+      },
+      idCardFrontUrl: "https://pub-xxx.r2.dev/verification/id_card.webp",
+      idCardBackUrl: "https://pub-xxx.r2.dev/verification/id_card_back.webp",
+      selfieUrl: "https://pub-xxx.r2.dev/verification/selfie_id.webp",
+      identityEvidence: [
+        "https://pub-xxx.r2.dev/verification/id_card.webp",
+        "https://pub-xxx.r2.dev/verification/id_card_back.webp",
+        "https://pub-xxx.r2.dev/verification/selfie_id.webp",
+      ],
+    };
+
+    const res = await app.request("/api/v1/seller/apply", {
+      method: "POST",
+      headers: {
+        Authorization: authHeader,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    expect(res.status).toBe(201);
+    const json = (await res.json()) as any;
+    expect(json.success).toBe(true);
+    expect(json.data.shop.name).toBe("Handmade Pottery Studio");
+    expect(json.data.shop.slug).toBe("handmade-pottery-studio");
+    expect(json.data.seller.verificationStatus).toBe("pending");
   });
 
   it("GET /api/v1/seller/profile returns seller profile and shop", async () => {

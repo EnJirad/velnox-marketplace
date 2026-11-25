@@ -137,6 +137,8 @@ export function ShopOnboarding({ onOpened }: ShopOnboardingProps) {
         shopSlug: form.slug.trim() || undefined,
         shopDescription: form.description.trim() || undefined,
         shopCategory: form.category.trim() || undefined,
+        businessName: form.shopName.trim(),
+        businessType: "individual",
         shopAddress: {
           line1: form.line1.trim() || undefined,
           subdistrict: form.subdistrict.trim() || undefined,

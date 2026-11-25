@@ -272,7 +272,21 @@ adminRoutes.patch("/verifications/seller/:verificationId", requireRole("admin"),
  * GET /verifications/seller/:verificationId/evidence
  */
 adminRoutes.get("/verifications/seller/:verificationId/evidence", requireRole("admin"), async (c) => {
-  return c.json({ success: true, data: [] });
+  const sellerId = c.req.param("verificationId");
+  const env = c.env as Bindings | undefined;
+  if (!env?.DATABASE_URL) return c.json({ success: true, data: [] });
+  try {
+    const sql = neon(env.DATABASE_URL);
+    const verif = await sql`
+      SELECT evidence_urls FROM seller_verifications
+      WHERE seller_id = ${sellerId} OR id::text = ${sellerId}
+      ORDER BY created_at DESC LIMIT 1
+    `;
+    const urls: string[] = verif[0]?.evidence_urls || [];
+    return c.json({ success: true, data: urls });
+  } catch {
+    return c.json({ success: true, data: [] });
+  }
 });
 
 /**
@@ -305,16 +319,26 @@ adminRoutes.get("/sellers/:sellerId/application", requireRole("admin"), async (c
     const rows = await sql`
       SELECT s.*, u.name as user_name, u.email as user_email, u.phone as user_phone,
              sh.name as shop_name, sh.slug as shop_slug, sh.description as shop_description,
-             sh.logo_url as shop_logo, sh.cover_url as shop_cover, sh.status as shop_status
+             sh.logo as shop_logo, sh.cover as shop_cover, sh.status as shop_status,
+             sh.category as shop_category,
+             ss.settings as seller_settings,
+             sv.evidence_urls as verification_evidence
       FROM sellers s
       LEFT JOIN users u ON u.id = s.user_id
       LEFT JOIN shops sh ON sh.seller_id = s.id
+      LEFT JOIN seller_settings ss ON ss.seller_id = s.id
+      LEFT JOIN seller_verifications sv ON sv.seller_id = s.id
       WHERE s.id = ${sellerId}
     `;
     if (rows.length === 0) {
       return c.json({ success: false, error: { code: "NOT_FOUND", message: "Seller not found" } }, 404);
     }
     const s = rows[0];
+    const settings = typeof s.seller_settings === "object" && s.seller_settings !== null ? s.seller_settings : {};
+    const docs = Array.isArray(s.verification_evidence) && s.verification_evidence.length > 0
+      ? s.verification_evidence
+      : (Array.isArray(settings.identityEvidence) ? settings.identityEvidence : []);
+
     return c.json({
       success: true,
       data: {
@@ -327,22 +351,22 @@ adminRoutes.get("/sellers/:sellerId/application", requireRole("admin"), async (c
           updatedAt: s.updated_at,
         },
         applicant: {
-          name: s.user_name || s.name,
+          name: s.user_name || s.name || (settings.firstName && settings.lastName ? `${settings.firstName} ${settings.lastName}` : null),
           email: s.user_email || s.email,
-          phone: s.user_phone || s.phone,
-          firstName: null,
-          lastName: null,
-          idNumber: null,
+          phone: settings.phone || s.user_phone || s.phone,
+          firstName: settings.firstName || null,
+          lastName: settings.lastName || null,
+          idNumber: settings.idNumber || null,
         },
         store: {
           name: s.shop_name,
           slug: s.shop_slug,
           description: s.shop_description,
-          category: null,
+          category: s.shop_category || null,
           logo: s.shop_logo,
           cover: s.shop_cover,
         },
-        documents: [],
+        documents: docs,
         history: [],
       },
     });

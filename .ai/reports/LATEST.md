@@ -1,7 +1,7 @@
-# Task Execution Report — Marketing Banners Sync, Chat Runtime Fix & Mobile Tab Bar Viewport Pinning
+# Task Execution Report — Seller Onboarding Registration & Evidence Submission Fix
 
 **Execution Timestamp:** 2026-11-25
-**Task:** Fix VelCenter banner sync, Shop chat crash, and mobile bottom tab bar pinning
+**Task:** Fix Seller Onboarding Internal Server Error (`POST /api/seller/apply`) upon submitting identity evidence and shop registration
 **Status:** COMPLETED & VERIFIED
 **Initiative:** Velnox Clean Rebuild Initiative
 
@@ -9,44 +9,42 @@
 
 ## 1. Summary of Work Completed
 
-### Issue 1: VelCenter Banners Sync to VelShop
+### Issue: 500 "An internal server error occurred." on Seller Registration Submission
 - **Root Cause:**
-  - VelCenter `MarketingBanners.tsx` sends `{ items: payload }` to `PUT /api/admin/announcements`.
-  - In `workers/api/src/routes/admin.ts`, the handler stringified the raw payload object into `platform_settings` table (`shop_announcements`).
-  - When `workers/api/src/routes/catalog.ts` and `admin.ts` read back `rows[0].value`, it checked `Array.isArray(items)`. Because `items` was an object `{ items: [...] }`, `Array.isArray` returned `false`, discarding uploaded banners and falling back to default hardcoded banners in VelShop and empty array in VelCenter.
-  - Furthermore, `apps/velshop/src/pages/ShopHome.tsx` was only reading `home_hero` banners and never mounted `HomePromoStrip` for `home_strip` promotional banners.
-- **Fix:**
-  - Normalized `PUT /api/admin/announcements` and `GET /api/admin/announcements` in `workers/api/src/routes/admin.ts` to unwrap both `items` array and envelope format `{ items: [...] }`.
-  - Updated `GET /api/catalog/announcements` in `workers/api/src/routes/catalog.ts` to extract `Array.isArray(raw) ? raw : raw?.items ?? []` safely.
-  - Updated `apps/velshop/src/pages/ShopHome.tsx` to safely extract banners from both array and envelope shapes, derived `stripBanners` (`placement === 'home_strip'`), and mounted `<HomePromoStrip banners={stripBanners} />` right below `CategoryStrip`.
-
-### Issue 2: VelShop Chat Runtime Crash (`p.filter is not a function`)
-- **Root Cause:**
-  - `workers/api/src/routes/chat.ts` returned `c.json({ success: true, data: { items } })` for `GET /customer/conversations` and `GET /seller/conversations`.
-  - The API client returns `json.data`. In `ShopChat.tsx`, `res` was set directly into `conversations` state as `{ items: [...] }` (an object, not an array).
-  - Later in the render pipeline, `conversations?.filter(...)` or `(conversations ?? []).filter(...)` failed with `TypeError: p.filter is not a function`.
-- **Fix:**
-  - In `workers/api/src/routes/chat.ts`, returned `c.json({ success: true, data: items, items })` so `data` is an array of conversations directly while preserving `items` envelope alias.
-  - In `apps/velshop/src/pages/ShopChat.tsx` and `apps/velseller/src/pages/SellerChat.tsx`, added defensive normalization:
-    `const items = Array.isArray(res) ? res : Array.isArray((res as any)?.items) ? (res as any).items : [];`
-    and guarded all `.filter()` invocations (`safeConvs.filter(...)`, `visibleConversations`).
-  - Updated `workers/api/tests/chat.test.ts` to assert compatibility with both array and envelope shapes.
-
-### Issue 3: Mobile Bottom Tab Bar Pushed Down on Scroll
-- **Root Cause:**
-  - In `packages/shared/src/index.css`, `body` and `#root` had `overflow-x: hidden;`. According to CSS Overflow Level 3 specifications, specifying `overflow-x: hidden` with `overflow-y: visible` causes `overflow-y` to compute to `auto`, creating an implicit nested scroll container on `#root` that traps `position: fixed` elements and breaks viewport-anchored bottom navigation.
-  - In `packages/shared/src/components/MobileTabBar.tsx`, `pb-[calc(0.75rem+env(safe-area-inset-bottom))]` lacked fallback `,0px` for browsers without CSS env support, and lacked hardware acceleration compositing (`transform: translateZ(0)`), causing jitter/misalignment during mobile momentum scrolling.
-  - In `apps/velshop/src/main.tsx`, `<ShopTabBar />` was nested inside `<div className="site-app">` rather than anchored cleanly at the viewport root.
-- **Fix:**
-  - Switched `overflow-x: hidden` to modern `overflow-x: clip` in `packages/shared/src/index.css` and removed `overflow-x` from `#root` to prevent accidental scroll container creation.
-  - Added `transform: translateZ(0)` and `WebkitTransform: translateZ(0)` to `packages/shared/src/components/MobileTabBar.tsx` for GPU hardware compositing and added `,0px` fallback to `env(safe-area-inset-bottom)`.
-  - Moved `<ShopTabBar />` in `apps/velshop/src/main.tsx` outside of `.site-app` so it is permanently anchored to the viewport.
+  1. `ShopOnboarding.tsx` submitted `{ shopName, shopSlug, shopDescription, shopCategory, shopAddress, firstName, lastName, phone, idCardFrontUrl, idCardBackUrl, selfieUrl, identityEvidence }`.
+  2. `SellerService.applySeller` strictly checked `if (!input.businessName || !input.shopName || !input.shopSlug) throw new Error(...)`. Because `businessName` is not part of the individual onboarding form and `shopSlug` was optional, it threw an error.
+  3. The error had no `status` property, causing Hono's global `errorHandler` to map it to HTTP 500 `INTERNAL_SERVER_ERROR` with "An internal server error occurred."
+  4. In `NeonSellerRepository.createSellerAndShop`, the SQL query attempted to insert into non-existent columns on `sellers` table (`business_name`, `business_type`, `tax_id`, `id_card_number`), which in PostgreSQL Neon schema threw `error: column "business_name" of relation "sellers" does not exist`.
+  5. In `NeonSellerRepository.getSellerByUserId` and `getShopBySellerId`, queries selected non-existent columns (`logo_url`, `cover_url`, `review_count`, `business_name`), causing subsequent profile and shop fetches to fail.
+  6. The applicant data (`firstName`, `lastName`, `phone`, etc.) and identity evidence documents were not being persisted into `seller_settings` and `seller_verifications`.
+- **Fix Implemented:**
+  1. **Flexible Input & Auto-Slug in `SellerService`:**
+     - In `workers/api/src/modules/sellers/seller-service.ts`, default `businessName` to `shopName` if not provided, default `businessType` to `"individual"`, and automatically generate a URL-safe slug from `shopName` when `shopSlug` is omitted.
+  2. **Clean PostgreSQL Neon Schema Alignment in `NeonSellerRepository`:**
+     - In `workers/api/src/modules/sellers/seller-repository.ts`:
+       - `createSellerAndShop`:
+         - Inserts/updates `sellers` using only real schema columns (`id`, `user_id`, `status`, `verification_status`, `created_at`, `updated_at`).
+         - Upserts `shops` with all address attributes, category, phone, description, and unique slug generation.
+         - Persists applicant personal details and document URLs into `seller_settings` (`settings` JSONB).
+         - Records verification evidence in `seller_verifications` (`evidence_urls` JSONB) and logs to `seller_review_history`.
+         - Promotes `users.role` to `'seller'`.
+       - `getSellerByUserId`: Joins `sellers` and `seller_settings` cleanly without selecting missing columns.
+       - `getShopBySellerId`: Queries real columns (`logo as "logoUrl"`, `cover as "coverUrl"`, `product_count as "reviewCount"`).
+       - `updateShop`: Updates real columns `logo` and `cover`.
+  3. **Route Error Handling & Envelope Normalization in `sellerRoutes`:**
+     - Wrapped `POST /apply` with structured try/catch to return HTTP 400/409 validation envelopes instead of unhandled 500 crashes.
+     - In `GET /profile` and `GET /status`, return both `shop` and `shops: [shop]` for compatibility with both array and single-shop consumers.
+  4. **Admin Review Integration in `adminRoutes`:**
+     - Updated `GET /sellers/:sellerId/application` and `GET /verifications/seller/:verificationId/evidence` to join `seller_settings` and `seller_verifications` so VelCenter administrators can inspect the submitted ID cards and selfie documents.
+  5. **Frontend Resiliency:**
+     - In `apps/velseller/src/components/shop/ShopOnboarding.tsx`, explicitly passed `businessName: form.shopName.trim()` and `businessType: "individual"`.
+     - In `apps/velseller/src/pages/MyShop.tsx`, handled both HTTP 403 and 404 in `loadProfile` and safely derived `shop = profile?.shops?.[0] ?? profile?.shop ?? null`.
 
 ---
 
 ## 2. Verification Summary
-- `bun run typecheck:all`: PASS (0 errors across `@velnox/velshop`, `@velnox/velseller`, `@velnox/velcenter`, `@velnox/velnox`, `@velnox/validation`, `@velnox/api-contract`, `@velnox/api-client`, `@velnox/ledger`, `@velnox/api`).
-- `bun --filter @velnox/api test`: 126/126 PASS (17 test files, 585 assertions, 0 failures).
-- `bun run build:apps`: PASS (All 4 SPAs compiled cleanly to `dist/`).
-- `bun --filter @velnox/api build`: PASS (Wrangler edge bundle 1135.21 KiB).
-- `git diff --check`: PASS (0 whitespace / syntax issues).
+- `bun --filter @velnox/api test`: PASS (127/127 tests passed across 17 files, 590 assertions, 0 failures)
+- `bun run typecheck:all`: PASS (0 errors across all frontends, packages, and workers)
+- `bun run build:apps`: PASS (All 4 SPAs compiled cleanly to `dist/`)
+- `bun --filter @velnox/api build`: PASS (Wrangler edge bundle 1145.24 KiB)
+- `git diff --check`: PASS (clean)

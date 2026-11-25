@@ -18,11 +18,35 @@ export class SellerService {
   ): Promise<{ seller: SellerProfileRecord; shop: ShopRecord }> {
     const existing = await this.repo.getSellerByUserId(userId);
     if (existing) {
-      throw new Error("User has already registered as a seller");
+      if (existing.status === "approved" || existing.verificationStatus === "verified") {
+        throw new Error("User has already registered as an approved seller");
+      }
+      if (existing.status === "pending" || existing.verificationStatus === "pending") {
+        throw new Error("User has already registered as a seller");
+      }
     }
 
-    if (!input.businessName || !input.shopName || !input.shopSlug) {
-      throw new Error("Business name, shop name, and shop slug are required");
+    if (!input.shopName || !input.shopName.trim()) {
+      throw new Error("Shop name is required");
+    }
+
+    if (!input.businessName || !input.businessName.trim()) {
+      input.businessName = input.shopName.trim();
+    }
+
+    if (!input.businessType) {
+      input.businessType = "individual";
+    }
+
+    if (!input.shopSlug || !input.shopSlug.trim()) {
+      const baseSlug = input.shopName
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9\s-]/g, "")
+        .replace(/\s+/g, "-")
+        .replace(/-+/g, "-")
+        .substring(0, 100);
+      input.shopSlug = baseSlug || `shop-${Date.now()}`;
     }
 
     return this.repo.createSellerAndShop(userId, input);

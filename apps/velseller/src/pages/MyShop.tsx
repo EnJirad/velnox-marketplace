@@ -112,12 +112,12 @@ export default function MyShop() {
       setProfile(data ?? null);
       setProfileState("ok");
     } catch (error) {
-      if (error instanceof ApiError && error.status === 403) {
+      if (error instanceof ApiError && (error.status === 403 || error.status === 404)) {
         // Not approved yet — that is an application state, not a failure.
         try {
           const status = await mySellerStatus();
           setApplication(
-            status?.status
+            status?.status && status.status !== "none"
               ? {
                   status: String(status.status),
                   reason: status.rejectionReason ?? status.correctionReason ?? null,
@@ -169,7 +169,7 @@ export default function MyShop() {
     setSearchParams(next, { replace: true });
   }, [searchParams, setSearchParams]);
 
-  const shop = profile?.shops?.[0] ?? null;
+  const shop = profile?.shops?.[0] ?? (profile as any)?.shop ?? null;
   const verificationStatus = ((profile?.seller as { verificationStatus?: VerificationStatus } | undefined)
     ?.verificationStatus ?? "unverified") as VerificationStatus;
 

@@ -70,8 +70,9 @@ sellerRoutes.get("/status", async (c) => {
     success: true,
     data: {
       isSeller: true,
-      status: profile.seller.verificationStatus || "approved",
+      status: profile.seller.verificationStatus || profile.seller.status || "approved",
       shop: profile.shop,
+      shops: profile.shop ? [profile.shop] : [],
       seller: profile.seller,
     },
   });
@@ -92,16 +93,30 @@ sellerRoutes.post("/apply", async (c) => {
     );
   }
 
-  const service = getSellerService(c);
-  const result = await service.applySeller(user.sub, body);
+  try {
+    const service = getSellerService(c);
+    const result = await service.applySeller(user.sub, body);
 
-  return c.json(
-    {
-      success: true,
-      data: result,
-    },
-    201,
-  );
+    return c.json(
+      {
+        success: true,
+        data: result,
+      },
+      201,
+    );
+  } catch (err: any) {
+    const msg = err?.message || "Failed to process seller application";
+    const isDuplicate = msg.includes("already registered");
+    const status = isDuplicate ? 409 : (err?.status || 400);
+    const code = isDuplicate ? "ALREADY_REGISTERED" : (err?.code || "VALIDATION_ERROR");
+    return c.json(
+      {
+        success: false,
+        error: { code, message: msg },
+      },
+      status as any,
+    );
+  }
 });
 
 /**
@@ -125,7 +140,10 @@ sellerRoutes.get("/profile", async (c) => {
 
   return c.json({
     success: true,
-    data: profile,
+    data: {
+      ...profile,
+      shops: profile.shop ? [profile.shop] : [],
+    },
   });
 });
 

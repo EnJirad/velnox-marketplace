@@ -10,10 +10,22 @@ export interface SellerProfileRecord {
   taxId?: string | null;
   idCardNumber?: string | null;
   verificationStatus: VerificationStatus;
+  status?: string;
   verificationRejectedReason?: string | null;
   verifiedAt?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ShopAddress {
+  line1?: string;
+  line2?: string;
+  subdistrict?: string;
+  district?: string;
+  city?: string;
+  state?: string;
+  postalCode?: string;
+  country?: string;
 }
 
 export interface ShopRecord {
@@ -22,6 +34,9 @@ export interface ShopRecord {
   name: string;
   slug: string;
   description: string;
+  category?: string | null;
+  phone?: string | null;
+  address?: ShopAddress | null;
   logoUrl?: string | null;
   coverUrl?: string | null;
   status: ShopStatus;
@@ -32,13 +47,23 @@ export interface ShopRecord {
 }
 
 export interface ApplySellerInput {
-  businessName: string;
-  businessType: BusinessType;
-  taxId?: string;
-  idCardNumber?: string;
   shopName: string;
-  shopSlug: string;
+  shopSlug?: string;
   shopDescription?: string;
+  shopCategory?: string;
+  shopAddress?: ShopAddress;
+  firstName?: string;
+  lastName?: string;
+  phone?: string;
+  idNumber?: string;
+  idCardNumber?: string;
+  idCardFrontUrl?: string | null;
+  idCardBackUrl?: string | null;
+  selfieUrl?: string | null;
+  identityEvidence?: string[];
+  businessName?: string;
+  businessType?: BusinessType;
+  taxId?: string;
 }
 
 export interface UpdateShopInput {
