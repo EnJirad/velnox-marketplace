@@ -51,7 +51,7 @@ async function fetchCategoryTreeWithStats(env?: Bindings): Promise<any[]> {
                c.is_active as "isActive",
                COUNT(p.id)::int as "productCount"
         FROM categories c
-        LEFT JOIN products p ON (p.category_id = c.id::text OR p.category_id = c.slug) AND (p.status = 'published' OR p.status = 'active')
+        LEFT JOIN products p ON p.category_id = c.id AND (p.status = 'published' OR p.status = 'active')
         WHERE c.is_active = TRUE
         GROUP BY c.id
         ORDER BY c.sort_order ASC, c.name ASC

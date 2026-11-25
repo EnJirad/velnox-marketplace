@@ -532,7 +532,7 @@ adminRoutes.get("/categories", requireRole("admin"), async (c) => {
              c.created_at, c.updated_at,
              COUNT(p.id)::int as product_count
       FROM categories c
-      LEFT JOIN products p ON p.category_id = c.id::text OR p.category_id = c.slug
+      LEFT JOIN products p ON p.category_id = c.id
       GROUP BY c.id
       ORDER BY c.sort_order ASC, c.name ASC
     `;

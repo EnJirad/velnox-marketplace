@@ -1,33 +1,29 @@
-# Latest Task Execution Report — Login Single-Tab Navigation & VelCenter-to-VelShop Single Database Sync
+# Latest Task Execution Report — Category Tree Stats UUID Cast & Neon Sync End-to-End Verification
 
 **Execution Timestamp:** 2026-11-25
-**Task:** Login Single-Tab Navigation & VelCenter-to-VelShop Unified Database Sync (Categories, Announcements, Platform Settings, Product Moderation)
+**Task:** Category Tree Stats UUID Cast Fix, Default Category Icons, and Neon DB Sync End-to-End Verification
 **Status:** COMPLETED & VERIFIED
 **Initiative:** Velnox Clean Rebuild Initiative
 
 ---
 
 ## 1. Summary of Work Completed
-- **Login & Ecosystem Single-Tab Navigation:**
-  - Removed `target="_blank"` from cross-portal and ecosystem navigation (`apps/velnox/src/pages/corporate/CorporateHome.tsx`, `CorporateLayout.tsx`, `StaticPage.tsx`, and `apps/velshop/src/components/shop/TopBanner.tsx`).
-  - Ensured that authentication entry points and redirects across all 4 applications (VelShop, VelSeller, VelCenter, VelNox) execute within the same browser tab without spawning new windows or tabs.
-- **VelCenter Category Management & Neon PostgreSQL Synchronization:**
-  - **Issue:** VelCenter category CRUD calls (`POST /api/admin/categories`, `PATCH /api/admin/categories/:id`, `DELETE /api/admin/categories/:id`) previously failed with 404 because the Workers API lacked write endpoints for categories. Furthermore, the `categories` table in Neon PostgreSQL was missing extended metadata columns (`icon`, `image_url`, `description`, `names`, `description_names`, `updated_at`).
-  - **Fix:** Applied database migration adding all missing columns to `categories` in Neon PostgreSQL and backfilled icons from `icon_url`. Implemented full category CRUD in `workers/api/src/routes/admin.ts`.
-- **Marketing Banners & Announcements Single-Database Persistence:**
-  - **Issue:** VelCenter's announcement editor (`PUT /api/admin/announcements`) did not persist banners to the database, and `catalogRoutes.get("/announcements")` queried unrelated media records instead of platform settings.
-  - **Fix:** Created the `platform_settings` table in Neon PostgreSQL. Wired `adminRoutes` (`GET /settings`, `PATCH /settings`, `GET /announcements`, `PUT /announcements`) and `catalogRoutes` (`GET /announcements`) to the `platform_settings` table (`shop_announcements` and `platform_config`). Any banner created or modified in VelCenter is now instantly rendered on the VelShop storefront.
-- **Storefront Category Tree & Stats Connection:**
-  - **Issue:** `catalogRoutes.get("/categories/stats")` previously returned `{ success: true, data: {} }`, causing VelShop's category directory (`ShopCategories.tsx`) to render 0 categories.
-  - **Fix:** Implemented `fetchCategoryTreeWithStats` in `workers/api/src/routes/catalog.ts`, querying Neon PostgreSQL and returning the full hierarchical tree with accurate `productCount` values.
-- **Product Moderation Status Synchronization:**
-  - **Issue:** VelCenter product approval previously set `status = 'active'`, whereas VelShop catalog filters strictly for `status = 'published'`.
-  - **Fix:** Updated `adminRoutes.patch("/products/:productId/moderation")` to set `status = 'published'` on approval, immediately making approved products visible across VelShop.
+- **Category Tree Stats Query UUID Type Cast (`workers/api/src/routes/catalog.ts` & `admin.ts`):**
+  - **Issue:** PostgreSQL threw `operator does not exist: uuid = text` on `LEFT JOIN products p ON p.category_id = c.id::text OR p.category_id = c.slug` because `products.category_id` in Neon PostgreSQL is strictly a typed `UUID`.
+  - **Fix:** Updated join condition to native `LEFT JOIN products p ON p.category_id = c.id AND (p.status = 'published' OR p.status = 'active')`, allowing PostgreSQL to join on matching UUID foreign keys cleanly.
+- **Default Category Icon Setup in Neon DB:**
+  - Updated all 8 existing categories in Neon PostgreSQL with standard Lucide icon identifiers (`Cpu`, `Smartphone`, `Laptop`, `Shirt`, `ShoppingBag`, `Sparkles`, `Home`, `Heart`) supported by `@velnox/shared/components/ui/category-icon`.
+  - Both VelCenter's Category Tree management and VelShop's storefront categories directory now display curated vector icons out-of-the-box.
+- **Initial Storefront Marketing Banners in `platform_settings`:**
+  - Initialized default official launch banners in `platform_settings` (key: `shop_announcements`) for `home_hero` placement.
+  - End-to-end verified that `GET /api/announcements` delivers the active banners to VelShop's homepage carousel and product banner slots.
 
 ---
 
 ## 2. Verification Summary
 - `bun --filter @velnox/api test`: 117/117 PASS (17 test files, 510 assertions, 0 failures)
-- `bun run typecheck`: PASS across all 4 apps (`@velnox/velshop`, `@velnox/velseller`, `@velnox/velcenter`, `@velnox/velnox`)
 - `bun --filter @velnox/api typecheck`: PASS (0 errors)
+- Direct Neon DB Verification:
+  - `GET /api/categories/stats`: 200 OK (returns 4 root categories, 4 child categories with real product counts and icons)
+  - `GET /api/announcements`: 200 OK (returns 2 active banners from Neon `platform_settings`)
 - `git diff --check`: PASS (clean)
